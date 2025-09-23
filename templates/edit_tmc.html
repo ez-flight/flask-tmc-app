@@ -1,0 +1,294 @@
+<!-- templates/edit_tmc.html -->
+{% extends "base.html" %}
+
+{% block title %}Редактировать ТМЦ{% endblock %}
+
+{% block content %}
+<h1>Редактировать ТМЦ</h1>
+<form method="POST" enctype="multipart/form-data">
+    <div class="mb-3">
+        <label for="buhname" class="form-label">Наименование *</label>
+        <input type="text" class="form-control" id="buhname" name="buhname" value="{{ tmc.buhname }}" required>
+    </div>
+    <div class="mb-3">
+        <label for="sernum" class="form-label">Серийный номер</label>
+        <input type="text" class="form-control" id="sernum" name="sernum" value="{{ tmc.sernum }}">
+    </div>
+    <div class="mb-3">
+        <label for="invnum" class="form-label">Инвентарный номер</label>
+        <input type="text" class="form-control" id="invnum" name="invnum" value="{{ tmc.invnum }}">
+    </div>
+    <div class="mb-3">
+        <label for="comment" class="form-label">Комментарий</label>
+        <textarea class="form-control" id="comment" name="comment" rows="3">{{ tmc.comment }}</textarea>
+    </div>
+    <div class="mb-3">
+        <label for="department_id" class="form-label">Отдел *</label>
+        <select class="form-select" id="department_id" name="department_id" required>
+            <option value="">-- Выберите отдел --</option>
+            {% for dept in departments %}
+                <option value="{{ dept.id }}" {% if tmc and tmc.department_id == dept.id %}selected{% endif %}>
+                    {{ dept.name }} ({{ dept.code }})
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label for="photo" class="form-label">Фотография (необязательно)</label>
+        <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
+        <div class="form-text">Поддерживаются форматы: JPG, PNG, GIF, BMP, WEBP.</div>
+        {% if tmc.photo %}
+            <div class="mt-2">
+                <img src="{{ url_for('static', filename='uploads/' + tmc.photo) }}" 
+                     alt="Текущее фото" 
+                     style="max-width: 100px; max-height: 100px; object-fit: contain; border: 1px solid #dee2e6; border-radius: 4px;">
+                <div class="form-text">Текущее изображение. Загрузите новое, чтобы заменить.</div>
+            </div>
+        {% endif %}
+    </div>
+    
+    <!-- Организация -->
+    <div class="mb-3">
+        <label for="orgid" class="form-label">Организация *</label>
+        <select class="form-select" id="orgid" name="orgid" required>
+            <option value="">-- Выберите организацию --</option>
+            {% for org in organizations %}
+                {% if org.active %}
+                    <option value="{{ org.id }}" {% if org.id == tmc.orgid %}selected{% endif %}>{{ org.name }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Место нахождения -->
+    <div class="mb-3">
+        <label for="placesid" class="form-label">Место нахождения *</label>
+        <select class="form-select" id="placesid" name="placesid" required>
+            <option value="">-- Выберите место --</option>
+            {% for place in places %}
+                {% if place.active %}
+                    <option value="{{ place.id }}" {% if place.id == tmc.placesid %}selected{% endif %}>{{ place.name }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Ответственный пользователь -->
+    <div class="mb-3">
+        <label for="usersid" class="form-label">Ответственный пользователь *</label>
+        <select class="form-select" id="usersid" name="usersid" required>
+            <option value="">-- Выберите пользователя --</option>
+            {% for user in users %}
+                {% if user.active %}
+                    <option value="{{ user.id }}" {% if user.id == tmc.usersid %}selected{% endif %}>{{ user.login }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Группа ТМЦ -->
+    <div class="mb-3">
+        <label for="groupid" class="form-label">Группа ТМЦ *</label>
+        <select class="form-select" id="groupid" name="groupid" required onchange="loadVendors()">
+            <option value="">-- Выберите группу --</option>
+            {% for group in groups %}
+                {% if group.active %}
+                    <option value="{{ group.id }}" {% if current_group and group.id == current_group.id %}selected{% endif %}>{{ group.name }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Производитель -->
+    <div class="mb-3">
+        <label for="vendorid" class="form-label">Производитель *</label>
+        <select class="form-select" id="vendorid" name="vendorid" required onchange="loadNomenclatures()">
+            <option value="">-- Сначала выберите группу --</option>
+            {% for vendor in vendors %}
+                <option value="{{ vendor.id }}" {% if current_vendor and vendor.id == current_vendor.id %}selected{% endif %}>{{ vendor.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Наименование (Номенклатура) -->
+    <div class="mb-3">
+        <label for="nomeid" class="form-label">Наименование (Номенклатура) *</label>
+        <div class="input-group">
+            <select class="form-select" id="nomeid" name="nomeid" required>
+                <option value="">-- Сначала выберите производителя --</option>
+                {% for nome in nomenclatures %}
+                    <option value="{{ nome.id }}" {% if current_nome and nome.id == current_nome.id %}selected{% endif %}>{{ nome.name }}</option>
+                {% endfor %}
+            </select>
+            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#addNomeModal">
+                +
+            </button>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">Отмена</a>
+</form>
+
+<!-- Модальное окно для добавления нового наименования -->
+<div class="modal fade" id="addNomeModal" tabindex="-1" aria-labelledby="addNomeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addNomeModalLabel">Добавить новое наименование</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="new_nome_name" class="form-label">Наименование *</label>
+                    <input type="text" class="form-control" id="new_nome_name" placeholder="Введите наименование">
+                    <div class="invalid-feedback">
+                        Это поле обязательно.
+                    </div>
+                </div>
+                <div class="alert alert-danger d-none" id="nome_error_alert"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" onclick="addNewNomenclature()">Добавить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function loadVendors() {
+    const groupId = document.getElementById('groupid').value;
+    const vendorSelect = document.getElementById('vendorid');
+    const nomeSelect = document.getElementById('nomeid');
+
+    // Очищаем зависимые списки
+    vendorSelect.innerHTML = '<option value="">Загрузка...</option>';
+    nomeSelect.innerHTML = '<option value="">-- Сначала выберите производителя --</option>';
+
+    if (!groupId) {
+        vendorSelect.innerHTML = '<option value="">-- Сначала выберите группу --</option>';
+        return;
+    }
+
+    fetch(`/get_vendors_by_group/${groupId}`)
+        .then(response => response.json())
+        .then(data => {
+            vendorSelect.innerHTML = '<option value="">-- Выберите производителя --</option>';
+            data.vendors.forEach(vendor => {
+                const option = document.createElement('option');
+                option.value = vendor.id;
+                option.textContent = vendor.name;
+                vendorSelect.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки производителей:', error);
+            vendorSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+        });
+}
+
+function loadNomenclatures() {
+    const groupId = document.getElementById('groupid').value;
+    const vendorId = document.getElementById('vendorid').value;
+    const nomeSelect = document.getElementById('nomeid');
+
+    nomeSelect.innerHTML = '<option value="">Загрузка...</option>';
+
+    if (!groupId || !vendorId) {
+        nomeSelect.innerHTML = '<option value="">-- Сначала выберите производителя --</option>';
+        return;
+    }
+
+    fetch(`/get_nomenclatures_by_group_and_vendor/${groupId}/${vendorId}`)
+        .then(response => response.json())
+        .then(data => {
+            nomeSelect.innerHTML = '<option value="">-- Выберите наименование --</option>';
+            data.nomenclatures.forEach(nome => {
+                const option = document.createElement('option');
+                option.value = nome.id;
+                option.textContent = nome.name;
+                nomeSelect.appendChild(option);
+            });
+            // Если список пуст, предлагаем добавить новое
+            if (data.nomenclatures.length === 0) {
+                nomeSelect.innerHTML += '<option value="">-- Нет наименований. Добавьте новое --</option>';
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки наименований:', error);
+            nomeSelect.innerHTML = '<option value="">Ошибка загрузки</option>';
+        });
+}
+
+function addNewNomenclature() {
+    const groupId = document.getElementById('groupid').value;
+    const vendorId = document.getElementById('vendorid').value;
+    const nomeName = document.getElementById('new_nome_name').value.trim();
+    const errorAlert = document.getElementById('nome_error_alert');
+
+    errorAlert.classList.add('d-none');
+    errorAlert.textContent = '';
+
+    if (!nomeName) {
+        document.getElementById('new_nome_name').classList.add('is-invalid');
+        return;
+    } else {
+        document.getElementById('new_nome_name').classList.remove('is-invalid');
+    }
+
+    fetch('/add_nomenclature', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `groupid=${groupId}&vendorid=${vendorId}&name=${encodeURIComponent(nomeName)}`
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(err => { throw new Error(err.message || 'Ошибка сервера'); });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Закрываем модальное окно
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addNomeModal'));
+            modal.hide();
+
+            // Очищаем поле ввода
+            document.getElementById('new_nome_name').value = '';
+
+            // Перезагружаем список наименований
+            loadNomenclatures();
+
+            // Автоматически выбираем только что добавленное наименование
+            setTimeout(() => {
+                const nomeSelect = document.getElementById('nomeid');
+                for (let option of nomeSelect.options) {
+                    if (option.value == data.id) {
+                        option.selected = true;
+                        break;
+                    }
+                }
+            }, 500);
+
+            // Показываем уведомление
+            const container = document.querySelector('.container');
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-success alert-dismissible fade show';
+            alertDiv.role = 'alert';
+            alertDiv.innerHTML = `
+                Наименование успешно добавлено!
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            container.prepend(alertDiv);
+        }
+    })
+    .catch(error => {
+        errorAlert.classList.remove('d-none');
+        errorAlert.textContent = error.message || 'Неизвестная ошибка';
+    });
+}
+</script>
+{% endblock %}

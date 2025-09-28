@@ -48,7 +48,8 @@ class Equipment(db.Model):
     department_id = db.Column(db.Integer, db.ForeignKey('department.id'), nullable=True)
     date_start = db.Column(db.Date, nullable=False, default=date.today)
     invoice_file = db.Column(db.String(255), nullable=False, default='')
-    passport_file = db.Column(db.String(255), nullable=False, default='')
+    passport_filename = db.Column(db.String(255), nullable=True)
+    dtendlife = db.Column(db.Date, nullable=True)
 
     # Связи
     org = db.relationship('Org', backref='equipment')

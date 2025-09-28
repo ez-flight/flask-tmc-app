@@ -6,6 +6,12 @@
 {% block content %}
 <h1>Сводный список Товарно-Материальных Ценностей</h1>
 
+<!-- Кнопки действий -->
+<div class="mb-3">
+    <a href="{{ url_for('add_nome') }}" class="btn btn-success">➕ Добавить новую группу ТМЦ</a>
+    <!--<a href="{{ url_for('add_tmc') }}" class="btn btn-primary">➕ Добавить новый ТМЦ</a> -->
+</div>
+
 {% if grouped_tmc %}
     <table class="table table-striped">
         <thead>
@@ -31,8 +37,7 @@
                 <td>{{ item.nome_name }}</td>
                 <td>{{ item.quantity }} шт.</td>
                 <td>
-                  <!-- Детальный просмотр -->
-                    <a href="{{ url_for('list_by_nome', nome_id=item.nomeid) }}" class="btn btn-sm btn-outline-secondary">Подробнее </a>
+                    <a href="{{ url_for('list_by_nome', nome_id=item.nomeid) }}" class="btn btn-sm btn-outline-secondary">Подробнее</a>
                 </td>
             </tr>
             {% endfor %}

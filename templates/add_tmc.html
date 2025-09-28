@@ -18,6 +18,14 @@
         <label for="invnum" class="form-label">Инвентарный номер</label>
         <input type="text" class="form-control" id="invnum" name="invnum">
     </div>
+    
+    <!-- Дата начала эксплуатации -->
+    <div class="mb-3">
+        <label for="date_start" class="form-label">Дата начала эксплуатации *</label>
+        <input type="date" class="form-control" id="date_start" name="date_start"
+           value="{{ datetime.now().strftime('%Y-%m-%d') }}" required>
+        <div class="form-text">На её основе будут рассчитаны гарантия (+1 год) и срок службы (+5 лет).</div>
+    </div>
     <div class="mb-3">
         <label for="comment" class="form-label">Комментарий</label>
         <textarea class="form-control" id="comment" name="comment" rows="3"></textarea>
@@ -37,6 +45,16 @@
         <label for="photo" class="form-label">Фотография (необязательно)</label>
         <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
         <div class="form-text">Поддерживаются форматы: JPG, PNG, GIF, BMP, WEBP.</div>
+    </div>
+    <div class="mb-3">
+        <label for="passport" class="form-label">Паспорт ТМЦ (PDF)</label>
+        <input type="file" class="form-control" id="passport" name="passport" accept=".pdf">
+        {% if tmc and tmc.passport_filename %}
+           <div class="mt-2">
+                Текущий паспорт: 
+                <a href="{{ url_for('static', filename='uploads/' + tmc.passport_filename) }}" target="_blank">📄 Открыть</a>
+            </div>
+        {% endif %}
     </div>
     
     <!-- Организация -->
@@ -79,38 +97,52 @@
     </div>
 
     <!-- Группа ТМЦ -->
-    <div class="mb-3">
-        <label for="groupid" class="form-label">Группа ТМЦ *</label>
-        <select class="form-select" id="groupid" name="groupid" required onchange="loadVendors()">
-            <option value="">-- Выберите группу --</option>
-            {% for group in groups %}
-                {% if group.active %}
-                    <option value="{{ group.id }}">{{ group.name }}</option>
-                {% endif %}
-            {% endfor %}
-        </select>
-    </div>
+    {% if preselected_group %}
+        <input type="hidden" name="groupid" value="{{ preselected_group.id }}">
+    {% else %}
+        <div class="mb-3">
+            <label for="groupid" class="form-label">Группа ТМЦ *</label>
+            <select class="form-select" id="groupid" name="groupid" required onchange="loadVendors()">
+                <option value="">-- Выберите группу --</option>
+                {% for group in groups %}
+                    {% if group.active %}
+                        <option value="{{ group.id }}">{{ group.name }}</option>
+                    {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+    {% endif %}
 
     <!-- Производитель -->
-    <div class="mb-3">
-        <label for="vendorid" class="form-label">Производитель *</label>
-        <select class="form-select" id="vendorid" name="vendorid" required onchange="loadNomenclatures()">
-            <option value="">-- Сначала выберите группу --</option>
-        </select>
-    </div>
+    {% if preselected_vendor %}
+        <input type="hidden" name="vendorid" value="{{ preselected_vendor.id }}">
+    {% else %}
+        <div class="mb-3">
+            <label for="vendorid" class="form-label">Производитель *</label>
+            <select class="form-select" id="vendorid" name="vendorid" required onchange="loadNomenclatures()">
+                <option value="">-- Сначала выберите группу --</option>
+            </select>
+        </div>
+    {% endif %}
 
     <!-- Наименование (Номенклатура) -->
-    <div class="mb-3">
-        <label for="nomeid" class="form-label">Наименование (Номенклатура) *</label>
-        <div class="input-group">
-            <select class="form-select" id="nomeid" name="nomeid" required>
-                <option value="">-- Сначала выберите производителя --</option>
-            </select>
-            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#addNomeModal">
-                +
-            </button>
+    {% if preselected_nome %}
+        <input type="hidden" name="nomeid" value="{{ preselected_nome.id }}">
+        <div class="mb-3">
+            <label class="form-label">Наименование</label>
+            <div class="form-control" readonly>{{ preselected_nome.name }}</div>
         </div>
-    </div>
+    {% else %}
+        <div class="mb-3">
+            <label for="nomeid" class="form-label">Наименование (Номенклатура) *</label>
+            <div class="input-group">
+                <select class="form-select" id="nomeid" name="nomeid" required>
+                    <option value="">-- Сначала выберите производителя --</option>
+                </select>
+                <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#addNomeModal">+</button>
+            </div>
+        </div>
+    {% endif %}
 
     <button type="submit" class="btn btn-success">Добавить</button>
     <a href="{{ url_for('index') }}" class="btn btn-secondary">Отмена</a>

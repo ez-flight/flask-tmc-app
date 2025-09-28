@@ -1,0 +1,76 @@
+<!-- templates/bulk_edit_nome.html -->
+{% extends "base.html" %}
+
+{% block title %}Групповое редактирование{% endblock %}
+
+{% block content %}
+<h1>Групповое редактирование: "{{ nome_name }}" ({{ tmc_count }} шт.)</h1>
+<p class="text-muted">Изменения будут применены ко всем {{ tmc_count }} ТМЦ этого типа.</p>
+
+<form method="POST" enctype="multipart/form-data">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label for="cost" class="form-label">Стоимость</label>
+                <input type="number" class="form-control" id="cost" name="cost" value="{{ first_tmc.cost }}">
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label for="currentcost" class="form-label">Текущая стоимость</label>
+                <input type="number" class="form-control" id="currentcost" name="currentcost" value="{{ first_tmc.currentcost }}">
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="os" name="os" {% if first_tmc.os %}checked{% endif %}>
+            <label class="form-check-label" for="os">
+                Основные средства (ОС)
+            </label>
+        </div>
+    </div>
+
+    <!-- Добавляем поле для загрузки фото -->
+    <div class="mb-3">
+       <label for="nome_photo" class="form-label">Фото для группы</label>
+       <input type="file" class="form-control" id="nome_photo" name="nome_photo" accept="image/*">
+    </div>
+
+    <!-- Гарантийный срок и дата начала эксплуатации -->
+    <div class="mb-3">
+        <label class="form-label">Гарантия</label>
+        <div class="row g-2">
+            <div class="col-md-6">
+                <label for="date_start" class="form-label">Дата начала эксплуатации</label>
+                <input type="date" class="form-control" id="date_start" name="date_start" 
+                       value="{{ first_tmc.datepost.strftime('%Y-%m-%d') if first_tmc.datepost else '' }}">
+            </div>
+            <div class="col-md-6">
+                <label for="dtendgar" class="form-label">Гарантийный срок (окончание)</label>
+                <input type="date" class="form-control" id="dtendgar" name="dtendgar" 
+                       value="{{ first_tmc.dtendgar.strftime('%Y-%m-%d') if first_tmc.dtendgar else '' }}">
+            </div>
+        </div>
+        <div class="form-text">
+            Если указать «Дата начала», то «Гарантийный срок» можно оставить пустым — он будет рассчитан автоматически (+5 лет).
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label for="kntid" class="form-label">Поставщик</label>
+        <select class="form-select" id="kntid" name="kntid">
+            <option value="">— Не выбрано —</option>
+            {% for supplier in suppliers %}
+                <option value="{{ supplier.id }}" {% if supplier.id == first_tmc.kntid %}selected{% endif %}>
+                    {{ supplier.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">Отмена</a>
+</form>
+{% endblock %}

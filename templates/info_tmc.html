@@ -1,0 +1,80 @@
+<!-- templates/info_tmc.html -->
+{% extends "base.html" %}
+
+{% block title %}ТМЦ №{{ tmc.id }}{% endblock %}
+
+{% block content %}
+<h1>Подробная информация о ТМЦ</h1>
+
+<a href="{{ url_for('list_by_nome', nome_id=tmc.nomeid) }}" class="btn btn-secondary mb-3">← Назад к списку {{ tmc.nome.name }}</a>
+<a href="{{ url_for('edit_tmc', tmc_id=tmc.id) }}" class="btn btn-warning mb-3">Редактировать</a>
+
+<div class="card">
+    <div class="card-body">
+        <h5 class="card-title">Основные данные</h5>
+        <table class="table table-borderless">
+            <tr><th>ID записи:</th><td>{{ tmc.id }}</td></tr>
+            <tr><th>Наименование:</th><td>{{ tmc.nome.name if tmc.nome else '—' }}</td></tr>
+            <tr><th>Бух. наименование:</th><td>{{ tmc.buhname or '—' }}</td></tr>
+            <tr><th>Серийный номер:</th><td>{{ tmc.sernum or '—' }}</td></tr>
+            <tr><th>Инвентарный номер:</th><td>{{ tmc.invnum or '—' }}</td></tr>
+            <tr><th>Комментарий:</th><td>{{ tmc.comment or '—' }}</td></tr>
+        </table>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Организация и местоположение</h5>
+        <table class="table table-borderless">
+            <tr><th>Организация:</th><td>{{ tmc.org.name if tmc.org else '—' }}</td></tr>
+            <tr><th>Место:</th><td>{{ tmc.places.name if tmc.places else '—' }}</td></tr>
+            <tr><th>Ответственный:</th><td>{{ tmc.users.login if tmc.users else '—' }}</td></tr>
+            <tr><th>Подразделение:</th><td>{{ tmc.department.name if tmc.department else '—' }}</td></tr>
+        </table>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Финансы и статус</h5>
+        <table class="table table-borderless">
+            <tr><th>Первоначальная стоимость:</th><td>{{ "{:,.2f}".format(tmc.cost) }} руб.</td></tr>
+            <tr><th>Текущая стоимость:</th><td>{{ "{:,.2f}".format(tmc.currentcost) }} руб.</td></tr>
+            <tr><th>Основное средство:</th><td>{% if tmc.os %}Да{% else %}Нет{% endif %}</td></tr>
+            <tr><th>В ремонте:</th><td>{% if tmc.repair %}Да{% else %}Нет{% endif %}</td></tr>
+            <tr><th>Активен:</th><td>{% if tmc.active %}Да{% else %}Нет{% endif %}</td></tr>
+        </table>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Даты</h5>
+        <table class="table table-borderless">
+            <tr><th>Дата постановки на учёт:</th><td>{{ tmc.datepost.strftime('%d.%m.%Y %H:%M') if tmc.datepost else '—' }}</td></tr>
+            <tr><th>Гарантия до:</th><td>{{ tmc.dtendgar.strftime('%d.%m.%Y') if tmc.dtendgar else '—' }}</td></tr>
+        </table>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Поставщик</h5>
+        <p>{{ tmc.knt.name if tmc.knt else 'Не указан' }}</p>
+    </div>
+</div>
+
+{% if tmc.photo %}
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Фото</h5>
+        <img src="{{ url_for('static', filename='uploads/' + tmc.photo) }}" 
+             alt="Фото ТМЦ" 
+             class="img-thumbnail" 
+             style="max-width: 300px; max-height: 300px;">
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

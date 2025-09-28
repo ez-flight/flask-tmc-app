@@ -1,0 +1,47 @@
+<!-- templates/edit_nome.html -->
+{% extends "base.html" %}
+
+{% block title %}Редактировать наименование{% endblock %}
+
+{% block content %}
+<h1>Редактировать наименование</h1>
+<form method="POST" enctype="multipart/form-data">
+    <div class="mb-3">
+        <label for="name" class="form-label">Наименование *</label>
+        <input type="text" class="form-control" id="name" name="name" value="{{ nome.name }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label for="groupid" class="form-label">Группа *</label>
+        <select class="form-select" id="groupid" name="groupid" required>
+            {% for group in groups %}
+                <option value="{{ group.id }}" {% if group.id == nome.groupid %}selected{% endif %}>{{ group.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label for="vendorid" class="form-label">Производитель *</label>
+        <select class="form-select" id="vendorid" name="vendorid" required>
+            {% for vendor in vendors %}
+                <option value="{{ vendor.id }}" {% if vendor.id == nome.vendorid %}selected{% endif %}>{{ vendor.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label for="photo" class="form-label">Фото наименования (необязательно)</label>
+        <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
+        {% if nome.photo %}
+            <div class="mt-2">
+                <img src="{{ url_for('static', filename='uploads/' + nome.photo) }}" 
+                     alt="Текущее фото" 
+                     style="max-width: 100px; max-height: 100px; object-fit: contain;">
+            </div>
+        {% endif %}
+    </div>
+
+    <button type="submit" class="btn btn-primary">Сохранить</button>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">Отмена</a>
+</form>
+{% endblock %}

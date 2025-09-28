@@ -1,47 +1,61 @@
 <!-- templates/list_by_nome.html -->
 {% extends "base.html" %}
-
 {% block title %}Детали: {{ nome.name }}{% endblock %}
-
 {% block content %}
 <h1>Детали наименования: "{{ nome.name }}"</h1>
 <p class="lead">Всего: {{ tmc_list|length }} шт.</p>
-
 <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">← Назад к сводному списку</a>
-<a href="{{ url_for('add_tmc') }}" class="btn btn-primary mb-3">Добавить новый ТМЦ</a>
+<a href="{{ url_for('add_tmc', nome_id=nome.id) }}" class="btn btn-primary mb-3">Добавить новый ТМЦ</a>
 <a href="{{ url_for('bulk_edit_nome', nome_id=nome.id) }}" class="btn btn-primary mb-3">Групповое редактирование</a>
-
 {% if tmc_list %}
     <div class="table-responsive">
         <table class="table table-striped">
             <thead>
                 <tr>
-                    <th>ID</th>
-                    <th>Организация</th>
                     <th>Место</th>
-                    <th>Ответственный</th>
                     <th>Серийный №</th>
                     <th>Инв. №</th>
                     <th>Стоимость</th>
-                    <th>ОС</th>
-                    <th>Гарантия до</th>
-                    <th>Поставщик</th>
+                    <th>Срок службы до</th>
+                    <th>Комментарий</th>
+                    <th>Паспорт</th>
                     <th>Действия</th>
                 </tr>
             </thead>
             <tbody>
                 {% for tmc in tmc_list %}
                 <tr>
-                    <td>{{ tmc.id }}</td>
-                    <td>{{ tmc.org.name if tmc.org else '—' }}</td>
                     <td>{{ tmc.places.name if tmc.places else '—' }}</td>
-                    <td>{{ tmc.users.login if tmc.users else '—' }}</td>
                     <td>{{ tmc.sernum or '—' }}</td>
                     <td>{{ tmc.invnum or '—' }}</td>
-                    <td>{{ tmc.cost }} руб.</td>
-                    <td>{% if tmc.os %}Да{% else %}Нет{% endif %}</td>
-                    <td>{{ tmc.dtendgar.strftime('%d.%m.%Y') if tmc.dtendgar else '—' }}</td>
-                    <td>{{ tmc.knt.name if tmc.knt else '—' }}</td>
+                    <td>{{ "{:,.2f}".format(tmc.cost) }} руб.</td>
+                    <td
+                        {% if tmc.dtendlife %}
+                            {% set today = now_date or date.today() %}
+                            {% if tmc.dtendgar and tmc.dtendgar >= today %}
+                                style="background-color: #d4edda; color: #155724;"  <!-- зелёный -->
+                            {% elif tmc.dtendlife >= today %}
+                                style="background-color: #fff3cd; color: #856404;"  <!-- жёлтый -->
+                            {% else %}
+                                style="background-color: #f8d7da; color: #721c24;"  <!-- красный -->
+                            {% endif %}
+                        {% endif %}
+                    >
+                        {{ tmc.dtendlife.strftime('%d.%m.%Y') if tmc.dtendlife else '—' }}
+                    </td>
+                    <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                        title="{{ tmc.comment or '' }}">
+                        {{ tmc.comment or '—' }}
+                    </td>
+                    <td>
+                        {% if tmc.passport_filename %}
+                            <a href="{{ url_for('static', filename='uploads/' + tmc.passport_filename) }}" target="_blank">
+                                📄 Паспорт 
+                            </a>
+                        {% else %}
+                            <em>нет</em>
+                        {% endif %}
+                    </td>
                     <td>
                         <a href="{{ url_for('info_tmc', tmc_id=tmc.id) }}" class="btn btn-info btn-sm">Подробно</a>
                         <a href="{{ url_for('edit_tmc', tmc_id=tmc.id) }}" class="btn btn-sm btn-outline-secondary">Редактировать</a>

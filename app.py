@@ -77,15 +77,20 @@ def load_user(user_id):
 
 UPLOAD_FOLDER = os.path.join('static', 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
+ALLOWED_DOCUMENT_EXTENSIONS = {'pdf'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 МБ максимум
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
-def allowed_file(filename):
-    """Проверяет, разрешено ли расширение файла."""
+
+"""Проверяет, разрешено ли расширение файла."""
+def allowed_image(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def allowed_document(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() == 'pdf'
 
 
 # === ОДНОКРАТНОЕ СОЗДАНИЕ ТАБЛИЦ ===
@@ -155,9 +160,21 @@ def index():
 @app.route('/add', methods=['GET', 'POST'])
 @login_required
 def add_tmc():
+    # Получаем nome_id из URL-параметра (если есть)
+    nome_id = request.args.get('nome_id', type=int)
+    preselected_nome = None
+    preselected_group = None
+    preselected_vendor = None
+
+    if nome_id:
+        preselected_nome = Nome.query.get_or_404(nome_id)
+        preselected_group = GroupNome.query.get(preselected_nome.groupid)
+        preselected_vendor = Vendor.query.get(preselected_nome.vendorid)
+
     """Добавление нового ТМЦ."""
     if request.method == 'POST':
         # Получаем данные формы
+        nomeid = int(request.form['nomeid'])
         buhname = request.form['buhname']
         sernum = request.form.get('sernum', '')
         invnum = request.form.get('invnum', '')
@@ -175,12 +192,24 @@ def add_tmc():
         photo_filename = ''
         if 'photo' in request.files:
             file = request.files['photo']
-            if file and file.filename != '' and allowed_file(file.filename):
+            if file and file.filename != '' and allowed_image(file.filename):
                 filename = secure_filename(file.filename)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                 ext = filename.rsplit('.', 1)[1].lower()
                 photo_filename = f"{timestamp}.{ext}"
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
+        
+        # Обработка паспорта
+        passport_filename = ''
+        if 'passport' in request.files:
+            file = request.files['passport']
+            if file and file.filename != '':
+                if not allowed_document(file.filename):
+                    flash('Файл паспорта должен быть в формате PDF (с расширением .pdf)', 'danger')
+                    return redirect(request.url)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                passport_filename = f"passport_{timestamp}.pdf"
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], passport_filename))
 
         # Получаем kntid из формы или устанавливаем None
         kntid = request.form.get('kntid')
@@ -198,10 +227,12 @@ def add_tmc():
             nomeid=nomeid,
             department_id=department_id,
             photo=photo_filename,
-            kntid=kntid,  # Теперь используем полученное значение
-            # Временные значения для обязательных полей — перезапишем ниже
+            passport_filename=passport_filename,
+            kntid=kntid,
+            # Временные значения — будут перезаписаны ниже
             datepost=datetime.utcnow(),
             dtendgar=datetime.utcnow().date(),
+            dtendlife=datetime.utcnow().date(),  # ← ДОБАВЛЕНО
             cost=0,
             currentcost=0,
             os=False,
@@ -218,29 +249,21 @@ def add_tmc():
 
         # === Теперь корректно обрабатываем даты ===
         date_start_str = request.form.get('date_start')
-        dtendgar_str = request.form.get('dtendgar')
 
-        # Устанавливаем дату начала (datepost)
         if date_start_str:
             date_start = datetime.strptime(date_start_str, '%Y-%m-%d')
             new_tmc.datepost = date_start
-        # Иначе остаётся datetime.utcnow() (уже задано при создании)
-
-        # Устанавливаем дату окончания гарантии (dtendgar)
-        if dtendgar_str:
-            # Если указана вручную — используем её
-            new_tmc.dtendgar = datetime.strptime(dtendgar_str, '%Y-%m-%d').date()
-        elif date_start_str:
-            # Если указана дата начала — рассчитываем +5 лет
-            new_tmc.dtendgar = (date_start + relativedelta(years=5)).date()
-        # Иначе остаётся значение по умолчанию (уже задано при создании)
+            # Автоматически рассчитываем гарантию (+1 год) и срок службы (+5 лет)
+            new_tmc.dtendgar = (date_start + relativedelta(years=1)).date()
+            new_tmc.dtendlife = (date_start + relativedelta(years=5)).date()
+        # Если дата не указана — остаются значения по умолчанию (сегодня)
 
         try:
             db.session.add(new_tmc)
             db.session.commit()
             flash('ТМЦ успешно добавлен!', 'success')
             return redirect(url_for('index'))
-        except IntegrityError:
+        except IntegrityError as e:
             db.session.rollback()
             flash('Ошибка при сохранении: нарушено ограничение целостности данных', 'danger')
             return redirect(url_for('add_tmc'))
@@ -249,15 +272,17 @@ def add_tmc():
     organizations = Org.query.all()
     places = Places.query.all()
     users = Users.query.all()
-    groups = GroupNome.query.filter_by(active=True).all()
     departments = Department.query.filter_by(active=True).all()
+
     return render_template('add_tmc.html',
                            organizations=organizations,
                            places=places,
                            users=users,
-                           groups=groups,
-                           departments=departments)
-
+                           departments=departments,
+                           datetime=datetime,
+                           preselected_nome=preselected_nome,
+                           preselected_group=preselected_group,
+                           preselected_vendor=preselected_vendor)
 
 @app.route('/edit/<int:tmc_id>', methods=['GET', 'POST'])
 @login_required
@@ -278,7 +303,7 @@ def edit_tmc(tmc_id):
         # Обработка фото
         if 'photo' in request.files:
             file = request.files['photo']
-            if file and file.filename != '' and allowed_file(file.filename):
+            if file and file.filename != '' and allowed_image(file.filename):
                 # Удаляем старое фото, если оно больше нигде не используется
                 if tmc.photo:
                     old_path = os.path.join(app.config['UPLOAD_FOLDER'], tmc.photo)
@@ -296,8 +321,71 @@ def edit_tmc(tmc_id):
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
                 tmc.photo = photo_filename
 
-        # Исправлено: убрано дублирующее присваивание tmc.nomeid
+        # Обработка паспорта при редактировании
+        if 'passport' in request.files:
+            file = request.files['passport']
+            if file and file.filename != '':
+                if not allowed_document(file.filename):
+                    flash('Файл паспорта должен быть в формате PDF (с расширением .pdf)', 'danger')
+                    return redirect(request.url)
+        
+                # Удаляем старый паспорт, если он есть и нигде больше не используется
+                if tmc.passport_filename:
+                    old_path = os.path.join(app.config['UPLOAD_FOLDER'], tmc.passport_filename)
+                    if os.path.exists(old_path):
+                        other = Equipment.query.filter(
+                            Equipment.passport_filename == tmc.passport_filename,
+                            Equipment.id != tmc.id
+                        ).first()
+                        if not other:
+                            os.remove(old_path)
+
+                # Генерируем новое имя и сохраняем ТОЛЬКО если файл загружен
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                passport_filename = f"passport_{timestamp}.pdf"
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], passport_filename))
+                tmc.passport_filename = passport_filename
+
+        # else: файл не выбран — ничего не делаем, оставляем старое значение
+
+         # Исправлено: убрано дублирующее присваивание tmc.nomeid
         tmc.nomeid = int(request.form['nomeid'])
+
+        # === Обработка дат ===
+        date_start_str = request.form.get('date_start')
+        dtendgar_str = request.form.get('dtendgar')
+        dtendlife_str = request.form.get('dtendlife')  # если будет поле ввода
+
+        if date_start_str:
+            date_start = datetime.strptime(date_start_str, '%Y-%m-%d')
+            tmc.datepost = date_start  # ← основная дата
+            # Автоматический пересчёт гарантии и срока службы
+            if not dtendgar_str:
+                tmc.dtendgar = (date_start + relativedelta(years=1)).date()
+            if not dtendlife_str:
+                tmc.dtendlife = (date_start + relativedelta(years=5)).date()
+
+
+        # Если дата гарантии указана вручную — сохраняем её
+        if dtendgar_str:
+            tmc.dtendgar = datetime.strptime(dtendgar_str, '%Y-%m-%d').date()
+
+        # Если дата срока службы указана вручную — сохраняем её
+        if dtendlife_str:
+            tmc.dtendlife = datetime.strptime(dtendlife_str, '%Y-%m-%d').date()
+
+        if request.form.get('delete_passport'):
+            if tmc.passport_filename:
+                old_path = os.path.join(app.config['UPLOAD_FOLDER'], tmc.passport_filename)
+                if os.path.exists(old_path):
+                    # Проверяем, используется ли файл у других ТМЦ
+                    other = Equipment.query.filter(
+                        Equipment.passport_filename == tmc.passport_filename,
+                        Equipment.id != tmc_id
+                    ).first()
+                    if not other:
+                        os.remove(old_path)
+                tmc.passport_filename = None  # Очищаем поле в БД
 
         db.session.commit()
         flash('ТМЦ успешно обновлён!', 'success')
@@ -421,7 +509,7 @@ def edit_nome(nome_id):
         # Обработка фото
         if 'photo' in request.files:
             file = request.files['photo']
-            if file and file.filename != '' and allowed_file(file.filename):
+            if file and file.filename != '' and allowed_image(file.filename):
                 filename = secure_filename(file.filename)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                 ext = filename.rsplit('.', 1)[1].lower()
@@ -458,7 +546,7 @@ def bulk_edit_nome(nome_id):
             # Обработка фото для группы
             if 'nome_photo' in request.files:
                 file = request.files['nome_photo']
-                if file and file.filename != '' and allowed_file(file.filename):
+                if file and file.filename != '' and allowed_image(file.filename):
                     filename = secure_filename(file.filename)
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                     ext = filename.rsplit('.', 1)[1].lower()
@@ -537,13 +625,64 @@ def list_by_nome(nome_id):
     # Мы просто передаем список, а связанные объекты будем получать через отношения в шаблоне
     # (или через отдельные запросы, если связи не настроены)
     
-    return render_template('list_by_nome.html', nome=nome, tmc_list=tmc_list)
+    return render_template('list_by_nome.html', 
+                           nome=nome, 
+                           tmc_list=tmc_list,
+                           now_date=date.today())  # ← добавлено
 
 @app.route('/info_tmc/<int:tmc_id>')
 @login_required
 def info_tmc(tmc_id):
     tmc = Equipment.query.get_or_404(tmc_id)
     return render_template('info_tmc.html', tmc=tmc)
+
+@app.route('/add_nome', methods=['GET', 'POST'])
+@login_required
+def add_nome():
+    """Добавление нового наименования (группы ТМЦ)."""
+    if request.method == 'POST':
+        name = request.form['name'].strip()
+        group_id = int(request.form['groupid'])
+        vendor_id = int(request.form['vendorid'])
+
+        if not name:
+            flash('Наименование не может быть пустым', 'danger')
+            return redirect(url_for('add_nome'))
+
+        # Проверка на дубликат
+        existing = Nome.query.filter_by(groupid=group_id, vendorid=vendor_id, name=name).first()
+        if existing:
+            flash('Такое наименование уже существует в этой группе и у этого производителя', 'warning')
+            return redirect(url_for('add_nome'))
+
+        new_nome = Nome(
+            groupid=group_id,
+            vendorid=vendor_id,
+            name=name,
+            active=True,
+            photo=''
+        )
+
+        # Обработка фото (опционально)
+        if 'photo' in request.files:
+            file = request.files['photo']
+            if file and file.filename != '' and allowed_image(file.filename):
+                filename = secure_filename(file.filename)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                ext = filename.rsplit('.', 1)[1].lower()
+                photo_filename = f"{timestamp}.{ext}"
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
+                new_nome.photo = photo_filename
+
+        db.session.add(new_nome)
+        db.session.commit()
+        flash('Новое наименование успешно добавлено!', 'success')
+        return redirect(url_for('index'))
+
+    # GET: отображаем форму
+    groups = GroupNome.query.filter_by(active=True).all()
+    vendors = Vendor.query.filter_by(active=True).all()
+    return render_template('add_nome.html', groups=groups, vendors=vendors)
 
 # === ЗАПУСК ПРИЛОЖЕНИЯ ===
 

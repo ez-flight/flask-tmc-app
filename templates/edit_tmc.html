@@ -18,6 +18,13 @@
         <label for="invnum" class="form-label">Инвентарный номер</label>
         <input type="text" class="form-control" id="invnum" name="invnum" value="{{ tmc.invnum }}">
     </div>
+    <!-- Дата начала эксплуатации -->
+    <div class="mb-3">
+        <label for="date_start" class="form-label">Дата начала эксплуатации *</label>
+        <input type="date" class="form-control" id="date_start" name="date_start"
+               value="{{ tmc.datepost.strftime('%Y-%m-%d') if tmc.datepost else '' }}" required>
+        <div class="form-text">Укажите дату постановки ТМЦ на учёт. На её основе будут рассчитаны гарантия (+1 год) и срок службы (+5 лет).</div>
+    </div>
     <div class="mb-3">
         <label for="comment" class="form-label">Комментарий</label>
         <textarea class="form-control" id="comment" name="comment" rows="3">{{ tmc.comment }}</textarea>
@@ -32,6 +39,22 @@
                 </option>
             {% endfor %}
         </select>
+    </div>
+    <div class="mb-3">
+        <label for="passport" class="form-label">Паспорт ТМЦ (PDF)</label>
+        <input type="file" class="form-control" id="passport" name="passport" accept=".pdf">
+        {% if tmc.passport_filename %}
+            <div class="mt-2">
+                Текущий паспорт: 
+                <a href="{{ url_for('static', filename='uploads/' + tmc.passport_filename) }}" target="_blank">📄 Открыть</a>
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" id="delete_passport" name="delete_passport" value="1">
+                    <label class="form-check-label" for="delete_passport">
+                        Удалить паспорт
+                    </label>
+                </div>
+            </div>
+        {% endif %}
     </div>
     <div class="mb-3">
         <label for="photo" class="form-label">Фотография (необязательно)</label>
@@ -155,6 +178,7 @@
         </div>
     </div>
 </div>
+
 
 <script>
 function loadVendors() {

@@ -4,10 +4,14 @@
 Интегрируется с существующей БД `webuseorg3`, включая совместимость с оригинальной
 системой хеширования паролей: SHA1(salt + password)., пока что работает только наоборот
 """
-
+from dateutil.relativedelta import relativedelta
+from datetime import datetime, date
 import os
 import hashlib
-from datetime import datetime
+from sqlalchemy import func
+from flask_sqlalchemy import SQLAlchemy
+from decimal import Decimal, InvalidOperation
+
 
 from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, url_for
@@ -15,7 +19,8 @@ from werkzeug.utils import secure_filename
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 
 # Модели базы данных (должны быть определены в models.py)
-from models import Equipment, Nome, Org, Places, Users, db, GroupNome, Vendor, Department
+from flask_migrate import Migrate
+from models import Equipment, Nome, Org, Places, Users, db, GroupNome, Vendor, Department, Knt
 
 # Загружаем переменные окружения из .env
 load_dotenv()
@@ -25,6 +30,9 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'fallback-secret-key-for-dev')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db.init_app(app)
+migrate = Migrate(app, db)  # ← ЭТА СТРОКА ОБЯЗАТЕЛЬНА!
+
 
 # Инициализация Flask-Login
 login_manager = LoginManager()
@@ -63,11 +71,6 @@ def check_password(plain_password: str, salt: str, hashed_password: str) -> bool
 def load_user(user_id):
     """Загружает пользователя по ID для Flask-Login."""
     return Users.query.get(int(user_id))
-
-
-# === ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ ===
-
-db.init_app(app)
 
 
 # === НАСТРОЙКИ ЗАГРУЗКИ ФАЙЛОВ ===
@@ -129,18 +132,24 @@ def logout():
     return response
 
 
+
 @app.route('/')
 @login_required
 def index():
-    """Главная страница — список ТМЦ."""
-    # Исправлено: type=int, а не type='int'
-    dept_id = request.args.get('dept_id', type=int)
-    if dept_id:
-        tmc_list = Equipment.query.filter_by(department_id=dept_id).all()
-    else:
-        tmc_list = Equipment.query.all()
-    departments = Department.query.filter_by(active=True).all()
-    return render_template('index.html', tmc_list=tmc_list, departments=departments)
+    # Группируем по nomeid и подсчитываем количество
+    query = db.session.query(
+        Equipment.nomeid,
+        Nome.name.label('nome_name'),
+        func.count(Equipment.id).label('quantity'),
+        Nome.photo.label('nome_photo')  # Берем фото из таблицы nome
+    ).join(Nome, Equipment.nomeid == Nome.id)\
+     .filter(Equipment.active == True) \
+     .group_by(Equipment.nomeid, Nome.name, Nome.photo)\
+     .order_by(Nome.name)
+
+    grouped_tmc = query.all()
+
+    return render_template('index.html', grouped_tmc=grouped_tmc)
 
 
 @app.route('/add', methods=['GET', 'POST'])
@@ -162,6 +171,7 @@ def add_tmc():
         department_id = request.form.get('department_id')
         department_id = int(department_id) if department_id else None
 
+        # Обработка фото
         photo_filename = ''
         if 'photo' in request.files:
             file = request.files['photo']
@@ -169,10 +179,14 @@ def add_tmc():
                 filename = secure_filename(file.filename)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                 ext = filename.rsplit('.', 1)[1].lower()
-                # Исправлено: используем `ext`, а не полное имя файла
                 photo_filename = f"{timestamp}.{ext}"
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
 
+        # Получаем kntid из формы или устанавливаем None
+        kntid = request.form.get('kntid')
+        kntid = int(kntid) if kntid else None
+
+        # === СОЗДАЁМ ОБЪЕКТ СРАЗУ ===
         new_tmc = Equipment(
             buhname=buhname,
             sernum=sernum,
@@ -184,11 +198,52 @@ def add_tmc():
             nomeid=nomeid,
             department_id=department_id,
             photo=photo_filename,
+            kntid=kntid,  # Теперь используем полученное значение
+            # Временные значения для обязательных полей — перезапишем ниже
+            datepost=datetime.utcnow(),
+            dtendgar=datetime.utcnow().date(),
+            cost=0,
+            currentcost=0,
+            os=False,
+            mode=False,
+            repair=False,
+            active=True,
+            ip='',
+            mapx='',
+            mapy='',
+            mapmoved=0,
+            mapyet=False,
+            tmcgo=0,
         )
-        db.session.add(new_tmc)
-        db.session.commit()
-        flash('ТМЦ успешно добавлен!', 'success')
-        return redirect(url_for('index'))
+
+        # === Теперь корректно обрабатываем даты ===
+        date_start_str = request.form.get('date_start')
+        dtendgar_str = request.form.get('dtendgar')
+
+        # Устанавливаем дату начала (datepost)
+        if date_start_str:
+            date_start = datetime.strptime(date_start_str, '%Y-%m-%d')
+            new_tmc.datepost = date_start
+        # Иначе остаётся datetime.utcnow() (уже задано при создании)
+
+        # Устанавливаем дату окончания гарантии (dtendgar)
+        if dtendgar_str:
+            # Если указана вручную — используем её
+            new_tmc.dtendgar = datetime.strptime(dtendgar_str, '%Y-%m-%d').date()
+        elif date_start_str:
+            # Если указана дата начала — рассчитываем +5 лет
+            new_tmc.dtendgar = (date_start + relativedelta(years=5)).date()
+        # Иначе остаётся значение по умолчанию (уже задано при создании)
+
+        try:
+            db.session.add(new_tmc)
+            db.session.commit()
+            flash('ТМЦ успешно добавлен!', 'success')
+            return redirect(url_for('index'))
+        except IntegrityError:
+            db.session.rollback()
+            flash('Ошибка при сохранении: нарушено ограничение целостности данных', 'danger')
+            return redirect(url_for('add_tmc'))
 
     # GET: отображаем форму
     organizations = Org.query.all()
@@ -354,6 +409,141 @@ def add_nomenclature():
     db.session.commit()
     return {'success': True, 'id': new_nome.id, 'name': new_nome.name}
 
+@app.route('/edit_nome/<int:nome_id>', methods=['GET', 'POST'])
+def edit_nome(nome_id):
+    nome = Nome.query.get_or_404(nome_id)
+
+    if request.method == 'POST':
+        nome.name = request.form['name']
+        nome.groupid = int(request.form['groupid'])
+        nome.vendorid = int(request.form['vendorid'])
+
+        # Обработка фото
+        if 'photo' in request.files:
+            file = request.files['photo']
+            if file and file.filename != '' and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                ext = filename.rsplit('.', 1)[1].lower()
+                photo_filename = f"{timestamp}.{ext}"
+                file.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
+                nome.photo = photo_filename
+
+        db.session.commit()
+        flash('Наименование успешно обновлено!', 'success')
+        return redirect(url_for('index'))
+
+    # Для GET: передаем данные для выпадающих списков
+    groups = GroupNome.query.filter_by(active=True).all()
+    vendors = Vendor.query.filter_by(active=True).all()
+
+    return render_template('edit_nome.html', nome=nome, groups=groups, vendors=vendors)
+
+@app.route('/bulk_edit_nome/<int:nome_id>', methods=['GET', 'POST'])
+def bulk_edit_nome(nome_id):
+    # Получаем все ТМЦ с этим nomeid
+    tmc_list = Equipment.query.filter_by(nomeid=nome_id).all()
+    if not tmc_list:
+        flash('Нет ТМЦ с таким наименованием.', 'warning')
+        return redirect(url_for('index'))
+    
+    # Получаем объект Nome для обновления фото
+    nome = Nome.query.get_or_404(nome_id)
+    
+    # Получаем данные для выпадающего списка поставщиков
+    suppliers = Knt.query.filter_by(active=1).all()
+
+    if request.method == 'POST':
+        try:
+            # Обработка фото для группы
+            if 'nome_photo' in request.files:
+                file = request.files['nome_photo']
+                if file and file.filename != '' and allowed_file(file.filename):
+                    filename = secure_filename(file.filename)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                    ext = filename.rsplit('.', 1)[1].lower()
+                    photo_filename = f"{timestamp}.{ext}"
+                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
+                    
+                    # Удаляем старое фото, если оно больше нигде не используется
+                    if nome.photo:
+                        old_path = os.path.join(app.config['UPLOAD_FOLDER'], nome.photo)
+                        if os.path.exists(old_path):
+                            # Проверяем, используется ли фото где-то еще
+                            other = Equipment.query.filter(
+                                Equipment.photo == nome.photo
+                            ).first()
+                            if not other:
+                                os.remove(old_path)
+                    
+                    nome.photo = photo_filename
+            
+            cost_str = request.form.get('cost', '').strip()
+            currentcost_str = request.form.get('currentcost', '').strip()
+            
+            cost = Decimal(cost_str) if cost_str else Decimal('0')
+            currentcost = Decimal(currentcost_str) if currentcost_str else Decimal('0')
+            
+            is_os = bool(request.form.get('os'))
+            kntid = request.form.get('kntid')
+            kntid = int(kntid) if kntid and kntid.isdigit() else None
+            
+            date_start_str = request.form.get('date_start')
+            dtendgar_str = request.form.get('dtendgar')
+            
+            for tmc in tmc_list:
+                tmc.cost = cost
+                tmc.currentcost = currentcost
+                tmc.os = is_os
+                tmc.kntid = kntid
+                
+                if date_start_str:
+                    tmc.datepost = datetime.strptime(date_start_str, '%Y-%m-%d')
+                
+                if dtendgar_str:
+                    tmc.dtendgar = datetime.strptime(dtendgar_str, '%Y-%m-%d').date()
+                elif date_start_str:
+                    start_date = datetime.strptime(date_start_str, '%Y-%m-%d')
+                    tmc.dtendgar = (start_date + relativedelta(years=5)).date()
+            
+            db.session.commit()
+            flash(f'Групповое редактирование успешно выполнено для {len(tmc_list)} ТМЦ!', 'success')
+            return redirect(url_for('index'))
+
+        except (ValueError, InvalidOperation) as e:
+            flash('Ошибка: Некорректный формат данных. Проверьте стоимость (например: 123.45) и даты (в формате ГГГГ-ММ-ДД).', 'danger')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Произошла ошибка при сохранении: {str(e)}', 'danger')
+
+    # Для GET-запроса: предзаполняем форму данными из первого ТМЦ
+    first_tmc = tmc_list[0]
+    return render_template('bulk_edit_nome.html', 
+                    nome_id=nome_id,
+                    nome_name=tmc_list[0].nome.name if tmc_list[0].nome else "Неизвестно",
+                    tmc_count=len(tmc_list),
+                    first_tmc=first_tmc,
+                    suppliers=suppliers)
+
+
+@app.route('/list_by_nome/<int:nome_id>')
+def list_by_nome(nome_id):
+    # Получаем наименование
+    nome = Nome.query.get_or_404(nome_id)
+    # Получаем все ТМЦ этого типа
+    tmc_list = Equipment.query.filter_by(nomeid=nome_id).all()
+    
+    # Для отображения связанных данных (организация, место и т.д.)
+    # Мы просто передаем список, а связанные объекты будем получать через отношения в шаблоне
+    # (или через отдельные запросы, если связи не настроены)
+    
+    return render_template('list_by_nome.html', nome=nome, tmc_list=tmc_list)
+
+@app.route('/info_tmc/<int:tmc_id>')
+@login_required
+def info_tmc(tmc_id):
+    tmc = Equipment.query.get_or_404(tmc_id)
+    return render_template('info_tmc.html', tmc=tmc)
 
 # === ЗАПУСК ПРИЛОЖЕНИЯ ===
 

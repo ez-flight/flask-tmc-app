@@ -3,8 +3,8 @@
 # Модели описывают структуру таблиц в базе данных и их взаимосвязи.
 # Используется в связке с Flask-SQLAlchemy и Flask-Login.
 
-from datetime import datetime
-
+from datetime import datetime, date
+from decimal import Decimal
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 
@@ -19,36 +19,43 @@ class Equipment(db.Model):
     """
     __tablename__ = 'equipment'
 
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)  # Уникальный идентификатор записи
-    orgid = db.Column(db.Integer, nullable=False)                     # ID организации, к которой относится оборудование
-    placesid = db.Column(db.Integer, nullable=False)                  # ID места размещения (офис, склад и т.д.)
-    usersid = db.Column(db.Integer, nullable=False)                   # ID ответственного пользователя
-    nomeid = db.Column(db.Integer, nullable=False)                    # ID наименования из справочника nome
-    buhname = db.Column(db.String(255), nullable=False)               # Бухгалтерское наименование оборудования
-    datepost = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)  # Дата добавления записи
-    cost = db.Column(db.Integer, nullable=False, default=0)           # Первоначальная стоимость (в условных единицах)
-    currentcost = db.Column(db.Integer, nullable=False, default=0)    # Текущая остаточная стоимость
-    sernum = db.Column(db.String(100), nullable=True, default='')     # Серийный номер
-    invnum = db.Column(db.String(100), nullable=True, default='')     # Инвентарный номер
-    shtrihkod = db.Column(db.String(50), nullable=True, default='')   # Штрихкод
-    os = db.Column(db.Boolean, nullable=False, default=False)         # Является ли объектом основных средств (ОС)
-    mode = db.Column(db.Boolean, nullable=False, default=False)       # Режим эксплуатации (например, тестовый/боевой)
-    comment = db.Column(db.Text, nullable=True, default='')           # Дополнительные комментарии
-    photo = db.Column(db.String(255), nullable=True, default='')      # Путь к фото оборудования
-    repair = db.Column(db.Boolean, nullable=False, default=False)     # Находится ли в ремонте
-    active = db.Column(db.Boolean, nullable=False, default=True)      # Активно ли оборудование (не списано)
-    ip = db.Column(db.String(100), nullable=True, default='')         # IP-адрес (если применимо)
-    mapx = db.Column(db.String(8), nullable=True, default='')         # Координата X на карте размещения
-    mapy = db.Column(db.String(8), nullable=True, default='')         # Координата Y на карте размещения
-    mapmoved = db.Column(db.Integer, nullable=False, default=0)       # Счётчик перемещений по карте
-    mapyet = db.Column(db.Boolean, nullable=False, default=False)     # Отмечено ли на карте
-    kntid = db.Column(db.Integer, nullable=False, default=0)          # Идентификатор контрагента (поставщика)
-    dtendgar = db.Column(db.Date, nullable=False, default=datetime.utcnow)  # Дата окончания гарантии
-    tmcgo = db.Column(db.Integer, nullable=False, default=0)          # Код ТМЦ (товарно-материальных ценностей)
-    department_id = db.Column(db.Integer, db.ForeignKey('department.id'), nullable=True)  # Связь с отделом
-    date_start = db.Column(db.Date, nullable=False, default=datetime.utcnow)  # Дата начала эксплуатации
-    invoice_file = db.Column(db.String(255), nullable=False, default='')      # Путь к файлу накладной
-    passport_file = db.Column(db.String(255), nullable=False, default='')     # Путь к файлу паспорта/документации
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    orgid = db.Column(db.Integer, db.ForeignKey('org.id'), nullable=False)
+    placesid = db.Column(db.Integer, db.ForeignKey('places.id'), nullable=False)
+    usersid = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    nomeid = db.Column(db.Integer, db.ForeignKey('nome.id'), nullable=False)
+    buhname = db.Column(db.String(255), nullable=False)
+    datepost = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    cost = db.Column(db.DECIMAL(precision=12, scale=2), nullable=False, default=Decimal('0.00'))
+    currentcost = db.Column(db.DECIMAL(precision=12, scale=2), nullable=False, default=Decimal('0.00'))
+    sernum = db.Column(db.String(100), nullable=True, default='')
+    invnum = db.Column(db.String(100), nullable=True, default='')
+    shtrihkod = db.Column(db.String(50), nullable=True, default='')
+    os = db.Column(db.Boolean, nullable=False, default=False)
+    mode = db.Column(db.Boolean, nullable=False, default=False)
+    comment = db.Column(db.Text, nullable=True, default='')
+    photo = db.Column(db.String(255), nullable=True, default='')
+    repair = db.Column(db.Boolean, nullable=False, default=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    ip = db.Column(db.String(100), nullable=True, default='')
+    mapx = db.Column(db.String(8), nullable=True, default='')
+    mapy = db.Column(db.String(8), nullable=True, default='')
+    mapmoved = db.Column(db.Integer, nullable=False, default=0)
+    mapyet = db.Column(db.Boolean, nullable=False, default=False)
+    kntid = db.Column(db.Integer, db.ForeignKey('knt.id'), nullable=True, default = None)  # ← ИСПРАВЛЕНО
+    dtendgar = db.Column(db.Date, nullable=False, default=datetime.utcnow().date)
+    tmcgo = db.Column(db.Integer, nullable=False, default=0)
+    department_id = db.Column(db.Integer, db.ForeignKey('department.id'), nullable=True)
+    date_start = db.Column(db.Date, nullable=False, default=date.today)
+    invoice_file = db.Column(db.String(255), nullable=False, default='')
+    passport_file = db.Column(db.String(255), nullable=False, default='')
+
+    # Связи
+    org = db.relationship('Org', backref='equipment')
+    places = db.relationship('Places', backref='equipment')
+    users = db.relationship('Users', backref='equipment')
+    knt = db.relationship('Knt', backref='equipment')
+    nome = db.relationship('Nome', backref='equipment')
 
     def __repr__(self):
         return f'<Equipment {self.id}: {self.buhname}>'
@@ -73,6 +80,27 @@ class Places(db.Model):
     orgid = db.Column(db.Integer, nullable=False)                     # ID связанной организации
     name = db.Column(db.String(150), nullable=False)                  # Название места
     active = db.Column(db.Boolean, nullable=False)                    # Активно ли место
+
+class Knt(db.Model):
+    """
+    Поставщики — справочник.
+    """
+    __tablename__ = 'knt'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(100), nullable=False)
+    comment = db.Column(db.Text, nullable=False)
+    active = db.Column(db.Boolean, nullable=False)
+    fullname = db.Column(db.String(200), nullable=False)
+    ERPCode = db.Column(db.Integer, nullable=False)
+    INN = db.Column(db.String(20), nullable=False)
+    KPP = db.Column(db.String(20), nullable=False)
+    bayer = db.Column(db.Integer, nullable=False)
+    supplier = db.Column(db.Integer, nullable=False)
+    dog = db.Column(db.Integer, nullable=False)
+
+    def __repr__(self):
+        return f'<Knt {self.id}: {self.name}>'
 
 
 class Users(db.Model, UserMixin):
@@ -128,6 +156,7 @@ class Nome(db.Model):
     vendorid = db.Column(db.Integer, db.ForeignKey('vendor.id'), nullable=False)  # Связь с производителем
     name = db.Column(db.String(200), nullable=False)                  # Название наименования
     active = db.Column(db.Boolean, nullable=False)                    # Активно ли наименование
+    photo = db.Column(db.String(255), nullable=False, default='')     # Фото
 
 
 class Department(db.Model):

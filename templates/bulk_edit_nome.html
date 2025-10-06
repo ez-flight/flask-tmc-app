@@ -38,25 +38,47 @@
        <input type="file" class="form-control" id="nome_photo" name="nome_photo" accept="image/*">
     </div>
 
-    <!-- Гарантийный срок и дата начала эксплуатации -->
+    <!-- Гарантийный срок, дата начала и срок эксплуатации -->
     <div class="mb-3">
-        <label class="form-label">Гарантия</label>
+        <label class="form-label">Сроки эксплуатации</label>
         <div class="row g-2">
-            <div class="col-md-6">
-                <label for="date_start" class="form-label">Дата начала эксплуатации</label>
-                <input type="date" class="form-control" id="date_start" name="date_start" 
+            <div class="col-md-4">
+                <label for="date_start" class="form-label">Дата начала</label>
+                <input type="date" class="form-control" id="date_start" name="date_start"
                        value="{{ first_tmc.datepost.strftime('%Y-%m-%d') if first_tmc.datepost else '' }}">
             </div>
-            <div class="col-md-6">
-                <label for="dtendgar" class="form-label">Гарантийный срок (окончание)</label>
-                <input type="date" class="form-control" id="dtendgar" name="dtendgar" 
+            <div class="col-md-4">
+                <label for="dtendgar" class="form-label">Гарантия до</label>
+                <input type="date" class="form-control" id="dtendgar" name="dtendgar"
                        value="{{ first_tmc.dtendgar.strftime('%Y-%m-%d') if first_tmc.dtendgar else '' }}">
+            </div>
+            <div class="col-md-4">
+                <label for="dtendlife" class="form-label">Срок службы до</label>
+                <input type="date" class="form-control" id="dtendlife" name="dtendlife"
+                       value="{{ first_tmc.dtendlife.strftime('%Y-%m-%d') if first_tmc.dtendlife else '' }}">
             </div>
         </div>
         <div class="form-text">
-            Если указать «Дата начала», то «Гарантийный срок» можно оставить пустым — он будет рассчитан автоматически (+5 лет).
+            Если указать «Дата начала», то при пустых полях:
+            <ul class="mb-0">
+                <li>«Гарантия до» = +1 год,</li>
+                <li>«Срок службы до» = +5 лет.</li>
+            </ul>
         </div>
     </div>
+    
+    <!-- Добавлен блок общего комментария -->
+    <div class="mb-3">
+    <label for="comment" class="form-label">Общий комментарий</label>
+    <textarea class="form-control" id="comment" name="comment" rows="3">{{ nome.comment}}</textarea>
+    
+    <div class="form-check mt-2">
+        <input class="form-check-input" type="checkbox" id="apply_to_tmc" name="apply_to_tmc">
+        <label class="form-check-label" for="apply_to_tmc">
+            Применить комментарий ко всем {{ tmc_count }} ТМЦ
+        </label>
+    </div>
+</div>
 
     <div class="mb-3">
         <label for="kntid" class="form-label">Поставщик</label>

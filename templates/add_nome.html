@@ -1,17 +1,13 @@
 <!-- templates/add_nome.html -->
 {% extends "base.html" %}
-
 {% block title %}Добавить новую группу ТМЦ{% endblock %}
-
 {% block content %}
 <h1>Добавить новую группу ТМЦ</h1>
-
 <form method="POST" enctype="multipart/form-data">
     <div class="mb-3">
         <label for="name" class="form-label">Наименование *</label>
         <input type="text" class="form-control" id="name" name="name" required>
     </div>
-
     <div class="mb-3">
         <label for="groupid" class="form-label">Группа *</label>
         <select class="form-select" id="groupid" name="groupid" required>
@@ -21,7 +17,6 @@
             {% endfor %}
         </select>
     </div>
-
     <div class="mb-3">
         <label for="vendorid" class="form-label">Производитель *</label>
         <select class="form-select" id="vendorid" name="vendorid" required>
@@ -30,14 +25,35 @@
                 <option value="{{ vendor.id }}">{{ vendor.name }}</option>
             {% endfor %}
         </select>
+    </div> 
+    <!-- Новые поля для первого ТМЦ -->
+    <div class="mb-3">
+        <label for="date_start" class="form-label">Дата постановки на учет *</label>
+        <input type="date" class="form-control" id="date_start" name="date_start" required>
     </div>
-
+    <div class="mb-3">
+        <label for="placesid" class="form-label">Место установки *</label>
+        <select class="form-select" id="placesid" name="placesid" required>
+            <option value="">-- Выберите место --</option>
+            {% for place in places %}
+                <option value="{{ place.id }}">{{ place.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label for="sernum" class="form-label">Серийный номер (опционально)</label>
+        <input type="text" class="form-control" id="sernum" name="sernum">
+    </div>
+    <div class="mb-3">
+        <label for="invnum" class="form-label">Инвентарный номер (опционально)</label>
+        <input type="text" class="form-control" id="invnum" name="invnum">
+    </div>
     <div class="mb-3">
         <label for="photo" class="form-label">Фото (опционально)</label>
         <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
     </div>
-
-    <button type="submit" class="btn btn-success">Добавить наименование</button>
+    
+    <button type="submit" class="btn btn-success">Добавить группу и первое ТМЦ</button>
     <a href="{{ url_for('index') }}" class="btn btn-secondary">Отмена</a>
 </form>
 {% endblock %}

@@ -130,10 +130,10 @@ class GroupNome(db.Model):
     """
     Группы наименований — категории для классификации оборудования (например, "Компьютеры", "Мебель").
     """
-    __tablename__ = 'group_nome'
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(255), nullable=False)                  # Название группы
-    active = db.Column(db.Boolean, nullable=False, default=True)      # Активна ли группа
+    name = db.Column(db.String(255), nullable=False)
+    comment = db.Column(db.Text, nullable=True)  # Добавляем поле comment
+    active = db.Column(db.Boolean, nullable=False, default=True)
 
 
 class Vendor(db.Model):
@@ -153,11 +153,15 @@ class Nome(db.Model):
     """
     __tablename__ = 'nome'
     id = db.Column(db.Integer, primary_key=True)
-    groupid = db.Column(db.Integer, nullable=False)                   # ID группы наименований
-    vendorid = db.Column(db.Integer, db.ForeignKey('vendor.id'), nullable=False)  # Связь с производителем
-    name = db.Column(db.String(200), nullable=False)                  # Название наименования
-    active = db.Column(db.Boolean, nullable=False)                    # Активно ли наименование
-    photo = db.Column(db.String(255), nullable=False, default='')     # Фото
+    groupid = db.Column(db.Integer, db.ForeignKey('group_nome.id'), nullable=False)  # Изменяем ForeignKey
+    vendorid = db.Column(db.Integer, db.ForeignKey('vendor.id'), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    active = db.Column(db.Boolean, nullable=False)
+    photo = db.Column(db.String(255), nullable=False, default='')
+    comment = db.Column(db.Text, nullable=True)  # Text позволяет хранить большие текстовые
+    
+    # Добавляем отношение
+    group = db.relationship('GroupNome', backref='nomes')
 
 
 class Department(db.Model):

@@ -235,7 +235,7 @@ def add_tmc():
             dtendlife=datetime.utcnow().date(),  # ← ДОБАВЛЕНО
             cost=0,
             currentcost=0,
-            os=False,
+            os=True,
             mode=False,
             repair=False,
             active=True,
@@ -389,7 +389,7 @@ def edit_tmc(tmc_id):
 
         db.session.commit()
         flash('ТМЦ успешно обновлён!', 'success')
-        return redirect(url_for('index'))
+        return redirect(url_for('list_by_nome', nome_id=tmc.nomeid))
 
     # GET: подготовка данных для формы
     organizations = Org.query.all()
@@ -534,13 +534,10 @@ def bulk_edit_nome(nome_id):
     if not tmc_list:
         flash('Нет ТМЦ с таким наименованием.', 'warning')
         return redirect(url_for('index'))
-    
     # Получаем объект Nome для обновления фото
     nome = Nome.query.get_or_404(nome_id)
-    
     # Получаем данные для выпадающего списка поставщиков
     suppliers = Knt.query.filter_by(active=1).all()
-
     if request.method == 'POST':
         try:
             # Обработка фото для группы
@@ -552,83 +549,89 @@ def bulk_edit_nome(nome_id):
                     ext = filename.rsplit('.', 1)[1].lower()
                     photo_filename = f"{timestamp}.{ext}"
                     file.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
-                    
                     # Удаляем старое фото, если оно больше нигде не используется
                     if nome.photo:
                         old_path = os.path.join(app.config['UPLOAD_FOLDER'], nome.photo)
                         if os.path.exists(old_path):
-                            # Проверяем, используется ли фото где-то еще
-                            other = Equipment.query.filter(
-                                Equipment.photo == nome.photo
-                            ).first()
+                            other = Equipment.query.filter(Equipment.photo == nome.photo).first()
                             if not other:
                                 os.remove(old_path)
-                    
                     nome.photo = photo_filename
-            
             cost_str = request.form.get('cost', '').strip()
             currentcost_str = request.form.get('currentcost', '').strip()
-            
             cost = Decimal(cost_str) if cost_str else Decimal('0')
             currentcost = Decimal(currentcost_str) if currentcost_str else Decimal('0')
-            
             is_os = bool(request.form.get('os'))
             kntid = request.form.get('kntid')
             kntid = int(kntid) if kntid and kntid.isdigit() else None
             
+            # === НОВЫЕ ПОЛЯ ===
             date_start_str = request.form.get('date_start')
             dtendgar_str = request.form.get('dtendgar')
+            dtendlife_str = request.form.get('dtendlife')
+            # Получаем комментарий из формы
+            comment = request.form.get('comment', '').strip()
+            apply_to_tmc = request.form.get('apply_to_tmc') is not None
             
+            # Сохраняем комментарий для модели Nome
+            nome.comment = comment if comment else None
+            
+            nome.comment = comment or None  # Добавляем эту строку
             for tmc in tmc_list:
                 tmc.cost = cost
                 tmc.currentcost = currentcost
                 tmc.os = is_os
                 tmc.kntid = kntid
+                # Устанавливаем комментарий
+                # Применяем комментарий к ТМЦ, если выбрана галочка
+                if apply_to_tmc:
+                    tmc.comment = comment if comment else None
                 
                 if date_start_str:
-                    tmc.datepost = datetime.strptime(date_start_str, '%Y-%m-%d')
-                
-                if dtendgar_str:
-                    tmc.dtendgar = datetime.strptime(dtendgar_str, '%Y-%m-%d').date()
-                elif date_start_str:
                     start_date = datetime.strptime(date_start_str, '%Y-%m-%d')
-                    tmc.dtendgar = (start_date + relativedelta(years=5)).date()
-            
+                    tmc.datepost = start_date
+                    # Гарантия: если не задана — +1 год
+                    if not dtendgar_str:
+                        tmc.dtendgar = (start_date + relativedelta(years=1)).date()
+                    else:
+                        tmc.dtendgar = datetime.strptime(dtendgar_str, '%Y-%m-%d').date()
+                    # Срок службы: если не задан — +5 лет
+                    if not dtendlife_str:
+                        tmc.dtendlife = (start_date + relativedelta(years=5)).date()
+                    else:
+                        tmc.dtendlife = datetime.strptime(dtendlife_str, '%Y-%m-%d').date()
+                else:
+                    # Если дата начала не указана — сохраняем только то, что вручную задано
+                    if dtendgar_str:
+                        tmc.dtendgar = datetime.strptime(dtendgar_str, '%Y-%m-%d').date()
+                    if dtendlife_str:  # ← ИСПРАВЛЕНО
+                        tmc.dtendlife = datetime.strptime(dtendlife_str, '%Y-%m-%d').date()
             db.session.commit()
             flash(f'Групповое редактирование успешно выполнено для {len(tmc_list)} ТМЦ!', 'success')
             return redirect(url_for('index'))
-
         except (ValueError, InvalidOperation) as e:
             flash('Ошибка: Некорректный формат данных. Проверьте стоимость (например: 123.45) и даты (в формате ГГГГ-ММ-ДД).', 'danger')
         except Exception as e:
             db.session.rollback()
             flash(f'Произошла ошибка при сохранении: {str(e)}', 'danger')
-
     # Для GET-запроса: предзаполняем форму данными из первого ТМЦ
     first_tmc = tmc_list[0]
-    return render_template('bulk_edit_nome.html', 
-                    nome_id=nome_id,
-                    nome_name=tmc_list[0].nome.name if tmc_list[0].nome else "Неизвестно",
-                    tmc_count=len(tmc_list),
-                    first_tmc=first_tmc,
-                    suppliers=suppliers)
-
+    return render_template('bulk_edit_nome.html',
+                       nome=nome,  # ← ОБЯЗАТЕЛЬНО добавьте эту строку
+                       nome_id=nome_id,
+                       nome_name=nome.name,  # можно упростить, так как nome точно существует
+                       tmc_count=len(tmc_list),
+                       first_tmc=first_tmc,
+                       suppliers=suppliers)
 
 @app.route('/list_by_nome/<int:nome_id>')
 def list_by_nome(nome_id):
-    # Получаем наименование
     nome = Nome.query.get_or_404(nome_id)
-    # Получаем все ТМЦ этого типа
     tmc_list = Equipment.query.filter_by(nomeid=nome_id).all()
-    
-    # Для отображения связанных данных (организация, место и т.д.)
-    # Мы просто передаем список, а связанные объекты будем получать через отношения в шаблоне
-    # (или через отдельные запросы, если связи не настроены)
-    
     return render_template('list_by_nome.html', 
-                           nome=nome, 
-                           tmc_list=tmc_list,
-                           now_date=date.today())  # ← добавлено
+                          nome=nome, 
+                          tmc_list=tmc_list,
+                          now_date=date.today())
 
 @app.route('/info_tmc/<int:tmc_id>')
 @login_required
@@ -639,22 +642,36 @@ def info_tmc(tmc_id):
 @app.route('/add_nome', methods=['GET', 'POST'])
 @login_required
 def add_nome():
-    """Добавление нового наименования (группы ТМЦ)."""
+    """Добавление нового наименования (группы ТМЦ) с первым ТМЦ."""
     if request.method == 'POST':
         name = request.form['name'].strip()
         group_id = int(request.form['groupid'])
         vendor_id = int(request.form['vendorid'])
-
         if not name:
             flash('Наименование не может быть пустым', 'danger')
             return redirect(url_for('add_nome'))
-
+            
         # Проверка на дубликат
         existing = Nome.query.filter_by(groupid=group_id, vendorid=vendor_id, name=name).first()
         if existing:
             flash('Такое наименование уже существует в этой группе и у этого производителя', 'warning')
             return redirect(url_for('add_nome'))
-
+        
+        # Сохраняем данные для первого ТМЦ
+        date_start_str = request.form.get('date_start')
+        placesid = int(request.form.get('placesid', 0))
+        sernum = request.form.get('sernum', '')
+        invnum = request.form.get('invnum', '')
+        
+        # Проверяем обязательные поля для ТМЦ
+        if not date_start_str:
+            flash('Дата постановки на учет обязательна', 'danger')
+            return redirect(url_for('add_nome'))
+        if placesid <= 0:
+            flash('Место установки обязательно', 'danger')
+            return redirect(url_for('add_nome'))
+        
+        # Создаем новое наименование
         new_nome = Nome(
             groupid=group_id,
             vendorid=vendor_id,
@@ -662,7 +679,7 @@ def add_nome():
             active=True,
             photo=''
         )
-
+        
         # Обработка фото (опционально)
         if 'photo' in request.files:
             file = request.files['photo']
@@ -673,16 +690,71 @@ def add_nome():
                 photo_filename = f"{timestamp}.{ext}"
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
                 new_nome.photo = photo_filename
-
-        db.session.add(new_nome)
-        db.session.commit()
-        flash('Новое наименование успешно добавлено!', 'success')
-        return redirect(url_for('index'))
-
+        
+        try:
+            # Добавляем новое наименование
+            db.session.add(new_nome)
+            db.session.commit()
+            
+            # Создаем первое ТМЦ для этой группы
+            date_start = datetime.strptime(date_start_str, '%Y-%m-%d')
+            dtendgar = (date_start + relativedelta(years=1)).date()
+            dtendlife = (date_start + relativedelta(years=5)).date()
+            
+            # Получаем организацию пользователя
+            orgid = current_user.orgid
+            
+            # Создаем новое ТМЦ
+            new_tmc = Equipment(
+                buhname=name,  # Имя как у названия группы
+                sernum=sernum,
+                invnum=invnum,
+                comment='Создано автоматически при добавлении группы',
+                orgid=orgid,
+                placesid=placesid,
+                usersid=current_user.id,
+                nomeid=new_nome.id,
+                department_id=None,
+                photo='',
+                passport_filename='',
+                kntid=None,
+                datepost=date_start,
+                dtendgar=dtendgar,
+                dtendlife=dtendlife,
+                cost=0,
+                currentcost=0,
+                os=True,
+                mode=False,
+                repair=False,
+                active=True,
+                ip='',
+                mapx='',
+                mapy='',
+                mapmoved=0,
+                mapyet=False,
+                tmcgo=0,
+            )
+            
+            db.session.add(new_tmc)
+            db.session.commit()
+            
+            flash('Новое наименование и первое ТМЦ успешно добавлены!', 'success')
+            return redirect(url_for('list_by_nome', nome_id=new_nome.id))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Ошибка при добавлении: {str(e)}', 'danger')
+            return redirect(url_for('add_nome'))
+    
     # GET: отображаем форму
     groups = GroupNome.query.filter_by(active=True).all()
     vendors = Vendor.query.filter_by(active=True).all()
-    return render_template('add_nome.html', groups=groups, vendors=vendors)
+    places = Places.query.filter_by(active=True).all()
+    
+    return render_template('add_nome.html', 
+                          groups=groups, 
+                          vendors=vendors, 
+                          places=places)
 
 # === ЗАПУСК ПРИЛОЖЕНИЯ ===
 

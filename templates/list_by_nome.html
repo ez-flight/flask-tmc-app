@@ -7,6 +7,15 @@
 <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">← Назад к сводному списку</a>
 <a href="{{ url_for('add_tmc', nome_id=nome.id) }}" class="btn btn-primary mb-3">Добавить новый ТМЦ</a>
 <a href="{{ url_for('bulk_edit_nome', nome_id=nome.id) }}" class="btn btn-primary mb-3">Групповое редактирование</a>
+
+<!-- ДОБАВЛЯЕМ БЛОК ДЛЯ КОММЕНТАРИЯ САМОЙ МОДЕЛИ -->
+{% if nome.comment %}
+    <div class="alert alert-primary mb-4">
+        <strong>Комментарий к группе ТМЦ:</strong><br>
+        {{ nome.comment}}
+    </div>
+{% endif %}
+
 {% if tmc_list %}
     <div class="table-responsive">
         <table class="table table-striped">

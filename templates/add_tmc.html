@@ -52,7 +52,7 @@
         {% if tmc and tmc.passport_filename %}
            <div class="mt-2">
                 Текущий паспорт: 
-                <a href="{{ url_for('static', filename='uploads/' + tmc.passport_filename) }}" target="_blank">📄 Открыть</a>
+                <a href="{{ url_for('static', filename='passports/' + tmc.passport_filename) }}" target="_blank">📄 Открыть</a>
             </div>
         {% endif %}
     </div>

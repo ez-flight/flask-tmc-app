@@ -1,0 +1,73 @@
+<!-- templates/invoice_detail.html -->
+{% extends "base.html" %}
+{% block title %}Накладная №{{ invoice.invoice_number }}{% endblock %}
+{% block content %}
+<h1>Накладная №{{ invoice.invoice_number }} от {{ invoice.invoice_date.strftime('%d.%m.%Y') }}</h1>
+
+<!-- НОВЫЙ БЛОК -->
+<div class="alert alert-info">
+  <strong>Количество ТМЦ:</strong> {{ tmc_count }} шт.<br>
+  <strong>Общая стоимость:</strong> {{ "{:,.2f}".format(total_cost)|replace(',', ' ') }} ₽
+</div>
+<div class="mb-3">
+  <a href="javascript:history.back()" class="btn btn-secondary">← Назад</a>
+  <a href="{{ url_for('edit_invoice', invoice_id=invoice.id) }}" class="btn btn-warning">✏️ Редактировать</a>
+  <form method="POST" action="{{ url_for('delete_invoice', invoice_id=invoice.id) }}" style="display:inline;" onsubmit="return confirm('Вы уверены, что хотите удалить накладную? Это действие нельзя отменить.');">
+    <button type="submit" class="btn btn-danger">🗑️ Удалить</button>
+  </form>
+  {% if invoice.pdf_path %}
+    <a href="{{ url_for('static', filename=invoice.pdf_path.split('/uploads/')[-1]) }}" target="_blank" class="btn btn-primary">📄 Открыть PDF</a>
+  {% endif %}
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <h5>Основная информация</h5>
+    <p><strong>Тип:</strong> {{ invoice.type }}</p>
+    <p><strong>Отдел:</strong> {{ invoice.department.name if invoice.department else '—' }}</p>
+
+    <h5>Участники</h5>
+    {% if invoice.type == 'Склад-МОЛ' %}
+      <p><strong>Откуда (склад):</strong> {{ invoice.from_knt.name if invoice.from_knt else '—' }}</p>
+      <p><strong>Кому (МОЛ):</strong> {{ invoice.to_user.login if invoice.to_user else '—' }}</p>
+    {% elif invoice.type == 'МОЛ-Склад' %}
+      <p><strong>От кого (МОЛ):</strong> {{ invoice.from_user.login if invoice.from_user else '—' }}</p>
+      <p><strong>Куда (склад):</strong> {{ invoice.to_knt.name if invoice.to_knt else '—' }}</p>
+    {% elif invoice.type == 'МОЛ-МОЛ' %}
+      <p><strong>От кого:</strong> {{ invoice.from_user.login if invoice.from_user else '—' }}</p>
+      <p><strong>Кому:</strong> {{ invoice.to_user.login if invoice.to_user else '—' }}</p>
+    {% endif %}
+  </div>
+</div>
+
+<h3>Оборудование в накладной</h3>
+{% if invoice.invoice_equipment %}
+  <div class="table-responsive">
+    <table class="table table-bordered table-striped">
+      <thead class="table-light">
+        <tr>
+          <th>Наименование</th>
+          <th>Серийный №</th>
+          <th>Инвентарный №</th>
+          <th>Стоимость</th>  <!-- ← ДОБАВЛЕНА СТОИМОСТЬ -->
+          <th>Комментарий</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ie in invoice.invoice_equipment %}
+          <tr style="cursor: pointer;" onclick="window.location='{{ url_for('info_tmc', tmc_id=ie.equipment.id) }}'">
+            <td>{{ ie.equipment.nome.name if ie.equipment.nome else ie.equipment.buhname }}</td>
+            <td>{{ ie.equipment.sernum or '—' }}</td>
+            <td>{{ ie.equipment.invnum or '—' }}</td>
+            <td>{{ "{:,.2f}".format(ie.equipment.cost) }} ₽</td>  <!-- ← ДОБАВЛЕНО ЗНАЧЕНИЕ -->
+            <td>{{ ie.equipment.comment or '—' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="text-muted">Нет оборудования.</p>
+{% endif %}
+
+{% endblock %}

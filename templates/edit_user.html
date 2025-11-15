@@ -1,0 +1,105 @@
+<!-- templates/edit_user.html -->
+{% extends "base.html" %}
+
+{% block title %}Редактировать пользователя: {{ user.login }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Редактировать пользователя: {{ user.login }}</h2>
+    <h2>{{ user_login }}</h2>
+</div>
+
+{% if is_admin %}
+<div class="alert alert-info" role="alert">
+    <strong>Вы администратор.</strong> У вас полный доступ к системе.
+</div>
+<a href="{{ url_for('manage_users') }}" class="btn btn-secondary mb-3">← Назад к списку пользователей</a>
+{% endif %}
+
+<form method="POST" enctype="multipart/form-data"> <!-- Добавлен enctype для загрузки файлов -->
+    <div class="mb-3">
+        <label for="login" class="form-label">Логин *</label>
+        <input type="text" class="form-control" id="login" name="login" value="{{ user.login }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label for="fio" class="form-label">ФИО</label>
+        <input type="text" class="form-control" id="fio" name="fio" value="{{ user_profile.fio if user_profile else '' }}">
+    </div>
+    
+    <div class="mb-3">
+        <label for="orgid" class="form-label">ID Организации</label>
+        {% if orgs %}
+        <select class="form-select" id="orgid" name="orgid">
+            {% for org in orgs %}
+            <option value="{{ org.id }}" {% if user.orgid == org.id %}selected{% endif %}>{{ org.name }} ({{ org.id }})</option>
+            {% endfor %}
+        </select>
+        {% else %}
+        <input type="number" class="form-control" id="orgid" name="orgid" value="{{ user.orgid }}" min="1" required>
+        {% endif %}
+    </div>
+
+<!-- Активность и Администратор — в одной строке -->
+<div class="row mb-3">
+  <div class="col form-check">
+    <input type="checkbox" class="form-check-input" id="active" name="active" {% if user.active %}checked{% endif %}>
+    <label class="form-check-label" for="active">Активен</label>
+  </div>
+  <div class="col form-check">
+    <input type="checkbox" class="form-check-input" id="is_admin" name="is_admin" {% if user.mode == 1 %}checked{% endif %}>
+    <label class="form-check-label" for="is_admin">Администратор</label>
+  </div>
+</div>
+
+<!-- Роли от 0 до 10 в выпадающем списке -->
+<div class="mb-3">
+  <label for="role" class="form-label">Роль пользователя</label>
+  <select class="form-select" id="role" name="role">
+    <option value="0" {% if current_role == 0 %}selected{% endif %}>0 - Обычный пользователь</option>
+    <option value="1" {% if current_role == 1 %}selected{% endif %}>1 - МОЛ (материально-ответственное лицо)</option>
+    <option value="2" {% if current_role == 2 %}selected{% endif %}>2 - Пользователь (получил ТМЦ во временное пользование)</option>
+    <option value="3" {% if current_role == 3 %}selected{% endif %}>3 - Инженер</option>
+    <option value="4" {% if current_role == 4 %}selected{% endif %}>4 - Менеджер по закупкам</option>
+    <option value="5" {% if current_role == 5 %}selected{% endif %}>5 - Руководитель отдела</option>
+    <option value="6" {% if current_role == 6 %}selected{% endif %}>6 - Сотрудник склада</option>
+    <option value="7" {% if current_role == 7 %}selected{% endif %}>7 - IT-специалист</option>
+    <option value="8" {% if current_role == 8 %}selected{% endif %}>8 - Аудитор</option>
+    <option value="9" {% if current_role == 9 %}selected{% endif %}>9 - Заместитель директора</option>
+    <option value="10" {% if current_role == 10 %}selected{% endif %}>10 - Директор</option>
+  </select>
+  <div class="form-text">Выберите роль пользователя в системе.</div>
+</div>
+
+    <div class="mb-3">
+        <label for="password" class="form-label">Новый пароль (оставьте пустым, чтобы не менять)</label>
+        <input type="password" class="form-control" id="password" name="password" placeholder="Введите новый пароль...">
+        <div class="form-text">Если вы хотите изменить пароль, введите его здесь. Иначе оставьте поле пустым.</div>
+    </div>
+
+    <!-- --- НОВОЕ: Поле для загрузки фото --- -->
+    <div class="mb-3">
+        <label for="photo" class="form-label">Новое фото профиля</label>
+        <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
+        <div class="form-text">Выберите изображение для обновления аватара пользователя. Оставьте пустым, чтобы не менять.</div>
+    </div>
+
+    {% if user_profile and user_profile.jpegphoto %}
+    <div class="mb-3">
+        <label class="form-label">Текущее фото профиля</label><br>
+        {% if user_profile.jpegphoto != 'noimage.jpg' %}
+            <img src="{{ url_for('static', filename='uploads/' + user_profile.jpegphoto) }}" alt="Текущее фото {{ user.login }}" width="100" class="img-thumbnail">
+        {% else %}
+            <img src="{{ url_for('static', filename='uploads/noimage.jpg') }}" alt="Нет фото" width="100" class="img-thumbnail">
+        {% endif %}
+    </div>
+    {% endif %}
+    <!-- --- КОНЕЦ НОВОГО --- -->
+
+    <!-- Поля lastlogin, sessionid, passw обычно не редактируются пользователем -->
+
+    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+    <a href="{{ url_for('manage_users') }}" class="btn btn-secondary">Отмена</a>
+</form>
+
+{% endblock %}

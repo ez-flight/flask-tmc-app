@@ -1,0 +1,130 @@
+<!-- templates/edit_component.html -->
+{% extends "base.html" %}
+{% block title %}Редактировать комплектующее{% endblock %}
+{% block content %}
+<h1>Редактировать комплектующее</h1>
+<form method="POST" enctype="multipart/form-data">
+    <div class="mb-3">
+        <label for="buhname" class="form-label">Наименование *</label>
+        <input type="text" class="form-control" id="buhname" name="buhname" value="{{ tmc.buhname }}" required>
+    </div>
+    <div class="mb-3">
+        <label for="sernum" class="form-label">Серийный номер</label>
+        <input type="text" class="form-control" id="sernum" name="sernum" value="{{ tmc.sernum }}">
+    </div>
+    <div class="mb-3">
+        <label for="invnum" class="form-label">Инвентарный номер</label>
+        <input type="text" class="form-control" id="invnum" name="invnum" value="{{ tmc.invnum }}">
+    </div>
+    <div class="mb-3">
+        <label for="comment" class="form-label">Комментарий</label>
+        <textarea class="form-control" id="comment" name="comment" rows="3">{{ tmc.comment }}</textarea>
+    </div>
+    <div class="mb-3">
+        <label for="department_id" class="form-label">Отдел</label>
+        <select class="form-select" id="department_id" name="department_id">
+            <option value="">-- Не выбрано --</option>
+            {% for dept in departments %}
+                <option value="{{ dept.id }}" {% if tmc and tmc.department_id == dept.id %}selected{% endif %}>
+                    {{ dept.name }} ({{ dept.code }})
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label for="photo" class="form-label">Фотография (необязательно)</label>
+        <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
+        {% if tmc.photo %}
+            <div class="mt-2">
+                <img src="{{ url_for('static', filename='uploads/' + tmc.photo) }}"
+                     alt="Текущее фото"
+                     style="max-width: 100px; max-height: 100px; object-fit: contain; border: 1px solid #dee2e6; border-radius: 4px;">
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" id="delete_photo" name="delete_photo" value="1">
+                    <label class="form-check-label" for="delete_photo">
+                        Удалить фото
+                    </label>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Организация -->
+    <div class="mb-3">
+        <label for="orgid" class="form-label">Организация *</label>
+        <select class="form-select" id="orgid" name="orgid" required>
+            <option value="">-- Выберите организацию --</option>
+            {% for org in organizations %}
+                {% if org.active %}
+                    <option value="{{ org.id }}" {% if org.id == tmc.orgid %}selected{% endif %}>{{ org.name }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Место нахождения -->
+    <div class="mb-3">
+        <label for="placesid" class="form-label">Место нахождения *</label>
+        <select class="form-select" id="placesid" name="placesid" required>
+            <option value="">-- Выберите место --</option>
+            {% for place in places %}
+                {% if place.active %}
+                    <option value="{{ place.id }}" {% if place.id == tmc.placesid %}selected{% endif %}>{{ place.name }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Ответственный пользователь -->
+    <div class="mb-3">
+        <label for="usersid" class="form-label">Ответственный пользователь *</label>
+        <select class="form-select" id="usersid" name="usersid" required>
+            <option value="">-- Выберите пользователя --</option>
+            {% for user in users %}
+                {% if user.active %}
+                    <option value="{{ user.id }}" {% if user.id == tmc.usersid %}selected{% endif %}>{{ user.login }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Группа ТМЦ (только для отображения, не редактируется) -->
+    <div class="mb-3">
+        <label class="form-label">Тип комплектующего</label>
+        <div class="form-control" readonly>{{ current_group.name }}</div>
+    </div>
+
+    <!-- Производитель (только для отображения, не редактируется) -->
+    <div class="mb-3">
+        <label class="form-label">Производитель</label>
+        <div class="form-control" readonly>{{ current_vendor.name }}</div>
+    </div>
+
+    <!-- Наименование (только для отображения, не редактируется) -->
+    <div class="mb-3">
+        <label class="form-label">Наименование (Номенклатура)</label>
+        <div class="form-control" readonly>{{ current_nome.name }}</div>
+    </div>
+
+    <!-- Привязка к основному средству -->
+    <div class="mb-3">
+        <label for="main_asset_id" class="form-label">Привязать к основному средству (опционально)</label>
+        <select class="form-select" id="main_asset_id" name="main_asset_id">
+            <option value="">— Не привязывать —</option>
+            {% for asset in main_assets %}
+                <option value="{{ asset.id }}" {% if linked_main_asset_id == asset.id %}selected{% endif %}>
+                    {{ asset.buhname }} ({{ asset.sernum or 'б/н' }})
+                </option>
+            {% endfor %}
+        </select>
+        {% if linked_main_asset_id %}
+            <div class="form-text text-muted">
+                Текущая привязка: <a href="{{ url_for('info_tmc', tmc_id=linked_main_asset_id) }}">(просмотр)</a>
+            </div>
+        {% endif %}
+    </div>
+
+    <button type="submit" class="btn btn-success">Сохранить изменения</button>
+    <a href="{{ url_for('all_components') }}" class="btn btn-secondary">Отмена</a>
+</form>
+{% endblock %}

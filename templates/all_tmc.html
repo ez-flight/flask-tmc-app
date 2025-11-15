@@ -1,0 +1,161 @@
+<!-- templates/all_tmc.html -->
+{% extends "base.html" %}
+{% block title %}Всё имущество{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h2">Всё имущество</h1>
+        <p class="text-muted">ТМЦ: {{ tmc_count }} шт. | Общая стоимость: {{ "{:,.2f}".format(total_cost) }} руб.</p>
+    </div>
+    <div class="d-flex align-items-center">
+        <span class="me-3">Вы вошли как: <strong>{{ user_login }}</strong></span>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">← На главную</a>
+    </div>
+</div>
+
+<!-- Фильтры -->
+<form method="GET" class="row mb-3">
+    <div class="col-md-4">
+        <label for="userSelect" class="form-label">Фильтр по пользователю:</label>
+        <select id="userSelect" name="user_id" class="form-select" onchange="this.form.submit()">
+            <option value="">Всё имущество</option>
+            {% for user in all_users %}
+                <option value="{{ user.id }}" {% if filter_user_id == user.id %}selected{% endif %}>
+                    {{ user.login }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label for="departmentSelect" class="form-label">Фильтр по отделу:</label>
+        <select id="departmentSelect" name="department_id" class="form-select" onchange="this.form.submit()">
+            <option value="">Все отделы</option>
+            {% for dept in all_departments %}
+                <option value="{{ dept.id }}" {% if filter_department_id == dept.id %}selected{% endif %}>
+                    {{ dept.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label for="categorySelect" class="form-label">Фильтр по категории:</label>
+        <select id="categorySelect" name="category_id" class="form-select" onchange="this.form.submit()">
+            <option value="">Все категории</option>
+            {% for cat in all_categories %}
+                <option value="{{ cat.id }}" {% if filter_category_id == cat.id %}selected{% endif %}>
+                    {{ cat.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+</form>
+
+<!-- Информация для администраторов -->
+{% if is_admin %}
+<div class="alert alert-success d-flex align-items-center" role="alert">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-shield-check me-2" viewBox="0 0 16 16">
+        <path d="M5.338 1.59a6.7 6.7 0 0 1 .683-1.02A12 12 0 0 1 7.875 0q.294.001.59.036a12.04 12.04 0 0 1 2.426.764c.59.272 1.154.59 1.683 1.02l.002.001.27.307c.004.004.008.009.013.015a6.85 6.85 0 0 1 1.11 1.505c.583 1.35 1.173 3.162 1.173 5.06 0 1.898-.59 3.71-1.173 5.06a6.7 6.7 0 0 1-1.11 1.505c-.004.005-.008.01-.013.015l-.27.307a.99.99 0 0 1-.013.015c-.005.005-.009.009-.014.013l-.08.068-.25.205c-.075.06-.16.09-.26.09z"/>
+        <path d="M12.64 10.051a.717.717 0 0 1-.909-.53 1.5 1.5 0 0 0-2.45-.817.72.72 0 0 1-1.165-.891 3 3 0 0 1 4.602-1.222.717.717 0 0 1 .08 1.208c-1.07.757-1.837 2.254-1.837 4.284 0 1.483.478 2.758 1.18 3.67a.72.72 0 0 1-.598 1.18 4.244 4.244 0 0 1-2.276-.692 6.9 6.9 0 0 1-2.81-2.586.72.72 0 0 1 .788-1.07c.354.374.827.672 1.403.844 1.25.36 2.5-.154 2.5-1.48 0-1.623-1.513-2.717-2.5-2.717a1.5 1.5 0 0 0-1.5 1.5c0 .278.044.55.128.803a.717.717 0 0 1-1.27.85l-.02-.02a1.5 1.5 0 0 0-1.08-1.287c-.897-.23-1.82-.448-2.75-.653a.72.72 0 0 1 .321-1.397c.94.207 1.875.427 2.824.665a2.5 2.5 0 0 1 2.25-1.875c1.56 0 2.91.97 3.39 2.354a.72.72 0 0 1-.44.926 1.5 1.5 0 0 0 .009 2.04c-.586.643-1.367.988-2.179.988-1.573 0-2.875-1.165-2.875-2.5 0-.79.35-1.513.904-2.037a.72.72 0 0 1 1.057.054c.312.35.735.56 1.215.56.82 0 1.558-.53 1.852-1.315a.717.717 0 0 1 1.32.34z"/>
+    </svg>
+    <span>Вы администратор. У вас полный доступ к системе.</span>
+</div>
+{% endif %}
+
+<!-- Кнопки действий -->
+<div class="mb-3">
+    <a href="{{ url_for('index') }}" class="btn btn-secondary me-2">
+        <i class="bi bi-arrow-left me-1"></i>Назад
+    </a>
+    <a href="{{ url_for('add_nome') }}" class="btn btn-success me-2">
+        <i class="bi bi-plus me-1"></i>Добавить группу ТМЦ
+    </a>
+    <a href="#" class="btn btn-info">
+        <i class="bi bi-printer me-1"></i>Накладные
+    </a>
+</div>
+
+<!-- Таблица имущества -->
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col" style="width: 80px;">Фото</th>
+                        <th scope="col">Наименование</th>
+                        <th scope="col" style="width: 100px;">Кол-во</th>
+                        <th scope="col" style="width: 120px;">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if grouped_tmc %}
+                        {% for item in grouped_tmc %}
+                        <tr>
+                            <td>
+                                {% if item.nome_photo %}
+                                    <img src="{{ url_for('static', filename='uploads/' + item.nome_photo) }}" 
+                                         alt="Фото {{ item.nome_name }}" 
+                                         class="img-fluid rounded" 
+                                         style="max-height: 60px; max-width: 60px; object-fit: cover;">
+                                {% else %}
+                                    <img src="{{ url_for('static', filename='uploads/noimage.jpg') }}" 
+                                         alt="Фото {{ item.nome_name }}" 
+                                         class="img-fluid rounded" 
+                                         style="max-height: 60px; max-width: 60px; object-fit: cover;">
+                                {% endif %}
+                            </td>
+                            <td>{{ item.nome_name }}</td>
+                            <td>{{ item.quantity }}</td>
+                            <td>
+                                <a href="{{ url_for('list_by_nome', nome_id=item.nomeid) }}" 
+                                   class="btn btn-sm btn-primary w-100">
+                                   <i class="bi bi-eye me-1"></i>Показать
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center py-5">
+                                <div class="text-muted">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="currentColor" class="bi bi-clipboard-data mb-2" viewBox="0 0 16 16">
+                                        <path d="M4 11a1 1 0 1 1 2 0v1a1 1 0 1 1-2 0v-1zm6-4a1 1 0 1 1 2 0v5a1 1 0 1 1-2 0V7zM7 9a1 1 0 0 1 2 0v1a1 1 0 1 1-2 0v-1z"/>
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-1zM9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                    <h5>Нет данных</h5>
+                                    <p class="mb-0">Нет имущества, соответствующего выбранным фильтрам.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .table-hover > tbody > tr:hover {
+        background-color: #f8f9fa;
+        transition: background-color 0.2s;
+    }
+    .table th {
+        font-weight: 600;
+    }
+    .table-light th {
+        background-color: #f8f9fa;
+        border-bottom: 2px solid #e9ecef;
+    }
+    .btn-primary {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+    }
+    .btn-primary:hover {
+        background-color: #0b5ed7;
+        border-color: #0a58ca;
+    }
+    .card {
+        border: none;
+    }
+</style>
+{% endblock %}

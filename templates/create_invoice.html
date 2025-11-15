@@ -1,0 +1,134 @@
+<!-- templates/create_invoice.html -->
+{% extends "base.html" %}
+{% block title %}Создать накладную{% endblock %}
+
+{% block content %}
+<h1>Создать новую накладную</h1>
+
+<a href="{{ url_for('invoice_list') }}" class="btn btn-secondary mb-3">← Назад к списку</a>
+
+<form method="POST" enctype="multipart/form-data">
+    <div class="row">
+        <!-- Левый столбец -->
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label class="form-label">Номер накладной <span class="text-danger">*</span></label>
+                <input type="text" name="invoice_number" class="form-control" required>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Дата <span class="text-danger">*</span></label>
+                <input type="date" name="invoice_date" class="form-control" value="{{ now_date }}" required>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Отдел</label>
+                <select name="department_id" class="form-select">
+                    <option value="">Не указан</option>
+                    {% for d in departments %}
+                        <option value="{{ d.id }}">{{ d.name }} ({{ d.code }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">PDF-файл накладной <span class="text-danger">*</span></label>
+                <input type="file" name="pdf_file" accept=".pdf" class="form-control" required>
+            </div>
+        </div>
+
+        <!-- Правый столбец -->
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label class="form-label">Тип <span class="text-danger">*</span></label>
+                <select name="type" class="form-select" required>
+                    <option value="">-- Выберите --</option>
+                    <option value="Склад-МОЛ">Склад → МОЛ</option>
+                    <option value="МОЛ-МОЛ">МОЛ → МОЛ</option>
+                    <option value="МОЛ-Склад">МОЛ → Склад</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">От кого</label>
+                <div id="from_user_wrapper" class="field-wrapper">
+                    <select name="from_user_id" class="form-select">
+                        <option value="">-- Выберите МОЛ --</option>
+                        {% for u in users %}
+                            <option value="{{ u.id }}">{{ u.login }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="from_knt_wrapper" class="field-wrapper mt-2" style="display: none;">
+                    <select name="from_knt_id" class="form-select">
+                        <option value="">-- Выберите склад --</option>
+                        {% for k in warehouses %}
+                            <option value="{{ k.id }}">{{ k.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Кому</label>
+                <div id="to_user_wrapper" class="field-wrapper">
+                    <select name="to_user_id" class="form-select">
+                        <option value="">-- Выберите МОЛ --</option>
+                        {% for u in users %}
+                            <option value="{{ u.id }}">{{ u.login }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="to_knt_wrapper" class="field-wrapper mt-2" style="display: none;">
+                    <select name="to_knt_id" class="form-select">
+                        <option value="">-- Выберите склад --</option>
+                        {% for k in warehouses %}
+                            <option value="{{ k.id }}">{{ k.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Создать накладную</button>
+</form>
+
+<script>
+  document.querySelector('select[name="type"]').addEventListener('change', function() {
+    const type = this.value;
+
+    // Все обёртки
+    const fromUserWrap = document.getElementById('from_user_wrapper');
+    const fromKntWrap = document.getElementById('from_knt_wrapper');
+    const toUserWrap = document.getElementById('to_user_wrapper');
+    const toKntWrap = document.getElementById('to_knt_wrapper');
+
+    // Скрываем все
+    fromUserWrap.style.display = 'none';
+    fromKntWrap.style.display = 'none';
+    toUserWrap.style.display = 'none';
+    toKntWrap.style.display = 'none';
+
+    // Показываем нужные в зависимости от типа
+    if (type === 'Склад-МОЛ') {
+      fromKntWrap.style.display = 'block';
+      toUserWrap.style.display = 'block';
+    } else if (type === 'МОЛ-Склад') {
+      fromUserWrap.style.display = 'block';
+      toKntWrap.style.display = 'block';
+    } else if (type === 'МОЛ-МОЛ') {
+      fromUserWrap.style.display = 'block';
+      toUserWrap.style.display = 'block';
+    }
+  });
+
+  // Инициализация при загрузке (если нужно — например, если форма перезагружается с ошибкой)
+  document.addEventListener('DOMContentLoaded', function() {
+    const typeSelect = document.querySelector('select[name="type"]');
+    if (typeSelect.value) {
+      typeSelect.dispatchEvent(new Event('change'));
+    }
+  });
+</script>
+{% endblock %}

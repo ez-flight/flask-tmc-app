@@ -1,0 +1,203 @@
+<!-- templates/edit_invoice.html -->
+{% extends "base.html" %}
+{% block title %}Редактировать накладную {{ invoice.invoice_number }}{% endblock %}
+{% block content %}
+<h1>Редактировать накладную</h1>
+<a href="javascript:history.back()" class="btn btn-secondary mb-3">← Назад</a>
+<form method="POST" enctype="multipart/form-data">
+    <div class="row">
+        <!-- Левый столбец -->
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label class="form-label">Номер накладной <span class="text-danger">*</span></label>
+                <input type="text" name="invoice_number" class="form-control" value="{{ invoice.invoice_number }}" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Дата <span class="text-danger">*</span></label>
+                <input type="date" name="invoice_date" class="form-control" value="{{ invoice.invoice_date }}" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Отдел</label>
+                <select name="department_id" class="form-select">
+                    <option value="">Не указан</option>
+                    {% for d in departments %}
+                        <option value="{{ d.id }}" {% if invoice.department_id == d.id %}selected{% endif %}>
+                            {{ d.name }} ({{ d.code }})
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">PDF-файл накладной (оставьте пустым, чтобы не менять)</label>
+                <input type="file" name="pdf_file" accept=".pdf" class="form-control">
+                {% if invoice.pdf_path %}
+                    <div class="form-text">
+                        Текущий файл: <a href="{{ url_for('static', filename=invoice.pdf_path) }}" target="_blank">Открыть PDF</a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        <!-- Правый столбец -->
+        <div class="col-md-6">
+            <div class="mb-3">
+                <label class="form-label">Тип <span class="text-danger">*</span></label>
+                <select name="type" class="form-select" required>
+                    <option value="">-- Выберите --</option>
+                    <option value="Склад-МОЛ" {% if invoice.type == 'Склад-МОЛ' %}selected{% endif %}>Склад → МОЛ</option>
+                    <option value="МОЛ-МОЛ" {% if invoice.type == 'МОЛ-МОЛ' %}selected{% endif %}>МОЛ → МОЛ</option>
+                    <option value="МОЛ-Склад" {% if invoice.type == 'МОЛ-Склад' %}selected{% endif %}>МОЛ → Склад</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">От кого</label>
+                <div id="from_user_wrapper" class="field-wrapper">
+                    <select name="from_user_id" class="form-select">
+                        <option value="">-- Выберите МОЛ --</option>
+                        {% for u in users %}
+                            <option value="{{ u.id }}" {% if invoice.from_user_id == u.id %}selected{% endif %}>
+                                {{ u.login }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="from_knt_wrapper" class="field-wrapper mt-2" style="display: none;">
+                    <select name="from_knt_id" class="form-select">
+                        <option value="">-- Выберите склад --</option>
+                        {% for k in warehouses %}
+                            <option value="{{ k.id }}" {% if invoice.from_knt_id == k.id %}selected{% endif %}>
+                                {{ k.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Кому</label>
+                <div id="to_user_wrapper" class="field-wrapper">
+                    <select name="to_user_id" class="form-select">
+                        <option value="">-- Выберите МОЛ --</option>
+                        {% for u in users %}
+                            <option value="{{ u.id }}" {% if invoice.to_user_id == u.id %}selected{% endif %}>
+                                {{ u.login }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="to_knt_wrapper" class="field-wrapper mt-2" style="display: none;">
+                    <select name="to_knt_id" class="form-select">
+                        <option value="">-- Выберите склад --</option>
+                        {% for k in warehouses %}
+                            <option value="{{ k.id }}" {% if invoice.to_knt_id == k.id %}selected{% endif %}>
+                                {{ k.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
+</form>
+
+<hr>
+
+<!-- Текущие ТМЦ в накладной -->
+<h3>ТМЦ в накладной</h3>
+{% if current_eqs %}
+  <ul class="list-group mb-3">
+    {% for eq in current_eqs %}
+      <li class="list-group-item d-flex justify-content-between align-items-center">
+        {{ eq.buhname }} ({{ eq.sernum or '—' }}, {{ eq.invnum or '—' }})
+        <button class="btn btn-sm btn-danger remove-tmc" data-eq-id="{{ eq.id }}">Удалить</button>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="text-muted">В накладной пока нет ТМЦ.</p>
+{% endif %}
+
+<!-- Добавление ТМЦ -->
+<h3>Добавить ТМЦ</h3>
+{% if available_eqs %}
+  <p class="text-muted">Доступны ТМЦ, принадлежащие {{ invoice.from_user.login }} или {{ invoice.to_user.login }}.</p>
+  <select id="available-tmc-select" class="form-select mb-2">
+    <option value="">-- Выберите ТМЦ --</option>
+    {% for eq in available_eqs %}
+      <option value="{{ eq.id }}">{{ eq.buhname }} ({{ eq.sernum or '—' }}, {{ eq.invnum or '—' }})</option>
+    {% endfor %}
+  </select>
+  <button id="add-tmc-btn" class="btn btn-success">Добавить в накладную</button>
+{% else %}
+  <p class="text-muted">Нет доступных ТМЦ для добавления.</p>
+{% endif %}
+
+<script>
+  // Переключение полей "От кого / Кому" в зависимости от типа
+  document.querySelector('select[name="type"]').addEventListener('change', function() {
+    const type = this.value;
+    const fromUserWrap = document.getElementById('from_user_wrapper');
+    const fromKntWrap = document.getElementById('from_knt_wrapper');
+    const toUserWrap = document.getElementById('to_user_wrapper');
+    const toKntWrap = document.getElementById('to_knt_wrapper');
+    fromUserWrap.style.display = 'none';
+    fromKntWrap.style.display = 'none';
+    toUserWrap.style.display = 'none';
+    toKntWrap.style.display = 'none';
+    if (type === 'Склад-МОЛ') {
+      fromKntWrap.style.display = 'block';
+      toUserWrap.style.display = 'block';
+    } else if (type === 'МОЛ-Склад') {
+      fromUserWrap.style.display = 'block';
+      toKntWrap.style.display = 'block';
+    } else if (type === 'МОЛ-МОЛ') {
+      fromUserWrap.style.display = 'block';
+      toUserWrap.style.display = 'block';
+    }
+  });
+  document.addEventListener('DOMContentLoaded', function() {
+    const typeSelect = document.querySelector('select[name="type"]');
+    if (typeSelect.value) {
+      typeSelect.dispatchEvent(new Event('change'));
+    }
+  });
+
+  // Удаление ТМЦ
+  document.querySelectorAll('.remove-tmc').forEach(btn => {
+    btn.addEventListener('click', async function() {
+      const eqId = this.dataset.eqId;
+      const res = await fetch('', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'remove', eq_id: eqId})
+      });
+      const data = await res.json();
+      if (data.success) {
+        location.reload();
+      } else {
+        alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+      }
+    });
+  });
+
+  // Добавление ТМЦ
+  document.getElementById('add-tmc-btn').addEventListener('click', async function() {
+    const select = document.getElementById('available-tmc-select');
+    const eqId = select.value;
+    if (!eqId) {
+      alert('Выберите ТМЦ');
+      return;
+    }
+    const res = await fetch('', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'add', eq_id: eqId})
+    });
+    const data = await res.json();
+    if (data.success) {
+      location.reload();
+    } else {
+      alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,137 @@
+<!-- templates/my_tmc.html -->
+{% extends "base.html" %}
+{% block title %}Моё имущество{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h2">Моё имущество</h1>
+        <p class="text-muted">ТМЦ: {{ tmc_count }} шт. | Общая стоимость: {{ "{:,.2f}".format(total_cost) }} руб.</p>
+    </div>
+    <div class="d-flex align-items-center">
+        <span class="me-3">Вы вошли как: <strong>{{ user_login }}</strong></span>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">← На главную</a>
+    </div>
+</div>
+
+<!-- Фильтры -->
+<form method="GET">
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <label for="departmentSelect" class="form-label">Фильтр по отделу:</label>
+            <select id="departmentSelect" name="department_id" class="form-select" onchange="this.form.submit()">
+                <option value="">Все отделы</option>
+                {% for dept in all_departments %}
+                    <option value="{{ dept.id }}" {% if filter_department_id == dept.id %}selected{% endif %}>
+                        {{ dept.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label for="categorySelect" class="form-label">Фильтр по категории:</label>
+            <select id="categorySelect" name="category_id" class="form-select" onchange="this.form.submit()">
+                <option value="">Все категории</option>
+                {% for cat in all_categories %}
+                    <option value="{{ cat.id }}" {% if filter_category_id == cat.id %}selected{% endif %}>
+                        {{ cat.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-4"></div>
+    </div>
+</form>
+
+<!-- Кнопки действий -->
+<div class="mb-3">
+    <a href="{{ url_for('index') }}" class="btn btn-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Назад
+    </a>
+    <a href="{{ url_for('add_tmc') }}" class="btn btn-secondary">Добавить ТМЦ</a> 
+</div>
+
+<!-- Таблица имущества -->
+<div class="card shadow-sm">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col" style="width: 80px;">Фото</th>
+                        <th scope="col">Наименование</th>
+                        <th scope="col" style="width: 100px;">Кол-во</th>
+                        <th scope="col" style="width: 120px;">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if grouped_tmc %}
+                        {% for item in grouped_tmc %}
+                        <tr>
+                            <td>
+                                {% if item.nome_photo %}
+                                    <img src="{{ url_for('static', filename='uploads/' + item.nome_photo) }}" 
+                                         alt="Фото {{ item.nome_name }}" 
+                                         class="img-fluid rounded" 
+                                         style="max-height: 60px; max-width: 60px; object-fit: cover;">
+                                {% else %}
+                                    <img src="{{ url_for('static', filename='uploads/noimage.jpg') }}" 
+                                         alt="Фото {{ item.nome_name }}" 
+                                         class="img-fluid rounded" 
+                                         style="max-height: 60px; max-width: 60px; object-fit: cover;">
+                                {% endif %}
+                            </td>
+                            <td>{{ item.nome_name }}</td>
+                            <td>{{ item.quantity }}</td>
+                            <td>
+                                <a href="{{ url_for('list_by_nome', nome_id=item.nomeid) }}" 
+                                   class="btn btn-sm btn-primary w-100">
+                                   <i class="bi bi-eye me-1"></i>Показать
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="text-center py-5">
+                                <div class="text-muted">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="currentColor" class="bi bi-clipboard-data mb-2" viewBox="0 0 16 16">
+                                        <path d="M4 11a1 1 0 1 1 2 0v1a1 1 0 1 1-2 0v-1zm6-4a1 1 0 1 1 2 0v5a1 1 0 1 1-2 0V7zM7 9a1 1 0 0 1 2 0v1a1 1 0 1 1-2 0v-1z"/>
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-1zM9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                    <h5>Нет данных</h5>
+                                    <p class="mb-0">Нет имущества, соответствующего выбранным фильтрам.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+    .table-hover > tbody > tr:hover {
+        background-color: #f8f9fa;
+        transition: background-color 0.2s;
+    }
+    .table th {
+        font-weight: 600;
+    }
+    .table-light th {
+        background-color: #f8f9fa;
+        border-bottom: 2px solid #e9ecef;
+    }
+    .btn-primary {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+    }
+    .btn-primary:hover {
+        background-color: #0b5ed7;
+        border-color: #0a58ca;
+    }
+    .card {
+        border: none;
+    }
+</style>
+{% endblock %}

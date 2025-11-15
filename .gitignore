@@ -21,4 +21,7 @@ config.py
 
 # Статические файлы, загруженные пользователями (если есть)
 static/uploads/
+static/invoices/
+static/passports/
+static/
 /var/www/html/photos/

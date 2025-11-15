@@ -2,8 +2,8 @@
 {% extends "base.html" %}
 
 {% block title %}Редактировать ТМЦ{% endblock %}
-
 {% block content %}
+<a href="javascript:history.back()" class="btn btn-secondary mb-3">← Назад</a>
 <h1>Редактировать ТМЦ</h1>
 <form method="POST" enctype="multipart/form-data">
     <div class="mb-3">
@@ -24,6 +24,19 @@
         <input type="date" class="form-control" id="date_start" name="date_start"
                value="{{ tmc.datepost.strftime('%Y-%m-%d') if tmc.datepost else '' }}" required>
         <div class="form-text">Укажите дату постановки ТМЦ на учёт. На её основе будут рассчитаны гарантия (+1 год) и срок службы (+5 лет).</div>
+    </div>
+    <!-- Финансы -->
+    <div class="row mb-3">
+    <div class="col-md-6">
+        <label for="cost" class="form-label">Первоначальная стоимость (руб.)</label>
+        <input type="number" step="0.01" class="form-control" id="cost" name="cost"
+            value="{{ '%.2f'|format(tmc.cost) if tmc.cost is not none else '0.00' }}">
+    </div>
+    <div class="col-md-6">
+        <label for="currentcost" class="form-label">Текущая стоимость (руб.)</label>
+        <input type="number" step="0.01" class="form-control" id="currentcost" name="currentcost"
+            value="{{ '%.2f'|format(tmc.currentcost) if tmc.currentcost is not none else '0.00' }}">
+    </div>
     </div>
     <div class="mb-3">
         <label for="comment" class="form-label">Комментарий</label>
@@ -46,7 +59,7 @@
         {% if tmc.passport_filename %}
             <div class="mt-2">
                 Текущий паспорт: 
-                <a href="{{ url_for('static', filename='uploads/' + tmc.passport_filename) }}" target="_blank">📄 Открыть</a>
+                <a href="{{ url_for('static', filename='passports/' + tmc.passport_filename) }}" target="_blank">📄 Открыть</a>
                 <div class="form-check mt-2">
                     <input class="form-check-input" type="checkbox" id="delete_passport" name="delete_passport" value="1">
                     <label class="form-check-label" for="delete_passport">

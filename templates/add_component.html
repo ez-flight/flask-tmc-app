@@ -1,0 +1,168 @@
+<!-- templates/add_component.html -->
+{% extends "base.html" %}
+{% block title %}Добавить комплектующее{% endblock %}
+{% block content %}
+<h1>Добавить новое комплектующее</h1>
+<form method="POST" enctype="multipart/form-data">
+    <div class="mb-3">
+        <label for="buhname" class="form-label">Наименование *</label>
+        <input type="text" class="form-control" id="buhname" name="buhname" required>
+    </div>
+    <div class="mb-3">
+        <label for="sernum" class="form-label">Серийный номер</label>
+        <input type="text" class="form-control" id="sernum" name="sernum">
+    </div>
+    <div class="mb-3">
+        <label for="invnum" class="form-label">Инвентарный номер</label>
+        <input type="text" class="form-control" id="invnum" name="invnum">
+    </div>
+    <!-- Дата начала (можно оставить, но необязательно) -->
+    <div class="mb-3">
+        <label for="date_start" class="form-label">Дата добавления</label>
+        <input type="date" class="form-control" id="date_start" name="date_start"
+               value="{{ datetime.now().strftime('%Y-%m-%d') }}" readonly>
+    </div>
+    <div class="mb-3">
+        <label for="comment" class="form-label">Комментарий</label>
+        <textarea class="form-control" id="comment" name="comment" rows="2"></textarea>
+    </div>
+    <!-- Привязка к основному средству (опционально) -->
+    <div class="mb-3">
+        <label for="main_asset_id" class="form-label">Привязать к основному средству (опционально)</label>
+        <select class="form-select" id="main_asset_id" name="main_asset_id">
+            <option value="">— Не привязывать —</option>
+            {% for asset in main_assets %}
+                <option value="{{ asset.id }}">
+                    {{ asset.buhname }} ({{ asset.sernum or 'б/н' }})
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label for="department_id" class="form-label">Отдел *</label>
+        <select class="form-select" id="department_id" name="department_id" required>
+            <option value="">-- Выберите отдел --</option>
+            {% for dept in departments %}
+                <option value="{{ dept.id }}">{{ dept.name }} ({{ dept.code }})</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <label for="photo" class="form-label">Фотография (необязательно)</label>
+        <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
+    </div>
+
+    <!-- Организация -->
+    <div class="mb-3">
+        <label for="orgid" class="form-label">Организация *</label>
+        <select class="form-select" id="orgid" name="orgid" required>
+            {% for org in organizations %}
+                {% if org.active %}
+                    <option value="{{ org.id }}">{{ org.name }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+    <!-- Место нахождения -->
+    <div class="mb-3">
+        <label for="placesid" class="form-label">Место нахождения *</label>
+        <select class="form-select" id="placesid" name="placesid" required>
+            {% for place in places %}
+                {% if place.active %}
+                    <option value="{{ place.id }}">{{ place.name }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+    <!-- Ответственный пользователь -->
+    <div class="mb-3">
+        <label for="usersid" class="form-label">Ответственный пользователь *</label>
+        <select class="form-select" id="usersid" name="usersid" required>
+            {% for user in users %}
+                {% if user.active %}
+                    <option value="{{ user.id }}">{{ user.login }}</option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Группа ТМЦ (только комплектующие) -->
+    <div class="mb-3">
+        <label for="groupid" class="form-label">Тип комплектующего *</label>
+        <select class="form-select" id="groupid" name="groupid" required onchange="loadVendors()">
+            <option value="">-- Выберите тип --</option>
+            {% for group in component_groups %}
+                <option value="{{ group.id }}">{{ group.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- Производитель и наименование — как в add_tmc -->
+    <div class="mb-3">
+        <label for="vendorid" class="form-label">Производитель *</label>
+        <select class="form-select" id="vendorid" name="vendorid" required onchange="loadNomenclatures()">
+            <option value="">-- Сначала выберите тип --</option>
+        </select>
+    </div>
+    <div class="mb-3">
+        <label for="nomeid" class="form-label">Наименование (Номенклатура) *</label>
+        <div class="input-group">
+            <select class="form-select" id="nomeid" name="nomeid" required>
+                <option value="">-- Сначала выберите производителя --</option>
+            </select>
+            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#addNomeModal">+</button>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-success">Добавить комплектующее</button>
+    <a href="{{ url_for('all_components') }}" class="btn btn-secondary">Отмена</a>
+</form>
+
+<script>
+function loadVendors() {
+    const groupId = document.getElementById('groupid').value;
+    const vendorSelect = document.getElementById('vendorid');
+    const nomeSelect = document.getElementById('nomeid');
+    vendorSelect.innerHTML = '<option value="">-- Загрузка... --</option>';
+    nomeSelect.innerHTML = '<option value="">-- Сначала выберите производителя --</option>';
+    if (!groupId) {
+        vendorSelect.innerHTML = '<option value="">-- Сначала выберите тип --</option>';
+        return;
+    }
+    fetch(`/get_vendors_by_group/${groupId}`)
+        .then(response => response.json())
+        .then(data => {
+            vendorSelect.innerHTML = '<option value="">-- Выберите производителя --</option>';
+            data.vendors.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.id;
+                opt.textContent = v.name;
+                vendorSelect.appendChild(opt);
+            });
+        });
+}
+
+function loadNomenclatures() {
+    const groupId = document.getElementById('groupid').value;
+    const vendorId = document.getElementById('vendorid').value;
+    const nomeSelect = document.getElementById('nomeid');
+    nomeSelect.innerHTML = '<option value="">-- Загрузка... --</option>';
+    if (!groupId || !vendorId) {
+        nomeSelect.innerHTML = '<option value="">-- Выберите тип и производителя --</option>';
+        return;
+    }
+    fetch(`/get_nomenclatures_by_group_and_vendor/${groupId}/${vendorId}`)
+        .then(response => response.json())
+        .then(data => {
+            nomeSelect.innerHTML = '<option value="">-- Выберите наименование --</option>';
+            data.nomenclatures.forEach(n => {
+                const opt = document.createElement('option');
+                opt.value = n.id;
+                opt.textContent = n.name;
+                nomeSelect.appendChild(opt);
+            });
+        });
+}
+</script>
+
+{% endblock %}

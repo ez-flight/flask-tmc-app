@@ -1,83 +1,11 @@
 <!-- templates/info_tmc.html -->
 {% extends "base.html" %}
-
 {% block title %}ТМЦ №{{ tmc.id }}{% endblock %}
-
 {% block content %}
 <h1>Подробная информация о ТМЦ</h1>
-
-<a href="{{ url_for('list_by_nome', nome_id=tmc.nomeid) }}" class="btn btn-secondary mb-3">← Назад к списку {{ tmc.nome.name }}</a>
+<a href="javascript:history.back()" class="btn btn-secondary mb-3">← Назад</a>
 <a href="{{ url_for('edit_tmc', tmc_id=tmc.id) }}" class="btn btn-warning mb-3">Редактировать</a>
 
-<div class="card">
-    <div class="card-body">
-        <!--<div class="d-flex justify-content-between align-items-center"> -->
-            <h5 class="card-title mb-0">Основные данные</h5>
-            <!-- <a href="{{ url_for('edit_tmc', tmc_id=tmc.id) }}" class="btn btn-outline-primary btn-sm">Изменить</a> -->
-                <table class="table table-borderless">
-                    <tr><th>ID записи:</th><td>{{ tmc.id }}</td></tr>
-                    <tr><th>Наименование:</th><td>{{ tmc.nome.name if tmc.nome else '—' }}</td></tr>
-                    <tr><th>Бух. наименование:</th><td>{{ tmc.buhname or '—' }}</td></tr>
-                    <tr><th>Серийный номер:</th><td>{{ tmc.sernum or '—' }}</td></tr>
-                    <tr><th>Инвентарный номер:</th><td>{{ tmc.invnum or '—' }}</td></tr>
-                    <tr><th>Комментарий:</th><td>{{ tmc.comment or '—' }}</td></tr>
-                </table>
-        <!-- </div> -->
-    </div>
-</div>
-
-<div class="card mt-3">
-    <div class="card-body">
-        <h5 class="card-title">Организация и местоположение</h5>
-        <table class="table table-borderless">
-            <tr><th>Организация:</th><td>{{ tmc.org.name if tmc.org else '—' }}</td></tr>
-            <tr><th>Место:</th><td>{{ tmc.places.name if tmc.places else '—' }}</td></tr>
-            <tr><th>Ответственный:</th><td>{{ tmc.users.login if tmc.users else '—' }}</td></tr>
-            <tr><th>Подразделение:</th><td>{{ tmc.department.name if tmc.department else '—' }}</td></tr>
-        </table>
-    </div>
-</div>
-
-<div class="card mt-3">
-    <div class="card-body">
-        <h5 class="card-title">Финансы и статус</h5>
-        <table class="table table-borderless">
-            <tr><th>Первоначальная стоимость:</th><td>{{ "{:,.2f}".format(tmc.cost) }} руб.</td></tr>
-            <tr><th>Текущая стоимость:</th><td>{{ "{:,.2f}".format(tmc.currentcost) }} руб.</td></tr>
-            <tr><th>Основное средство:</th><td>{% if tmc.os %}Да{% else %}Нет{% endif %}</td></tr>
-            <tr><th>В ремонте:</th><td>{% if tmc.repair %}Да{% else %}Нет{% endif %}</td></tr>
-            <tr><th>Активен:</th><td>{% if tmc.active %}Да{% else %}Нет{% endif %}</td></tr>
-        </table>
-    </div>
-</div>
-
-<div class="card mt-3">
-    <div class="card-body">
-        <h5 class="card-title">Даты</h5>
-        <table class="table table-borderless">
-            <tr><th>Дата постановки на учёт:</th><td>{{ tmc.datepost.strftime('%d.%m.%Y %H:%M') if tmc.datepost else '—' }}</td></tr>
-            <tr><th>Гарантия до:</th><td>{{ tmc.dtendgar.strftime('%d.%m.%Y') if tmc.dtendgar else '—' }}</td></tr>
-        </table>
-    </div>
-</div>
-
-<div class="card mt-3">
-    <div class="card-body">
-        <h5 class="card-title">Поставщик</h5>
-        <p>{{ tmc.knt.name if tmc.knt else 'Не указан' }}</p>
-    </div>
-</div>
-{% if tmc.passport_filename %}
-<div class="card mt-3">
-    <div class="card-body">
-        <h5 class="card-title">Паспорт</h5>
-        <a href="{{ url_for('static', filename='uploads/' + tmc.passport_filename) }}" 
-           target="_blank" class="btn btn-primary">
-            📄 Открыть паспорт (PDF)
-        </a>
-    </div>
-</div>
-{% endif %}
 {% if tmc.photo %}
 <div class="card mt-3">
     <div class="card-body">
@@ -91,6 +19,63 @@
         </a>
     </div>
 </div>
+
+<!-- Внутри info_tmc.html -->
+{% if can_manage_temp %}
+  <div class="mt-3">
+    {% if active_usage %}
+      <!-- ТМЦ выдано — кнопка "Принять" -->
+      <form method="POST" action="{{ url_for('temp_return', usage_id=active_usage.id) }}" style="display:inline;">
+        <button type="submit" class="btn btn-warning">
+          <i class="bi bi-arrow-return-left"></i> Принять (отозвать у {{ active_usage.temp_user.login }})
+        </button>
+      </form>
+      <small class="text-muted d-block mt-1">
+        Выдано: {{ active_usage.dt_start.strftime('%d.%m.%Y %H:%M') }}
+        {% if active_usage.comment %} | Комментарий: {{ active_usage.comment }}{% endif %}
+      </small>
+    {% else %}
+      <!-- ТМЦ не выдано — кнопка "Выдать" -->
+      <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#tempAssignModal">
+        <i class="bi bi-person-plus"></i> Выдать во временное пользование
+      </button>
+
+      <!-- Модальное окно -->
+      <div class="modal fade" id="tempAssignModal" tabindex="-1" aria-labelledby="tempAssignModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="tempAssignModalLabel">Временная выдача ТМЦ</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <form method="POST" action="{{ url_for('temp_assign') }}">
+              <div class="modal-body">
+                <input type="hidden" name="eq_id" value="{{ tmc.id }}">
+                <div class="mb-3">
+                  <label for="user_temp_id" class="form-label">Пользователь (роль = 2)</label>
+                  <select name="user_temp_id" id="user_temp_id" class="form-select" required>
+                    <option value="">— Выберите —</option>
+                    {% for user in users_role_2 %}
+                      <option value="{{ user.id }}">{{ user.login }}{% if user.fio %} — {{ user.fio }}{% endif %}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="mb-3">
+                  <label for="comment" class="form-label">Комментарий (необязательно)</label>
+                  <input type="text" name="comment" id="comment" class="form-control">
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="submit" class="btn btn-primary">Выдать</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
 
 <!-- Модальное окно -->
 <div class="modal fade" id="photoModal" tabindex="-1" aria-labelledby="photoModalLabel" aria-hidden="true">
@@ -109,5 +94,119 @@
     </div>
 </div>
 {% endif %}
+
+<!-- Добавленная таблица с комплектующими -->
+{% if components %}
+<div class="card mt-3">
+    <div class="card-header">
+        <h4 class="card-title">Комплектующие</h4>
+    </div>
+    <div class="card-body">
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Тип комплектующего</th>
+                    <th>Серийный номер</th>
+                    <th>Комментарий</th>
+                    <th>Документация</th>
+                    <th>ПО</th>
+                    <th>Статус списания</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for comp in components %}
+                <tr>
+                    <td>{{ comp.component_nome.name if comp.component_nome else 'Неизвестный тип' }}</td>
+                    <td>{{ comp.ser_num_component or 'Не указан' }}</td>
+                    <td>{{ comp.comment_component or '' }}</td>
+                    <td>
+                        {% if comp.doc_path %}
+                            <a href="{{ url_for('static', filename=comp.doc_path) }}" target="_blank">Просмотр</a>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if comp.sw_image_path %}
+                            <a href="{{ url_for('static', filename=comp.sw_image_path) }}" target="_blank">Скачать</a>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>{{ 'Списано' if comp.disposed else 'Учитывается' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info mt-3">
+    У данного основного средства нет зарегистрированных комплектующих.
+</div>
+{% endif %}
+<div class="card">
+    <div class="card-body">
+        <!--<div class="d-flex justify-content-between align-items-center"> -->
+            <h5 class="card-title mb-0">Основные данные</h5>
+            <!-- <a href="{{ url_for('edit_tmc', tmc_id=tmc.id) }}" class="btn btn-outline-primary btn-sm">Изменить</a> -->
+                <table class="table table-borderless">
+                    <tr><th>ID записи:</th><td>{{ tmc.id }}</td></tr>
+                    <tr><th>Наименование:</th><td>{{ tmc.nome.name if tmc.nome else '—' }}</td></tr>
+                    <tr><th>Бух. наименование:</th><td>{{ tmc.buhname or '—' }}</td></tr>
+                    <tr><th>Серийный номер:</th><td>{{ tmc.sernum or '—' }}</td></tr>
+                    <tr><th>Инвентарный номер:</th><td>{{ tmc.invnum or '—' }}</td></tr>
+                    <tr><th>Комментарий:</th><td>{{ tmc.comment or '—' }}</td></tr>
+                </table>
+        <!-- </div> -->
+    </div>
+</div>
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Организация и местоположение</h5>
+        <table class="table table-borderless">
+            <tr><th>Организация:</th><td>{{ tmc.org.name if tmc.org else '—' }}</td></tr>
+            <tr><th>Место:</th><td>{{ tmc.places.name if tmc.places else '—' }}</td></tr>
+            <tr><th>Ответственный:</th><td>{{ tmc.users.login if tmc.users else '—' }}</td></tr>
+            <tr><th>Подразделение:</th><td>{{ tmc.department.name if tmc.department else '—' }}</td></tr>
+        </table>
+    </div>
+</div>
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Финансы и статус</h5>
+        <table class="table table-borderless">
+            <tr><th>Первоначальная стоимость:</th><td>{{ "{:,.2f}".format(tmc.cost) }} руб.</td></tr>
+            <tr><th>Текущая стоимость:</th><td>{{ "{:,.2f}".format(tmc.currentcost) }} руб.</td></tr>
+            <tr><th>Основное средство:</th><td>{% if tmc.os %}Да{% else %}Нет{% endif %}</td></tr>
+            <tr><th>В ремонте:</th><td>{% if tmc.repair %}Да{% else %}Нет{% endif %}</td></tr>
+            <tr><th>Активен:</th><td>{% if tmc.active %}Да{% else %}Нет{% endif %}</td></tr>
+        </table>
+    </div>
+</div>
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Даты</h5>
+        <table class="table table-borderless">
+            <tr><th>Дата постановки на учёт:</th><td>{{ tmc.datepost.strftime('%d.%m.%Y %H:%M') if tmc.datepost else '—' }}</td></tr>
+            <tr><th>Гарантия до:</th><td>{{ tmc.dtendgar.strftime('%d.%m.%Y') if tmc.dtendgar else '—' }}</td></tr>
+        </table>
+    </div>
+</div>
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Поставщик</h5>
+        <p>{{ tmc.knt.name if tmc.knt else 'Не указан' }}</p>
+    </div>
+</div>
+{% if tmc.passport_filename %}
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Паспорт</h5>
+        <a href="{{ url_for('static', filename='passports/' + tmc.passport_filename) }}">Паспорт</a>
+    </div>
+</div>
+{% endif %}
+
 
 {% endblock %}

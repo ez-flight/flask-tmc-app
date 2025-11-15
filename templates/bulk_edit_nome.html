@@ -11,14 +11,14 @@
     <div class="row">
         <div class="col-md-6">
             <div class="mb-3">
-                <label for="cost" class="form-label">Стоимость</label>
-                <input type="number" class="form-control" id="cost" name="cost" value="{{ first_tmc.cost }}">
+            <label for="cost" class="form-label">Стоимость</label>
+            <input type="number" step="0.01" class="form-control" id="cost" name="cost" value="{{ '%.2f'|format(first_tmc.cost) if first_tmc.cost is not none else '0.00' }}">
             </div>
         </div>
         <div class="col-md-6">
             <div class="mb-3">
-                <label for="currentcost" class="form-label">Текущая стоимость</label>
-                <input type="number" class="form-control" id="currentcost" name="currentcost" value="{{ first_tmc.currentcost }}">
+            <label for="currentcost" class="form-label">Текущая стоимость</label>
+            <input type="number" step="0.01" class="form-control" id="currentcost" name="currentcost" value="{{ '%.2f'|format(first_tmc.currentcost) if first_tmc.currentcost is not none else '0.00' }}">
             </div>
         </div>
     </div>

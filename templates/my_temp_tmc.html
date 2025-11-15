@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Мои временные ТМЦ{% endblock %}
+{% block content %}
+  <h2>Мои временные ТМЦ</h2>
+  {% if usages %}
+    <table class="table">
+      <thead><tr><th>ТМЦ</th><th>МОЛ</th><th>Выдано</th><th>Действие</th></tr></thead>
+      <tbody>
+        {% for u in usages %}
+        <tr>
+          <td>{{ u.equipment.buhname }} ({{ u.equipment.sernum or 'б/н' }})</td>
+          <td>{{ u.mol_user.login }}</td>
+          <td>{{ u.dt_start.strftime('%d.%m.%Y %H:%M') }}</td>
+          <td>
+            <a href="{{ url_for('info_tmc', tmc_id=u.equipment.id) }}" class="btn btn-info btn-sm">Подробно</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted">У вас нет временно выданных ТМЦ.</p>
+  {% endif %}
+{% endblock %}

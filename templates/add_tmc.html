@@ -4,8 +4,18 @@
 {% block title %}Добавить ТМЦ{% endblock %}
 
 {% block content %}
-<h1>Добавить новый ТМЦ</h1>
-<form method="POST" enctype="multipart/form-data">
+<div class="page-header">
+    <h1>Добавить новый ТМЦ</h1>
+    <div class="user-info">
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Назад
+        </a>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="POST" enctype="multipart/form-data">
     <div class="mb-3">
         <label for="buhname" class="form-label">Наименование *</label>
         <input type="text" class="form-control" id="buhname" name="buhname" required>
@@ -144,9 +154,17 @@
         </div>
     {% endif %}
 
-    <button type="submit" class="btn btn-success">Добавить</button>
-    <a href="{{ url_for('index') }}" class="btn btn-secondary">Отмена</a>
-</form>
+            <div class="d-flex gap-2 mt-4">
+                <button type="submit" class="btn btn-success">
+                    <i class="bi bi-check-circle me-1"></i>Добавить
+                </button>
+                <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Отмена
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
 
 <!-- Модальное окно для добавления нового наименования -->
 <div class="modal fade" id="addNomeModal" tabindex="-1" aria-labelledby="addNomeModalLabel" aria-hidden="true">

@@ -4,19 +4,25 @@
 {% block title %}Редактировать пользователя: {{ user.login }}{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Редактировать пользователя: {{ user.login }}</h2>
-    <h2>{{ user_login }}</h2>
+<div class="page-header">
+    <h1>Редактировать пользователя: {{ user.login }}</h1>
+    <div class="user-info">
+        <a href="{{ url_for('manage_users') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Назад к списку
+        </a>
+    </div>
 </div>
 
 {% if is_admin %}
-<div class="alert alert-info" role="alert">
-    <strong>Вы администратор.</strong> У вас полный доступ к системе.
+<div class="alert alert-success d-flex align-items-center mb-3" role="alert">
+    <i class="bi bi-shield-check me-2"></i>
+    <span>Вы администратор. У вас полный доступ к системе.</span>
 </div>
-<a href="{{ url_for('manage_users') }}" class="btn btn-secondary mb-3">← Назад к списку пользователей</a>
 {% endif %}
 
-<form method="POST" enctype="multipart/form-data"> <!-- Добавлен enctype для загрузки файлов -->
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="POST" enctype="multipart/form-data"> <!-- Добавлен enctype для загрузки файлов -->
     <div class="mb-3">
         <label for="login" class="form-label">Логин *</label>
         <input type="text" class="form-control" id="login" name="login" value="{{ user.login }}" required>
@@ -98,8 +104,16 @@
 
     <!-- Поля lastlogin, sessionid, passw обычно не редактируются пользователем -->
 
-    <button type="submit" class="btn btn-primary">Сохранить изменения</button>
-    <a href="{{ url_for('manage_users') }}" class="btn btn-secondary">Отмена</a>
-</form>
+            <div class="d-flex gap-2 mt-4">
+                <button type="submit" class="btn btn-success">
+                    <i class="bi bi-check-circle me-1"></i>Сохранить изменения
+                </button>
+                <a href="{{ url_for('manage_users') }}" class="btn btn-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Отмена
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
 
 {% endblock %}

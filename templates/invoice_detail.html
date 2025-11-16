@@ -2,31 +2,41 @@
 {% extends "base.html" %}
 {% block title %}Накладная №{{ invoice.invoice_number }}{% endblock %}
 {% block content %}
-<h1>Накладная №{{ invoice.invoice_number }} от {{ invoice.invoice_date.strftime('%d.%m.%Y') }}</h1>
-
-<!-- НОВЫЙ БЛОК -->
-<div class="alert alert-info">
-  <strong>Количество ТМЦ:</strong> {{ tmc_count }} шт.<br>
-  <strong>Общая стоимость:</strong> {{ "{:,.2f}".format(total_cost)|replace(',', ' ') }} ₽
+<div class="page-header">
+    <div>
+        <h1>Накладная №{{ invoice.invoice_number }}</h1>
+        <p class="text-muted mb-0">Дата: {{ invoice.invoice_date.strftime('%d.%m.%Y') }} | ТМЦ: {{ tmc_count }} шт. | Стоимость: {{ "{:,.2f}".format(total_cost)|replace(',', ' ') }} ₽</p>
+    </div>
+    <div class="user-info">
+        <a href="javascript:history.back()" class="btn btn-secondary btn-sm me-2">
+            <i class="bi bi-arrow-left me-1"></i>Назад
+        </a>
+        <a href="{{ url_for('edit_invoice', invoice_id=invoice.id) }}" class="btn btn-warning btn-sm me-2">
+            <i class="bi bi-pencil me-1"></i>Редактировать
+        </a>
+        <form method="POST" action="{{ url_for('delete_invoice', invoice_id=invoice.id) }}" style="display:inline;" onsubmit="return confirm('Вы уверены, что хотите удалить накладную? Это действие нельзя отменить.');">
+            <button type="submit" class="btn btn-danger btn-sm me-2">
+                <i class="bi bi-trash me-1"></i>Удалить
+            </button>
+        </form>
+        {% if invoice.pdf_path %}
+            <a href="{{ url_for('static', filename=invoice.pdf_path.split('/uploads/')[-1]) }}" target="_blank" class="btn btn-primary btn-sm">
+                <i class="bi bi-file-pdf me-1"></i>PDF
+            </a>
+        {% endif %}
+    </div>
 </div>
-<div class="mb-3">
-  <a href="javascript:history.back()" class="btn btn-secondary">← Назад</a>
-  <a href="{{ url_for('edit_invoice', invoice_id=invoice.id) }}" class="btn btn-warning">✏️ Редактировать</a>
-  <form method="POST" action="{{ url_for('delete_invoice', invoice_id=invoice.id) }}" style="display:inline;" onsubmit="return confirm('Вы уверены, что хотите удалить накладную? Это действие нельзя отменить.');">
-    <button type="submit" class="btn btn-danger">🗑️ Удалить</button>
-  </form>
-  {% if invoice.pdf_path %}
-    <a href="{{ url_for('static', filename=invoice.pdf_path.split('/uploads/')[-1]) }}" target="_blank" class="btn btn-primary">📄 Открыть PDF</a>
-  {% endif %}
-</div>
 
-<div class="card mb-3">
+<div class="card shadow-sm mb-3">
+  <div class="card-header">
+    <h5 class="mb-0">Основная информация</h5>
+  </div>
   <div class="card-body">
-    <h5>Основная информация</h5>
     <p><strong>Тип:</strong> {{ invoice.type }}</p>
     <p><strong>Отдел:</strong> {{ invoice.department.name if invoice.department else '—' }}</p>
 
-    <h5>Участники</h5>
+    <hr>
+    <h6 class="fw-bold">Участники</h6>
     {% if invoice.type == 'Склад-МОЛ' %}
       <p><strong>Откуда (склад):</strong> {{ invoice.from_knt.name if invoice.from_knt else '—' }}</p>
       <p><strong>Кому (МОЛ):</strong> {{ invoice.to_user.login if invoice.to_user else '—' }}</p>
@@ -40,10 +50,14 @@
   </div>
 </div>
 
-<h3>Оборудование в накладной</h3>
+<div class="card shadow-sm mt-3">
+  <div class="card-header">
+    <h5 class="mb-0">Оборудование в накладной</h5>
+  </div>
+  <div class="card-body">
 {% if invoice.invoice_equipment %}
   <div class="table-responsive">
-    <table class="table table-bordered table-striped">
+    <table class="table table-hover align-middle">
       <thead class="table-light">
         <tr>
           <th>Наименование</th>
@@ -67,7 +81,13 @@
     </table>
   </div>
 {% else %}
-  <p class="text-muted">Нет оборудования.</p>
+  <div class="empty-state">
+    <i class="bi bi-clipboard-data" style="font-size: 3rem;"></i>
+    <h5>Нет оборудования</h5>
+    <p class="mb-0">В накладной нет оборудования.</p>
+  </div>
 {% endif %}
+  </div>
+</div>
 
 {% endblock %}

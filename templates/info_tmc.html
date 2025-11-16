@@ -2,14 +2,30 @@
 {% extends "base.html" %}
 {% block title %}ТМЦ №{{ tmc.id }}{% endblock %}
 {% block content %}
-<h1>Подробная информация о ТМЦ</h1>
-<a href="javascript:history.back()" class="btn btn-secondary mb-3">← Назад</a>
-<a href="{{ url_for('edit_tmc', tmc_id=tmc.id) }}" class="btn btn-warning mb-3">Редактировать</a>
+<div class="page-header">
+    <h1>Подробная информация о ТМЦ</h1>
+    <div class="user-info">
+        <a href="javascript:history.back()" class="btn btn-secondary btn-sm me-2">
+            <i class="bi bi-arrow-left me-1"></i>Назад
+        </a>
+        {% if tmc.os %}
+            <a href="{{ url_for('edit_tmc', tmc_id=tmc.id) }}" class="btn btn-warning btn-sm">
+                <i class="bi bi-pencil me-1"></i>Редактировать
+            </a>
+        {% else %}
+            <a href="{{ url_for('edit_component', component_id=tmc.id) }}" class="btn btn-warning btn-sm">
+                <i class="bi bi-pencil me-1"></i>Редактировать
+            </a>
+        {% endif %}
+    </div>
+</div>
 
 {% if tmc.photo %}
-<div class="card mt-3">
+<div class="card shadow-sm mt-3">
+    <div class="card-header">
+        <h5 class="mb-0">Фото</h5>
+    </div>
     <div class="card-body">
-        <h5 class="card-title">Фото</h5>
         <!-- Ссылка для открытия модального окна -->
         <a href="#" data-bs-toggle="modal" data-bs-target="#photoModal">
             <img src="{{ url_for('static', filename='uploads/' + tmc.photo) }}" 
@@ -97,9 +113,9 @@
 
 <!-- Добавленная таблица с комплектующими -->
 {% if components %}
-<div class="card mt-3">
+<div class="card shadow-sm mt-3">
     <div class="card-header">
-        <h4 class="card-title">Комплектующие</h4>
+        <h5 class="mb-0">Комплектующие</h5>
     </div>
     <div class="card-body">
         <table class="table table-striped">

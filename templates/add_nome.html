@@ -2,8 +2,18 @@
 {% extends "base.html" %}
 {% block title %}Добавить новую группу ТМЦ{% endblock %}
 {% block content %}
-<h1>Добавить новую группу ТМЦ</h1>
-<form method="POST" enctype="multipart/form-data">
+<div class="page-header">
+    <h1>Добавить новую группу ТМЦ</h1>
+    <div class="user-info">
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Назад
+        </a>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="POST" enctype="multipart/form-data">
     <div class="mb-3">
         <label for="name" class="form-label">Наименование *</label>
         <input type="text" class="form-control" id="name" name="name" required>
@@ -81,7 +91,15 @@
         <label for="photo" class="form-label">Фото группы (применится ко всем ТМЦ) *</label>
         <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
     </div>
-    <button type="submit" class="btn btn-success">Добавить новую группу ТМЦ</button>
-    <a href="{{ url_for('index') }}" class="btn btn-secondary">Отмена</a>
-</form>
+            <div class="d-flex gap-2 mt-4">
+                <button type="submit" class="btn btn-success">
+                    <i class="bi bi-check-circle me-1"></i>Добавить новую группу ТМЦ
+                </button>
+                <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Отмена
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}

@@ -167,11 +167,104 @@ def index():
 
     # Подсчёт активных пользователей (только для админа)
     active_users = 0
+    stats_data = {}
+    
     if is_admin:
         active_users = db.session.query(Equipment.usersid).filter(
             Equipment.active == True,
             Equipment.os == True
         ).distinct().count()
+        
+        # Статистика по категориям (количество ТМЦ)
+        category_stats = db.session.query(
+            Category.name.label('category_name'),
+            func.count(Equipment.id).label('count')
+        ).join(GroupNome, Category.id == GroupNome.category_id)\
+         .join(Nome, GroupNome.id == Nome.groupid)\
+         .join(Equipment, Nome.id == Equipment.nomeid)\
+         .filter(Equipment.active == True, Equipment.os == True)\
+         .group_by(Category.id, Category.name)\
+         .order_by(func.count(Equipment.id).desc())\
+         .all()
+        
+        stats_data['category_labels'] = [row.category_name for row in category_stats] if category_stats else []
+        stats_data['category_counts'] = [row.count for row in category_stats] if category_stats else []
+        
+        # Статистика по категориям (стоимость)
+        category_cost_stats = db.session.query(
+            Category.name.label('category_name'),
+            func.coalesce(func.sum(Equipment.cost), 0).label('total_cost')
+        ).join(GroupNome, Category.id == GroupNome.category_id)\
+         .join(Nome, GroupNome.id == Nome.groupid)\
+         .join(Equipment, Nome.id == Equipment.nomeid)\
+         .filter(Equipment.active == True, Equipment.os == True)\
+         .group_by(Category.id, Category.name)\
+         .order_by(func.sum(Equipment.cost).desc())\
+         .all()
+        
+        stats_data['category_cost_labels'] = [row.category_name for row in category_cost_stats] if category_cost_stats else []
+        stats_data['category_costs'] = [float(row.total_cost) for row in category_cost_stats] if category_cost_stats else []
+        
+        # Статистика по отделам
+        department_stats = db.session.query(
+            Department.name.label('department_name'),
+            func.count(Equipment.id).label('count')
+        ).join(Equipment, Department.id == Equipment.department_id)\
+         .filter(Equipment.active == True, Equipment.os == True)\
+         .group_by(Department.id, Department.name)\
+         .order_by(func.count(Equipment.id).desc())\
+         .limit(10)\
+         .all()
+        
+        stats_data['department_labels'] = [row.department_name for row in department_stats] if department_stats else []
+        stats_data['department_counts'] = [row.count for row in department_stats] if department_stats else []
+        
+        # Топ пользователей по количеству ТМЦ
+        user_stats = db.session.query(
+            Users.login.label('user_login'),
+            func.count(Equipment.id).label('count')
+        ).join(Equipment, Users.id == Equipment.usersid)\
+         .filter(Equipment.active == True, Equipment.os == True)\
+         .group_by(Users.id, Users.login)\
+         .order_by(func.count(Equipment.id).desc())\
+         .limit(10)\
+         .all()
+        
+        stats_data['user_labels'] = [row.user_login for row in user_stats] if user_stats else []
+        stats_data['user_counts'] = [row.count for row in user_stats] if user_stats else []
+        
+        # Динамика добавления ТМЦ по месяцам (последние 12 месяцев)
+        twelve_months_ago = datetime.now() - relativedelta(days=365)
+        
+        # Получаем все ТМЦ за последний год
+        all_equipment = Equipment.query.filter(
+            Equipment.active == True,
+            Equipment.os == True,
+            Equipment.datepost >= twelve_months_ago
+        ).all()
+        
+        # Группируем по месяцам в Python
+        monthly_dict = {}
+        for eq in all_equipment:
+            month_key = eq.datepost.strftime('%Y-%m') if eq.datepost else None
+            if month_key:
+                monthly_dict[month_key] = monthly_dict.get(month_key, 0) + 1
+        
+        # Сортируем по месяцам
+        sorted_months = sorted(monthly_dict.keys())
+        stats_data['monthly_labels'] = sorted_months if sorted_months else []
+        stats_data['monthly_counts'] = [monthly_dict[month] for month in sorted_months] if sorted_months else []
+        
+        # Статусы ТМЦ
+        repair_count = Equipment.query.filter_by(active=True, os=True, repair=True).count()
+        active_count = Equipment.query.filter_by(active=True, os=True, repair=False).count()
+        
+        stats_data['status_labels'] = ['Активные', 'В ремонте']
+        stats_data['status_counts'] = [active_count, repair_count]
+        
+        # Общее количество комплектующих
+        components_count = Equipment.query.filter_by(active=True, os=False).count()
+        stats_data['components_count'] = components_count
 
     moves = Move.query.order_by(Move.dt.desc()).limit(5).all()
 
@@ -194,7 +287,8 @@ def index():
                            is_admin=is_admin,
                            news_list=news_list,
                            moves=moves,
-                           active_users=active_users)
+                           active_users=active_users,
+                           stats_data=stats_data if is_admin else {})
 
 
 @app.route('/add', methods=['GET', 'POST'])

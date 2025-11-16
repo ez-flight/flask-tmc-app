@@ -95,24 +95,390 @@
                 <h5 class="mb-0">Статистика системы</h5>
             </div>
             <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-4">
-                        <h6 class="mb-1">Всего ТМЦ</h6>
-                        <p class="display-6 mb-0">{{ tmc_count }}</p>
+                <div class="row text-center mb-4">
+                    <div class="col-md-3 col-6 mb-3">
+                        <h6 class="mb-1 text-muted">Всего ТМЦ</h6>
+                        <p class="display-6 mb-0 text-primary">{{ tmc_count }}</p>
                     </div>
-                    <div class="col-4">
-                        <h6 class="mb-1">Общая стоимость</h6>
-                        <p class="display-6 display-md-4 display-lg-6 mb-0 text-nowrap">
-                            {{ "{:,.2f}".format(total_cost) }} руб.
+                    <div class="col-md-3 col-6 mb-3">
+                        <h6 class="mb-1 text-muted">Общая стоимость</h6>
+                        <p class="display-6 display-md-4 display-lg-6 mb-0 text-nowrap text-success">
+                            {{ "{:,.0f}".format(total_cost) }} руб.
                         </p>
                     </div>
-                    <div class="col-4">
-                        <h6 class="mb-1">Активных пользователей</h6>
-                        <p class="display-6 mb-0">{{ active_users }}</p>
+                    <div class="col-md-3 col-6 mb-3">
+                        <h6 class="mb-1 text-muted">Активных пользователей</h6>
+                        <p class="display-6 mb-0 text-info">{{ active_users }}</p>
+                    </div>
+                    <div class="col-md-3 col-6 mb-3">
+                        <h6 class="mb-1 text-muted">Комплектующих</h6>
+                        <p class="display-6 mb-0 text-warning">{{ stats_data.get('components_count', 0) }}</p>
+                    </div>
+                </div>
+                
+                <!-- Графики и диаграммы -->
+                <div class="row">
+                    <!-- Круговая диаграмма: Распределение по категориям (количество) -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">ТМЦ по категориям (количество)</h6>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="categoryChart" height="250"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Круговая диаграмма: Распределение по категориям (стоимость) -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">ТМЦ по категориям (стоимость)</h6>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="categoryCostChart" height="250"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Столбчатая диаграмма: Топ отделов -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">Топ-10 отделов по количеству ТМЦ</h6>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="departmentChart" height="250"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Столбчатая диаграмма: Топ пользователей -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">Топ-10 пользователей по количеству ТМЦ</h6>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="userChart" height="250"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Линейный график: Динамика добавления ТМЦ -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">Динамика добавления ТМЦ (последние 12 месяцев)</h6>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="monthlyChart" height="250"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Круговая диаграмма: Статусы ТМЦ -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">Статусы ТМЦ</h6>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="statusChart" height="250"></canvas>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+        
+        <script>
+        // Данные для графиков
+        const statsData = {{ stats_data | tojson }};
+        
+        // Цвета для графиков
+        const colors = [
+            '#0d6efd', '#198754', '#ffc107', '#dc3545', '#0dcaf0',
+            '#6f42c1', '#fd7e14', '#20c997', '#e83e8c', '#6c757d'
+        ];
+        
+        // Функция для генерации цветов
+        function generateColors(count) {
+            const result = [];
+            for (let i = 0; i < count; i++) {
+                result.push(colors[i % colors.length]);
+            }
+            return result;
+        }
+        
+        // График: Распределение по категориям (количество)
+        if (statsData.category_labels && statsData.category_labels.length > 0) {
+            const categoryCtx = document.getElementById('categoryChart').getContext('2d');
+            new Chart(categoryCtx, {
+                type: 'pie',
+                data: {
+                    labels: statsData.category_labels,
+                    datasets: [{
+                        data: statsData.category_counts,
+                        backgroundColor: generateColors(statsData.category_labels.length),
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                font: { size: 11 }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': ' + context.parsed + ' шт.';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('categoryChart').parentElement.innerHTML = '<p class="text-muted text-center py-4">Нет данных</p>';
+        }
+        
+        // График: Распределение по категориям (стоимость)
+        if (statsData.category_cost_labels && statsData.category_cost_labels.length > 0) {
+            const categoryCostCtx = document.getElementById('categoryCostChart').getContext('2d');
+            new Chart(categoryCostCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: statsData.category_cost_labels,
+                    datasets: [{
+                        data: statsData.category_costs,
+                        backgroundColor: generateColors(statsData.category_cost_labels.length),
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                font: { size: 11 }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': ' + context.parsed.toLocaleString('ru-RU') + ' руб.';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('categoryCostChart').parentElement.innerHTML = '<p class="text-muted text-center py-4">Нет данных</p>';
+        }
+        
+        // График: Топ отделов
+        if (statsData.department_labels && statsData.department_labels.length > 0) {
+            const departmentCtx = document.getElementById('departmentChart').getContext('2d');
+            new Chart(departmentCtx, {
+                type: 'bar',
+                data: {
+                    labels: statsData.department_labels,
+                    datasets: [{
+                        label: 'Количество ТМЦ',
+                        data: statsData.department_counts,
+                        backgroundColor: '#0d6efd',
+                        borderColor: '#0a58ca',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: { size: 10 }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Количество: ' + context.parsed.y + ' шт.';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('departmentChart').parentElement.innerHTML = '<p class="text-muted text-center py-4">Нет данных</p>';
+        }
+        
+        // График: Топ пользователей
+        if (statsData.user_labels && statsData.user_labels.length > 0) {
+            const userCtx = document.getElementById('userChart').getContext('2d');
+            new Chart(userCtx, {
+                type: 'bar',
+                data: {
+                    labels: statsData.user_labels,
+                    datasets: [{
+                        label: 'Количество ТМЦ',
+                        data: statsData.user_counts,
+                        backgroundColor: '#198754',
+                        borderColor: '#146c43',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Количество: ' + context.parsed.x + ' шт.';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('userChart').parentElement.innerHTML = '<p class="text-muted text-center py-4">Нет данных</p>';
+        }
+        
+        // График: Динамика добавления ТМЦ
+        if (statsData.monthly_labels && statsData.monthly_labels.length > 0) {
+            const monthlyCtx = document.getElementById('monthlyChart').getContext('2d');
+            new Chart(monthlyCtx, {
+                type: 'line',
+                data: {
+                    labels: statsData.monthly_labels,
+                    datasets: [{
+                        label: 'Количество добавленных ТМЦ',
+                        data: statsData.monthly_counts,
+                        borderColor: '#ffc107',
+                        backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: { size: 10 }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Добавлено: ' + context.parsed.y + ' шт.';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('monthlyChart').parentElement.innerHTML = '<p class="text-muted text-center py-4">Нет данных</p>';
+        }
+        
+        // График: Статусы ТМЦ
+        if (statsData.status_labels && statsData.status_labels.length > 0) {
+            const statusCtx = document.getElementById('statusChart').getContext('2d');
+            new Chart(statusCtx, {
+                type: 'pie',
+                data: {
+                    labels: statsData.status_labels,
+                    datasets: [{
+                        data: statsData.status_counts,
+                        backgroundColor: ['#198754', '#dc3545'],
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                font: { size: 12 }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': ' + context.parsed + ' шт.';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('statusChart').parentElement.innerHTML = '<p class="text-muted text-center py-4">Нет данных</p>';
+        }
+        </script>
         {% endif %}
          <!-- Блок новостей -->
         <div class="card shadow-sm mb-4">

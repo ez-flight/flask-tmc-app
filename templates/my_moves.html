@@ -1,0 +1,101 @@
+<!-- templates/my_moves.html -->
+{% extends "base.html" %}
+{% block title %}Мои перемещения{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Мои перемещения</h1>
+    <div class="user-info">
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>На главную
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        Перемещения моих ТМЦ и комплектующих (последние 100)
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col" style="width: 150px;">Дата и время</th>
+                        <th scope="col">ТМЦ</th>
+                        <th scope="col">Откуда</th>
+                        <th scope="col">Куда</th>
+                        <th scope="col">От пользователя</th>
+                        <th scope="col">К пользователю</th>
+                        <th scope="col">Комментарий</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if moves_data %}
+                        {% for item in moves_data %}
+                        <tr class="clickable-row" onclick="window.location='{{ url_for('info_tmc', tmc_id=item.equipment.id) if item.equipment else '#' }}'" style="cursor: pointer;">
+                            <td>{{ item.move.dt.strftime('%d.%m.%Y %H:%M') }}</td>
+                            <td>
+                                {% if item.equipment %}
+                                    <strong style="color: var(--vk-blue);">{{ item.equipment.buhname }}</strong>
+                                    {% if item.equipment.sernum %}
+                                        <br><small class="text-muted">С/Н: {{ item.equipment.sernum }}</small>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">ТМЦ #{{ item.move.eqid }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.place_from %}
+                                    {{ item.place_from.name }}
+                                {% else %}
+                                    <span class="text-muted">ID: {{ item.move.placesidfrom }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.place_to %}
+                                    {{ item.place_to.name }}
+                                {% else %}
+                                    <span class="text-muted">ID: {{ item.move.placesidto }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.user_from %}
+                                    {{ item.user_from.login }}
+                                {% else %}
+                                    <span class="text-muted">ID: {{ item.move.useridfrom }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.user_to %}
+                                    {{ item.user_to.login }}
+                                {% else %}
+                                    <span class="text-muted">ID: {{ item.move.useridto }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.move.comment %}
+                                    <span title="{{ item.move.comment|replace('"', '&quot;') }}" style="display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                        {{ item.move.comment }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center" style="padding: 40px; color: var(--vk-text-light);">
+                                <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3; margin-bottom: 15px;"></i>
+                                <p class="mb-0">Нет перемещений ваших ТМЦ.</p>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+

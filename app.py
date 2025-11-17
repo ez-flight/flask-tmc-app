@@ -14,7 +14,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy.exc import IntegrityError
 
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, flash, redirect, render_template, request, url_for, abort
 from werkzeug.utils import secure_filename
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 
@@ -38,6 +38,60 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'  # маршрут для перенаправления неавторизованных пользователей
 
 app.jinja_env.globals['date'] = date
+
+# === КОНТЕКСТНЫЙ ПРОЦЕССОР ===
+@app.context_processor
+def inject_user_data():
+    """Добавляет данные пользователя во все шаблоны."""
+    if current_user.is_authenticated:
+        is_admin = current_user.mode == 1
+        is_mol = current_user_has_role(1)
+        
+        # Запрос ТМЦ для пользователя или всех (если админ)
+        if is_admin:
+            tmc_query = Equipment.query.filter_by(active=True, os=True)
+        else:
+            tmc_query = Equipment.query.filter_by(usersid=current_user.id, active=True, os=True)
+        
+        tmc_count = tmc_query.count()
+        total_cost = db.session.query(func.coalesce(func.sum(Equipment.cost), 0)).filter(
+            Equipment.id.in_([eq.id for eq in tmc_query.all()])
+        ).scalar() or 0
+        
+        # Фото пользователя
+        from models import UsersProfile
+        profile = UsersProfile.query.filter_by(usersid=current_user.id).first()
+        if profile and profile.jpegphoto and profile.jpegphoto != 'noimage.jpg':
+            user_photo = url_for('static', filename=f'uploads/{profile.jpegphoto}')
+        else:
+            user_photo = url_for('static', filename='uploads/noimage.jpg')
+        
+        # Название организации пользователя
+        user_org_name = None
+        if hasattr(current_user, 'orgid') and current_user.orgid:
+            org = Org.query.get(current_user.orgid)
+            if org:
+                user_org_name = org.name
+        
+        return {
+            'user_login': current_user.login,
+            'user_photo': user_photo,
+            'tmc_count': tmc_count,
+            'total_cost': total_cost,
+            'is_admin': is_admin,
+            'is_mol': is_mol,
+            'user_org_name': user_org_name,
+            'user_org_id': current_user.orgid if hasattr(current_user, 'orgid') else None
+        }
+    return {
+        'user_login': '',
+        'user_photo': url_for('static', filename='uploads/noimage.jpg'),
+        'tmc_count': 0,
+        'total_cost': 0,
+        'is_admin': False,
+        'is_mol': False
+    }
+
 # === ФУНКЦИИ БЕЗОПАСНОСТИ ===
 
 def check_password(plain_password: str, salt: str, hashed_password: str) -> bool:
@@ -153,6 +207,7 @@ def logout():
 @login_required
 def index():
     is_admin = current_user.mode == 1
+    is_mol = current_user_has_role(1)
 
     # Запрос ТМЦ для пользователя или всех (если админ)
     if is_admin:
@@ -266,8 +321,6 @@ def index():
         components_count = Equipment.query.filter_by(active=True, os=False).count()
         stats_data['components_count'] = components_count
 
-    moves = Move.query.order_by(Move.dt.desc()).limit(5).all()
-
     # Фото пользователя
     from models import UsersProfile
     profile = UsersProfile.query.filter_by(usersid=current_user.id).first()
@@ -276,24 +329,42 @@ def index():
     else:
         user_photo = url_for('static', filename='uploads/noimage.jpg')
 
-    # Новости
-    news_list = News.query.filter_by(stiker=True).order_by(News.dt.desc()).limit(5).all()
+    # Новости: закрепленные сверху, затем остальные, максимум 5
+    pinned_news = News.query.filter_by(stiker=True, pinned=True).order_by(News.dt.desc()).all()
+    unpinned_news = News.query.filter_by(stiker=True, pinned=False).order_by(News.dt.desc()).all()
+    
+    # Объединяем: сначала закрепленные, затем остальные, максимум 5
+    news_list = []
+    if pinned_news:
+        # Берем последнюю закрепленную новость
+        news_list.append(pinned_news[0])
+        # Добавляем остальные новости до лимита 5
+        remaining_slots = 4
+        for news in unpinned_news:
+            if remaining_slots <= 0:
+                break
+            news_list.append(news)
+            remaining_slots -= 1
+    else:
+        # Если нет закрепленных, берем просто 5 последних
+        news_list = unpinned_news[:5]
 
     return render_template('index.html',
-                           user_login=current_user.login,
-                           user_photo=user_photo,
-                           tmc_count=tmc_count,
-                           total_cost=total_cost,
-                           is_admin=is_admin,
-                           news_list=news_list,
-                           moves=moves,
-                           active_users=active_users,
-                           stats_data=stats_data if is_admin else {})
+                           news_list=news_list)
 
 
 @app.route('/add', methods=['GET', 'POST'])
 @login_required
 def add_tmc():
+    """Добавление нового ТМЦ. Доступно только админу и МОЛ (role=1)."""
+    # Проверка доступа: только админ или МОЛ
+    is_admin = current_user.mode == 1
+    is_mol = current_user_has_role(1)
+    
+    if not (is_admin or is_mol):
+        flash('Доступ запрещён. Только администратор или МОЛ могут добавлять ТМЦ.', 'danger')
+        return redirect(url_for('index'))
+    
     # Получаем nome_id из URL-параметра (если есть)
     nome_id = request.args.get('nome_id', type=int)
     preselected_nome = None
@@ -318,7 +389,14 @@ def add_tmc():
         nomeid = int(request.form['nomeid'])
         orgid = int(request.form['orgid'])
         placesid = int(request.form['placesid'])
-        usersid = int(request.form['usersid'])
+        
+        # Для МОЛ автоматически устанавливаем usersid = current_user.id
+        # Для админа берем из формы
+        if is_mol and not is_admin:
+            usersid = current_user.id
+        else:
+            usersid = int(request.form['usersid'])
+        
         department_id = request.form.get('department_id')
         department_id = int(department_id) if department_id else None
 
@@ -411,19 +489,33 @@ def add_tmc():
     # GET: отображаем форму
     organizations = Org.query.all()
     places = Places.query.all()
-    users = db.session.query(Users)\
-        .join(UsersRoles, Users.id == UsersRoles.userid)\
-        .filter(Users.active == True, UsersRoles.role == 1)\
-        .order_by(Users.login)\
-        .all()
+    
+    # Для админа показываем список всех МОЛ, для МОЛ - только себя
+    if is_admin:
+        users = db.session.query(Users)\
+            .join(UsersRoles, Users.id == UsersRoles.userid)\
+            .filter(Users.active == True, UsersRoles.role == 1)\
+            .order_by(Users.login)\
+            .all()
+    else:
+        # Для МОЛ показываем только себя
+        users = [current_user] if is_mol else []
+    
     departments = Department.query.filter_by(active=True).all()
+    
+    # Получаем группы для выпадающего списка
+    groups = GroupNome.query.filter_by(active=True).all()
 
     return render_template('add_tmc.html',
                            organizations=organizations,
                            places=places,
                            users=users,
                            departments=departments,
+                           groups=groups,
                            datetime=datetime,
+                           is_admin=is_admin,
+                           is_mol=is_mol,
+                           current_user=current_user,
                            preselected_nome=preselected_nome,
                            preselected_group=preselected_group,
                            preselected_vendor=preselected_vendor)
@@ -432,12 +524,28 @@ def add_tmc():
 @login_required
 def edit_tmc(tmc_id):
     """Редактирование ТМЦ."""
+    from models import EquipmentComments
+    
     tmc = Equipment.query.get_or_404(tmc_id)
     if request.method == 'POST':
         tmc.buhname = request.form['buhname']
         tmc.sernum = request.form.get('sernum', '')
         tmc.invnum = request.form.get('invnum', '')
-        tmc.comment = request.form.get('comment', '')
+        
+        # Обработка комментария: сохраняем старый в архив, если он изменился
+        new_comment = request.form.get('comment', '').strip()
+        old_comment = tmc.comment or ''
+        
+        if new_comment != old_comment and old_comment:
+            # Сохраняем старый комментарий в архив
+            archived_comment = EquipmentComments(
+                equipment_id=tmc_id,
+                comment=old_comment,
+                created_by=current_user.id
+            )
+            db.session.add(archived_comment)
+        
+        tmc.comment = new_comment
         tmc.orgid = int(request.form['orgid'])
         tmc.placesid = int(request.form['placesid'])
         tmc.usersid = int(request.form['usersid'])
@@ -697,7 +805,13 @@ def edit_nome(nome_id):
     return render_template('edit_nome.html', nome=nome, groups=groups, vendors=vendors)
 
 @app.route('/bulk_edit_nome/<int:nome_id>', methods=['GET', 'POST'])
+@login_required
 def bulk_edit_nome(nome_id):
+    # Только для администраторов
+    if current_user.mode != 1:
+        flash('Доступ запрещён. Групповое редактирование доступно только администраторам.', 'danger')
+        return redirect(url_for('index'))
+    
     # Получаем все ТМЦ с этим nomeid
     tmc_list = Equipment.query.filter_by(nomeid=nome_id).all()
     if not tmc_list:
@@ -799,6 +913,41 @@ def bulk_edit_nome(nome_id):
                        first_tmc=first_tmc,
                        suppliers=suppliers)
 
+@app.route('/edit_nome_group/<int:nome_id>', methods=['GET', 'POST'])
+@login_required
+def edit_nome_group(nome_id):
+    """Редактирование группы ТМЦ - доступно админу и МОЛ."""
+    nome = Nome.query.get_or_404(nome_id)
+    
+    # Проверка прав доступа: только админ или МОЛ
+    is_admin = current_user.mode == 1
+    is_mol = current_user_has_role(1)
+    
+    if not (is_admin or is_mol):
+        flash('Доступ запрещён. Редактирование группы ТМЦ доступно только администраторам и МОЛ.', 'danger')
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        try:
+            # Обновляем флаг составного ТМЦ
+            nome.is_composite = bool(request.form.get('is_composite'))
+            
+            # Обновляем комментарий группы
+            comment = request.form.get('comment', '').strip()
+            nome.comment = comment if comment else None
+            
+            db.session.commit()
+            flash('Группа ТМЦ успешно обновлена!', 'success')
+            return redirect(url_for('list_by_nome', nome_id=nome_id))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Ошибка при сохранении: {str(e)}', 'danger')
+    
+    # GET: отображаем форму редактирования
+    return render_template('edit_nome_group.html',
+                         nome=nome,
+                         is_admin=is_admin,
+                         is_mol=is_mol)
 
 @app.route('/list_by_nome/<int:nome_id>')
 @login_required
@@ -817,19 +966,31 @@ def list_by_nome(nome_id):
 
     # Получаем шаблон комплекта для этого типа
     component_template = NomeComponents.query.filter_by(id_nome_main=nome_id).order_by(NomeComponents.sort_order).all()
+    
+    # Проверяем, является ли пользователь МОЛ
+    is_mol = current_user_has_role(1)
 
     return render_template('list_by_nome.html',
                            nome=nome,
                            tmc_list=tmc_list,
                            component_template=component_template,
-                           # Передаём переменную в шаблон, чтобы он знал, админ ли смотрит
-                           is_admin=is_admin)
+                           # Передаём переменные в шаблон
+                           is_admin=is_admin,
+                           is_mol=is_mol)
 
 @app.route('/info_tmc/<int:tmc_id>')
 @login_required
 def info_tmc(tmc_id):
     tmc = Equipment.query.get_or_404(tmc_id)
-    components = AppComponents.query.filter_by(id_main_asset=tmc.id).all()
+    
+    # Проверяем, является ли ТМЦ составным (может иметь комплектующие)
+    nome = tmc.nome
+    is_composite = nome.is_composite if nome else False
+    
+    # Получаем комплектующие только если ТМЦ составное
+    components = []
+    if is_composite:
+        components = AppComponents.query.filter_by(id_main_asset=tmc.id).all()
 
     # Проверка: текущий пользователь — админ или владелец ТМЦ
     is_admin = current_user.mode == 1
@@ -851,17 +1012,91 @@ def info_tmc(tmc_id):
             .filter(UsersRoles.role == 2, Users.active == True)\
             .order_by(Users.login).all()
 
+    # Получаем историю перемещений
+    # 1. Перемещения между МОЛ/Склад из таблицы Move
+    moves = Move.query.filter_by(eqid=tmc_id).order_by(Move.dt.desc()).all()
+    
+    # 2. Временные выдачи из таблицы EquipmentTempUsage
+    temp_usages = EquipmentTempUsage.query.filter_by(
+        equipment_id=tmc_id
+    ).order_by(EquipmentTempUsage.dt_start.desc()).all()
+    
+    # Объединяем в один список с унифицированной структурой
+    history = []
+    
+    # Обрабатываем перемещения
+    for move in moves:
+        org_from = Org.query.get(move.orgidfrom)
+        org_to = Org.query.get(move.orgidto)
+        place_from = Places.query.get(move.placesidfrom)
+        place_to = Places.query.get(move.placesidto)
+        user_from = Users.query.get(move.useridfrom)
+        user_to = Users.query.get(move.useridto)
+        
+        history.append({
+            'type': 'move',
+            'id': move.id,
+            'date': move.dt,
+            'org_from': org_from.name if org_from else f'ID {move.orgidfrom}',
+            'org_to': org_to.name if org_to else f'ID {move.orgidto}',
+            'place_from': place_from.name if place_from else f'ID {move.placesidfrom}',
+            'place_to': place_to.name if place_to else f'ID {move.placesidto}',
+            'user_from': user_from.login if user_from else f'ID {move.useridfrom}',
+            'user_to': user_to.login if user_to else f'ID {move.useridto}',
+            'comment': move.comment,
+            'is_temp': 'Временная выдача' in move.comment
+        })
+    
+    # Обрабатываем временные выдачи
+    for usage in temp_usages:
+        mol_user = usage.mol_user
+        temp_user = usage.temp_user
+        
+        history.append({
+            'type': 'temp_usage',
+            'id': usage.id,
+            'date': usage.dt_start,
+            'org_from': tmc.org.name if tmc.org else '',
+            'org_to': tmc.org.name if tmc.org else '',
+            'place_from': tmc.places.name if tmc.places else '',
+            'place_to': tmc.places.name if tmc.places else '',
+            'user_from': mol_user.login if mol_user else f'ID {usage.mol_userid}',
+            'user_to': temp_user.login if temp_user else f'ID {usage.user_temp_id}',
+            'comment': usage.comment or '',
+            'returned': usage.returned,
+            'dt_end': usage.dt_end,
+            'is_temp': True
+        })
+    
+    # Сортируем по дате (от новых к старым)
+    history.sort(key=lambda x: x['date'], reverse=True)
+    
+    # Получаем историю комментариев
+    from models import EquipmentComments
+    comment_history = EquipmentComments.query.filter_by(
+        equipment_id=tmc_id
+    ).order_by(EquipmentComments.created_at.desc()).all()
+
     return render_template('info_tmc.html',
                            tmc=tmc,
                            components=components,
+                           is_composite=is_composite,
                            can_manage_temp=can_manage_temp,
                            active_usage=active_usage,
-                           users_role_2=users_role_2)
+                           users_role_2=users_role_2,
+                           history=history,
+                           comment_history=comment_history)
 
 @app.route('/add_nome', methods=['GET', 'POST'])
 @login_required
 def add_nome():
-    """Добавление нового наименования (группы ТМЦ) с указанием количества ТМЦ."""
+    """Добавление нового наименования (группы ТМЦ) с указанием количества ТМЦ. Доступно только админу."""
+    # Проверка доступа: только админ
+    is_admin = current_user.mode == 1
+    if not is_admin:
+        flash('Доступ запрещён. Только администратор может добавлять группы ТМЦ.', 'danger')
+        return redirect(url_for('index'))
+    
     if request.method == 'POST':
         name = request.form['name'].strip()
         group_id = int(request.form['groupid'])
@@ -1565,6 +1800,8 @@ def list_my_tmc():
                                            Equipment.os == True)\
                                    .distinct().order_by(Category.name).all()
 
+    is_mol = current_user_has_role(1)
+    
     return render_template('my_tmc.html',
                            grouped_tmc=grouped_tmc,
                            tmc_count=tmc_count,
@@ -1573,7 +1810,8 @@ def list_my_tmc():
                            filter_category_id=filter_category_id,
                            all_departments=all_departments,
                            all_categories=all_categories,
-                           user_login=current_user.login)
+                           user_login=current_user.login,
+                           is_mol=is_mol)
 # app.py (вставьте этот маршрут в соответствующее место)
 @app.route('/manage_categories', methods=['GET', 'POST'])
 @login_required
@@ -1725,6 +1963,25 @@ def add_component():
         main_asset_id = request.form.get('main_asset_id')
         main_asset_id = int(main_asset_id) if main_asset_id else None
 
+        # Если указано основное средство, проверяем, что оно составное,
+        # и наследуем МОЛ
+        if main_asset_id:
+            main_asset = Equipment.query.get(main_asset_id)
+            if main_asset:
+                # Проверяем, что ТМЦ является составным
+                nome_main = Nome.query.get(main_asset.nomeid)
+                if nome_main and nome_main.is_composite:
+                    # Наследуем МОЛ от основного ТМЦ
+                    usersid = main_asset.usersid
+                    orgid = main_asset.orgid
+                    placesid = main_asset.placesid
+                    department_id = main_asset.department_id
+                else:
+                    msg = ('К выбранному ТМЦ нельзя прикреплять комплектующие. '
+                           'ТМЦ должно быть помечено как составное.')
+                    flash(msg, 'warning')
+                    return redirect(url_for('add_component'))
+
         # Обработка фото (опционально)
         photo_filename = ''
         if 'photo' in request.files:
@@ -1750,13 +2007,13 @@ def add_component():
             nomeid=nomeid,
             department_id=department_id,
             photo=photo_filename,
-            passport_filename='',  # ← паспорт не нужен для комплектующих
+            passport_filename='',  # паспорт не нужен для комплектующих
             kntid=None,
             datepost=datetime.utcnow(),
             date_start=date.today(),
-            cost=Decimal('0.00'),      # ← можно не указывать стоимость
+            cost=Decimal('0.00'),  # можно не указывать стоимость
             currentcost=Decimal('0.00'),
-            os=False,                  # ← КЛЮЧЕВОЕ: это НЕ основное средство
+            os=False,  # КЛЮЧЕВОЕ: это НЕ основное средство
             mode=False,
             repair=False,
             active=True,
@@ -1776,6 +2033,23 @@ def add_component():
 
             # Если указано основное средство — создаём связь в app_components
             if main_asset_id:
+                # Проверяем, не привязано ли уже комплектующее этого типа
+                # к данному ТМЦ
+                existing_component = AppComponents.query.filter_by(
+                    id_main_asset=main_asset_id,
+                    id_nome_component=nomeid
+                ).first()
+
+                if existing_component:
+                    db.session.rollback()
+                    nome_component = Nome.query.get(nomeid)
+                    nome_name = (nome_component.name
+                                 if nome_component else f"ID {nomeid}")
+                    msg = (f'К данному ТМЦ уже привязано комплектующее типа '
+                           f'"{nome_name}". К одному ТМЦ можно привязать '
+                           f'только одно комплектующее каждого типа.')
+                    flash(msg, 'warning')
+                    return redirect(url_for('add_component'))
                 link = AppComponents(
                     id_main_asset=main_asset_id,
                     id_nome_component=nomeid,
@@ -1810,8 +2084,26 @@ def add_component():
         .filter(Nome.is_component == True)\
         .distinct().all()
 
-    # Также передадим список основных средств для привязки (опционально)
-    main_assets = Equipment.query.filter_by(active=True, os=True).all()
+    # Также передадим список основных средств для привязки
+    # (только составные ТМЦ). Получаем ID составных ТМЦ
+    composite_nome_ids = (db.session.query(Nome.id)
+                          .filter(Nome.is_composite == True)
+                          .subquery())
+    main_assets = Equipment.query.filter(
+        Equipment.active == True,
+        Equipment.os == True,
+        Equipment.nomeid.in_(composite_nome_ids)
+    ).all()
+
+    # Получаем информацию о том, какие типы комплектующих уже привязаны
+    # к каким ТМЦ. Словарь: {nome_id: [asset_ids]} - какие ТМЦ уже имеют
+    # комплектующее данного типа
+    blocked_assets_by_nome = {}
+    existing_links = AppComponents.query.all()
+    for link in existing_links:
+        if link.id_nome_component not in blocked_assets_by_nome:
+            blocked_assets_by_nome[link.id_nome_component] = []
+        blocked_assets_by_nome[link.id_nome_component].append(link.id_main_asset)
 
     return render_template('add_component.html',
                         organizations=organizations,
@@ -1820,9 +2112,10 @@ def add_component():
                         departments=departments,
                         component_groups=component_groups,
                         main_assets=main_assets,
+                        blocked_assets_by_nome=blocked_assets_by_nome,
                         datetime=datetime,
-                        vendors=[],          # ← добавлено
-                        nomenclatures=[])    # ← добавлено
+                        vendors=[],
+                        nomenclatures=[])
 
 @app.route('/edit_component/<int:component_id>', methods=['GET', 'POST'])
 @login_required
@@ -1877,11 +2170,33 @@ def edit_component(component_id):
 
         # --- НОВОЕ: Обработка привязки к основному средству ---
         selected_main_asset_id = request.form.get('main_asset_id')
-        selected_main_asset_id = int(selected_main_asset_id) if selected_main_asset_id else None
+        selected_main_asset_id = (int(selected_main_asset_id)
+                                   if selected_main_asset_id else None)
 
-        # Ищем *существующую* связь для *этого конкретного комплектующего* (через его свойства)
-        # Это не идеально, но в текущей схеме, где нет прямой ссылки на equipment.id в app_components,
-        # приходится искать по совпадению nomeid, sernum, comment.
+        # Если указано основное средство, проверяем, что оно составное,
+        # и наследуем МОЛ
+        if selected_main_asset_id:
+            main_asset = Equipment.query.get(selected_main_asset_id)
+            if main_asset:
+                # Проверяем, что ТМЦ является составным
+                nome_main = Nome.query.get(main_asset.nomeid)
+                if nome_main and nome_main.is_composite:
+                    # Наследуем МОЛ от основного ТМЦ
+                    component.usersid = main_asset.usersid
+                    component.orgid = main_asset.orgid
+                    component.placesid = main_asset.placesid
+                    component.department_id = main_asset.department_id
+                else:
+                    msg = ('К выбранному ТМЦ нельзя прикреплять комплектующие. '
+                           'ТМЦ должно быть помечено как составное.')
+                    flash(msg, 'warning')
+                    return redirect(url_for('edit_component',
+                                           component_id=component_id))
+
+        # Ищем существующую связь для этого конкретного комплектующего
+        # (через его свойства). Это не идеально, но в текущей схеме, где нет
+        # прямой ссылки на equipment.id в app_components, приходится искать
+        # по совпадению nomeid, sernum, comment.
         existing_link = AppComponents.query.filter_by(
             id_nome_component=component.nomeid,
             ser_num_component=component.sernum,
@@ -1893,10 +2208,46 @@ def edit_component(component_id):
             if existing_link:
                 # Если связь уже есть, обновляем id_main_asset
                 if existing_link.id_main_asset != selected_main_asset_id:
+                    # Проверяем, не привязано ли уже комплектующее этого типа
+                    # к новому ТМЦ. Исключаем текущую связь из проверки
+                    existing_component = AppComponents.query.filter(
+                        AppComponents.id_main_asset == selected_main_asset_id,
+                        AppComponents.id_nome_component == component.nomeid,
+                        AppComponents.id != existing_link.id
+                    ).first()
+
+                    if existing_component:
+                        nome_name = (component.nome.name
+                                      if component.nome else "неизвестно")
+                        msg = (f'К выбранному ТМЦ уже привязано комплектующее '
+                               f'типа "{nome_name}". К одному ТМЦ можно привязать '
+                               f'только одно комплектующее каждого типа.')
+                        flash(msg, 'warning')
+                        return redirect(url_for('edit_component',
+                                               component_id=component_id))
+
                     existing_link.id_main_asset = selected_main_asset_id
                     flash('Привязка к основному средству обновлена.', 'info')
+                # Если связь указывает на тот же ТМЦ - ничего не делаем
             else:
-                # Связи не было, создаём новую
+                # Связи не было, проверяем, не привязано ли уже комплектующее
+                # этого типа к данному ТМЦ
+                existing_component = AppComponents.query.filter_by(
+                    id_main_asset=selected_main_asset_id,
+                    id_nome_component=component.nomeid
+                ).first()
+
+                if existing_component:
+                    nome_name = (component.nome.name
+                                  if component.nome else "неизвестно")
+                    msg = (f'К выбранному ТМЦ уже привязано комплектующее '
+                           f'типа "{nome_name}". К одному ТМЦ можно привязать '
+                           f'только одно комплектующее каждого типа.')
+                    flash(msg, 'warning')
+                    return redirect(url_for('edit_component',
+                                           component_id=component_id))
+
+                # Создаём новую связь
                 new_link = AppComponents(
                     id_main_asset=selected_main_asset_id,
                     id_nome_component=component.nomeid,
@@ -1942,14 +2293,36 @@ def edit_component(component_id):
     groups = GroupNome.query.filter_by(active=True).all()
     vendors = Vendor.query.filter_by(active=True).all()
 
-    # Загружаем все наименования для выбранного производителя (для динамического обновления)
-    nomenclatures = Nome.query.filter_by(vendorid=current_vendor.id, active=True).order_by(Nome.name).all() if current_vendor else []
+    # Загружаем все наименования для выбранного производителя
+    # (для динамического обновления)
+    nomenclatures = (Nome.query.filter_by(vendorid=current_vendor.id,
+                                          active=True)
+                     .order_by(Nome.name).all()
+                     if current_vendor else [])
 
-    # --- НОВОЕ: Список основных средств для привязки ---
-    main_assets = Equipment.query.filter_by(active=True, os=True).all()
+    # --- НОВОЕ: Список основных средств для привязки
+    # (только составные ТМЦ). Получаем ID составных ТМЦ
+    composite_nome_ids = (db.session.query(Nome.id)
+                          .filter(Nome.is_composite == True)
+                          .subquery())
+    main_assets = Equipment.query.filter(
+        Equipment.active == True,
+        Equipment.os == True,
+        Equipment.nomeid.in_(composite_nome_ids)
+    ).all()
+    # Получаем информацию о том, какие типы комплектующих уже привязаны
+    # к каким ТМЦ. Словарь: {nome_id: [asset_ids]} - какие ТМЦ уже имеют
+    # комплектующее данного типа
+    blocked_assets_by_nome = {}
+    existing_links = AppComponents.query.all()
+    for link in existing_links:
+        if link.id_nome_component not in blocked_assets_by_nome:
+            blocked_assets_by_nome[link.id_nome_component] = []
+        blocked_assets_by_nome[link.id_nome_component].append(
+            link.id_main_asset)
 
-    # Проверяем, к какому основному средству привязано это комплектующее (если привязано)
-    # Ищем связь в app_components по свойствам компонента
+    # Проверяем, к какому основному средству привязано это комплектующее
+    # (если привязано). Ищем связь в app_components по свойствам компонента
     linked_main_asset = None
     potential_link = AppComponents.query.filter_by(
         id_nome_component=component.nomeid,
@@ -1957,7 +2330,11 @@ def edit_component(component_id):
         comment_component=component.comment,
     ).first()
     if potential_link:
-        linked_main_asset = Equipment.query.filter_by(id=potential_link.id_main_asset, active=True, os=True).first()
+        linked_main_asset = Equipment.query.filter_by(
+            id=potential_link.id_main_asset,
+            active=True,
+            os=True
+        ).first()
 
     # --- КОНЕЦ НОВОГО ---
 
@@ -1975,7 +2352,9 @@ def edit_component(component_id):
                            nomenclatures=nomenclatures,
                            # --- ПЕРЕДАЁМ НОВЫЕ ПЕРЕМЕННЫЕ ---
                            main_assets=main_assets,
-                           linked_main_asset_id=linked_main_asset.id if linked_main_asset else None
+                           blocked_assets_by_nome=blocked_assets_by_nome,
+                           linked_main_asset_id=linked_main_asset.id if linked_main_asset else None,
+                           current_component_nome_id=component.nomeid
                            # --- КОНЕЦ ПЕРЕДАЧИ ---
                            )
 
@@ -2026,6 +2405,72 @@ def manage_users():
                            post_dict=post_dict,
                            is_admin=is_admin,
                            user_login=current_user.login)
+
+@app.route('/edit_my_profile', methods=['GET', 'POST'])
+@login_required
+def edit_my_profile():
+    """Редактирование своего профиля (для всех пользователей)."""
+    user = current_user
+    user_id = current_user.id
+    
+    # Загружаем профиль пользователя (для фото и ФИО)
+    user_profile = UsersProfile.query.filter_by(usersid=user_id).first()
+    if not user_profile:
+        # Создаем пустой профиль, если его нет
+        user_profile = UsersProfile(usersid=user_id, fio='', jpegphoto='noimage.jpg')
+        db.session.add(user_profile)
+        db.session.flush()
+    
+    if request.method == 'POST':
+        # Получаем данные из формы
+        new_password = request.form.get('password', '').strip()
+        
+        # Обновление пароля при необходимости
+        if new_password:
+            import hashlib
+            user.password = hashlib.sha1(new_password.encode()).hexdigest()
+        
+        # Обновление ФИО в профиле
+        new_fio = request.form.get('fio', '').strip()
+        if user_profile:
+            user_profile.fio = new_fio
+        
+        # Обработка загрузки фото
+        if 'photo' in request.files:
+            photo_file = request.files['photo']
+            if photo_file and photo_file.filename and allowed_image(photo_file.filename):
+                # Удаляем старое фото, если оно не стандартное
+                if user_profile.jpegphoto and user_profile.jpegphoto != 'noimage.jpg':
+                    old_photo_path = os.path.join(app.config['UPLOAD_FOLDER'], user_profile.jpegphoto)
+                    if os.path.exists(old_photo_path):
+                        try:
+                            os.remove(old_photo_path)
+                        except OSError as e:
+                            flash(f'Ошибка при удалении старого фото: {e}', 'warning')
+                
+                # Сохраняем новое фото
+                filename = secure_filename(photo_file.filename)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                ext = filename.rsplit('.', 1)[1].lower()
+                new_photo_filename = f"{timestamp}.{ext}"
+                photo_file.save(os.path.join(app.config['UPLOAD_FOLDER'], new_photo_filename))
+                user_profile.jpegphoto = new_photo_filename
+            elif photo_file and photo_file.filename:
+                flash('Неверный формат файла фото. Допустимые форматы: png, jpg, jpeg, gif, bmp, webp.', 'danger')
+        
+        try:
+            db.session.commit()
+            flash('Профиль успешно обновлён.', 'success')
+            return redirect(url_for('index'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Ошибка при сохранении: {str(e)}', 'danger')
+    
+    # GET: отображаем форму с текущими данными пользователя
+    return render_template('edit_my_profile.html',
+                        user=user,
+                        user_profile=user_profile,
+                        user_login=current_user.login)
 
 @app.route('/edit_user/<int:user_id>', methods=['GET', 'POST'])
 @login_required
@@ -2196,10 +2641,16 @@ def temp_assign():
         flash('ТМЦ уже выдано временно и не возвращено.', 'warning')
         return redirect(url_for('my_tmc' if not is_admin else 'all_tmc'))
 
+    # Определяем ответственного МОЛ для записи
+    # Если выдачу делает админ, используем ответственного МОЛ из equipment.usersid
+    # Если выдачу делает МОЛ, используем текущего пользователя
+    responsible_mol_id = equipment.usersid if is_admin else current_user.id
+    
     # Создаём запись о временной выдаче
+    # В mol_userid записываем ответственного МОЛ (не того, кто выдал, а того, за кем числится ТМЦ)
     usage = EquipmentTempUsage(
         equipment_id=eq_id,
-        mol_userid=current_user.id,
+        mol_userid=responsible_mol_id,
         user_temp_id=user_temp_id,
         comment=comment
     )
@@ -2207,6 +2658,7 @@ def temp_assign():
     db.session.commit()
 
     # Логирование в таблицу move (опционально, для совместимости)
+    # В useridfrom всегда указываем ответственного МОЛ
     move = Move(
         eqid=eq_id,
         dt=datetime.utcnow(),
@@ -2214,7 +2666,7 @@ def temp_assign():
         orgidto=equipment.orgid,
         placesidfrom=equipment.placesid,
         placesidto=equipment.placesid,
-        useridfrom=current_user.id,
+        useridfrom=responsible_mol_id,
         useridto=user_temp_id,
         comment=f'Временная выдача: {comment or "без комментария"}'
     )
@@ -2249,15 +2701,541 @@ def temp_return(usage_id):
 @app.route('/my_temp_tmc')
 @login_required
 def my_temp_tmc():
-    if not current_user_has_role(2):
-        abort(403)
-
+    # Страница доступна всем авторизованным пользователям
+    # Получаем активные выдачи для текущего пользователя
     active_usages = EquipmentTempUsage.query.filter_by(
         user_temp_id=current_user.id,
         returned=False
     ).all()
+    
+    # Подсчитываем статистику
+    tmc_count = len(active_usages)
+    total_cost = 0
+    
+    for usage in active_usages:
+        if usage.equipment and usage.equipment.cost:
+            cost_value = float(usage.equipment.cost) if usage.equipment.cost else 0
+            total_cost += cost_value
 
-    return render_template('my_temp_tmc.html', usages=active_usages)
+    return render_template('my_temp_tmc.html', 
+                         usages=active_usages,
+                         tmc_count=tmc_count,
+                         total_cost=total_cost)
+
+def calculate_stats_data(tmc_query, is_admin=False):
+    """Вспомогательная функция для расчета статистики."""
+    stats_data = {}
+    
+    # Получаем ID всех ТМЦ из запроса
+    tmc_ids = [eq.id for eq in tmc_query.all()]
+    
+    if not tmc_ids:
+        return stats_data
+    
+    # Статистика по категориям (количество ТМЦ)
+    category_stats = db.session.query(
+        Category.name.label('category_name'),
+        func.count(Equipment.id).label('count')
+    ).join(GroupNome, Category.id == GroupNome.category_id)\
+     .join(Nome, GroupNome.id == Nome.groupid)\
+     .join(Equipment, Nome.id == Equipment.nomeid)\
+     .filter(Equipment.id.in_(tmc_ids))\
+     .group_by(Category.id, Category.name)\
+     .order_by(func.count(Equipment.id).desc())\
+     .all()
+    
+    stats_data['category_labels'] = [row.category_name for row in category_stats] if category_stats else []
+    stats_data['category_counts'] = [row.count for row in category_stats] if category_stats else []
+    
+    # Статистика по категориям (стоимость)
+    category_cost_stats = db.session.query(
+        Category.name.label('category_name'),
+        func.coalesce(func.sum(Equipment.cost), 0).label('total_cost')
+    ).join(GroupNome, Category.id == GroupNome.category_id)\
+     .join(Nome, GroupNome.id == Nome.groupid)\
+     .join(Equipment, Nome.id == Equipment.nomeid)\
+     .filter(Equipment.id.in_(tmc_ids))\
+     .group_by(Category.id, Category.name)\
+     .order_by(func.sum(Equipment.cost).desc())\
+     .all()
+    
+    stats_data['category_cost_labels'] = [row.category_name for row in category_cost_stats] if category_cost_stats else []
+    stats_data['category_costs'] = [float(row.total_cost) for row in category_cost_stats] if category_cost_stats else []
+    
+    # Статистика по отделам (только для админа)
+    if is_admin:
+        department_stats = db.session.query(
+            Department.name.label('department_name'),
+            func.count(Equipment.id).label('count')
+        ).join(Equipment, Department.id == Equipment.department_id)\
+         .filter(Equipment.id.in_(tmc_ids))\
+         .group_by(Department.id, Department.name)\
+         .order_by(func.count(Equipment.id).desc())\
+         .limit(10)\
+         .all()
+        
+        stats_data['department_labels'] = [row.department_name for row in department_stats] if department_stats else []
+        stats_data['department_counts'] = [row.count for row in department_stats] if department_stats else []
+        
+        # Топ пользователей по количеству ТМЦ
+        user_stats = db.session.query(
+            Users.login.label('user_login'),
+            func.count(Equipment.id).label('count')
+        ).join(Equipment, Users.id == Equipment.usersid)\
+         .filter(Equipment.id.in_(tmc_ids))\
+         .group_by(Users.id, Users.login)\
+         .order_by(func.count(Equipment.id).desc())\
+         .limit(10)\
+         .all()
+        
+        stats_data['user_labels'] = [row.user_login for row in user_stats] if user_stats else []
+        stats_data['user_counts'] = [row.count for row in user_stats] if user_stats else []
+    
+    # Динамика добавления ТМЦ по месяцам (последние 12 месяцев)
+    twelve_months_ago = datetime.now() - relativedelta(days=365)
+    
+    # Получаем все ТМЦ за последний год из нашего запроса
+    all_equipment = Equipment.query.filter(
+        Equipment.id.in_(tmc_ids),
+        Equipment.datepost >= twelve_months_ago
+    ).all()
+    
+    # Группируем по месяцам в Python
+    monthly_dict = {}
+    for eq in all_equipment:
+        month_key = eq.datepost.strftime('%Y-%m') if eq.datepost else None
+        if month_key:
+            monthly_dict[month_key] = monthly_dict.get(month_key, 0) + 1
+    
+    # Сортируем по месяцам
+    sorted_months = sorted(monthly_dict.keys())
+    stats_data['monthly_labels'] = sorted_months if sorted_months else []
+    stats_data['monthly_counts'] = [monthly_dict[month] for month in sorted_months] if sorted_months else []
+    
+    # Статусы ТМЦ
+    repair_count = Equipment.query.filter(Equipment.id.in_(tmc_ids), Equipment.repair == True).count()
+    active_count = Equipment.query.filter(Equipment.id.in_(tmc_ids), Equipment.repair == False).count()
+    
+    stats_data['status_labels'] = ['Активные', 'В ремонте']
+    stats_data['status_counts'] = [active_count, repair_count]
+    
+    # Общее количество комплектующих (только для админа)
+    if is_admin:
+        components_count = Equipment.query.filter_by(active=True, os=False).count()
+        stats_data['components_count'] = components_count
+    
+    return stats_data
+
+@app.route('/all_stats')
+@login_required
+def all_stats():
+    """Страница статистики для администратора - статистика по всем ТМЦ."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён. Только администратор может просматривать общую статистику.', 'danger')
+        return redirect(url_for('index'))
+    
+    # Запрос всех ТМЦ
+    tmc_query = Equipment.query.filter_by(active=True, os=True)
+    tmc_count = tmc_query.count()
+    total_cost = db.session.query(func.coalesce(func.sum(Equipment.cost), 0)).filter(
+        Equipment.id.in_([eq.id for eq in tmc_query.all()])
+    ).scalar()
+    
+    # Подсчёт активных пользователей
+    active_users = db.session.query(Equipment.usersid).filter(
+        Equipment.active == True,
+        Equipment.os == True
+    ).distinct().count()
+    
+    # Рассчитываем статистику
+    stats_data = calculate_stats_data(tmc_query, is_admin=True)
+    stats_data['components_count'] = Equipment.query.filter_by(active=True, os=False).count()
+    
+    return render_template('stats.html',
+                         tmc_count=tmc_count,
+                         total_cost=total_cost,
+                         active_users=active_users,
+                         stats_data=stats_data,
+                         is_admin=True,
+                         page_title='Статистика системы')
+
+@app.route('/my_stats')
+@login_required
+def my_stats():
+    """Страница статистики для МОЛ - статистика только по его ТМЦ."""
+    is_mol = current_user_has_role(1)
+    is_admin = current_user.mode == 1
+    
+    if not (is_mol or is_admin):
+        flash('Доступ запрещён. Только МОЛ может просматривать свою статистику.', 'danger')
+        return redirect(url_for('index'))
+    
+    # Запрос ТМЦ текущего МОЛ
+    tmc_query = Equipment.query.filter_by(usersid=current_user.id, active=True, os=True)
+    tmc_count = tmc_query.count()
+    total_cost = db.session.query(func.coalesce(func.sum(Equipment.cost), 0)).filter(
+        Equipment.id.in_([eq.id for eq in tmc_query.all()])
+    ).scalar()
+    
+    # Рассчитываем статистику
+    stats_data = calculate_stats_data(tmc_query, is_admin=False)
+    
+    return render_template('stats.html',
+                         tmc_count=tmc_count,
+                         total_cost=total_cost,
+                         active_users=0,
+                         stats_data=stats_data,
+                         is_admin=False,
+                         page_title='Моя статистика')
+
+@app.route('/all_moves')
+@login_required
+def all_moves():
+    """Страница всех перемещений для администратора."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён. Только администратор может просматривать все перемещения.', 'danger')
+        return redirect(url_for('index'))
+    
+    # Получаем все перемещения, отсортированные по дате (новые сначала)
+    moves = Move.query.order_by(Move.dt.desc()).limit(100).all()
+    
+    # Загружаем связанные данные для отображения
+    moves_data = []
+    for move in moves:
+        equipment = Equipment.query.get(move.eqid)
+        place_from = Places.query.get(move.placesidfrom) if move.placesidfrom else None
+        place_to = Places.query.get(move.placesidto) if move.placesidto else None
+        user_from = Users.query.get(move.useridfrom) if move.useridfrom else None
+        user_to = Users.query.get(move.useridto) if move.useridto else None
+        
+        moves_data.append({
+            'move': move,
+            'equipment': equipment,
+            'place_from': place_from,
+            'place_to': place_to,
+            'user_from': user_from,
+            'user_to': user_to
+        })
+    
+    return render_template('all_moves.html', moves_data=moves_data)
+
+@app.route('/my_moves')
+@login_required
+def my_moves():
+    """Страница перемещений для МОЛ - только перемещения его ТМЦ и комплектующих."""
+    is_mol = current_user_has_role(1)
+    is_admin = current_user.mode == 1
+    
+    if not (is_mol or is_admin):
+        flash('Доступ запрещён. Только МОЛ может просматривать свои перемещения.', 'danger')
+        return redirect(url_for('index'))
+    
+    # Получаем все ТМЦ, которые числятся за текущим МОЛ
+    my_equipment_ids = db.session.query(Equipment.id).filter_by(
+        usersid=current_user.id,
+        active=True
+    ).all()
+    my_equipment_ids = [eq[0] for eq in my_equipment_ids]
+    
+    # Получаем ID основного ТМЦ для комплектующих, которые связаны с ТМЦ МОЛ
+    # Перемещения комплектующих записываются через их основное ТМЦ (id_main_asset)
+    my_components_main_asset_ids = db.session.query(AppComponents.id_main_asset).join(
+        Equipment, AppComponents.id_main_asset == Equipment.id
+    ).filter(
+        Equipment.usersid == current_user.id,
+        Equipment.active == True
+    ).distinct().all()
+    my_components_main_asset_ids = [comp[0] for comp in my_components_main_asset_ids]
+    
+    # Объединяем ID ТМЦ и основных ТМЦ для комплектующих
+    all_equipment_ids = list(set(my_equipment_ids + my_components_main_asset_ids))
+    
+    # Получаем перемещения для ТМЦ МОЛ
+    # Перемещения комплектующих уже включены через их основное ТМЦ
+    if all_equipment_ids:
+        moves = Move.query.filter(
+            Move.eqid.in_(all_equipment_ids)
+        ).order_by(Move.dt.desc()).limit(100).all()
+    else:
+        moves = []
+    
+    # Загружаем связанные данные для отображения
+    moves_data = []
+    for move in moves:
+        equipment = Equipment.query.get(move.eqid)
+        place_from = Places.query.get(move.placesidfrom) if move.placesidfrom else None
+        place_to = Places.query.get(move.placesidto) if move.placesidto else None
+        user_from = Users.query.get(move.useridfrom) if move.useridfrom else None
+        user_to = Users.query.get(move.useridto) if move.useridto else None
+        
+        moves_data.append({
+            'move': move,
+            'equipment': equipment,
+            'place_from': place_from,
+            'place_to': place_to,
+            'user_from': user_from,
+            'user_to': user_to
+        })
+    
+    return render_template('my_moves.html', moves_data=moves_data, is_mol=is_mol)
+
+@app.route('/my_friends')
+@login_required
+def my_friends():
+    """Страница "Мои друзья" - для МОЛ показывает пользователей, которым выдавал ТМЦ, для обычных пользователей - МОЛ, которые выдавали им ТМЦ."""
+    is_mol = current_user_has_role(1)
+    is_admin = current_user.mode == 1
+    
+    if is_mol or is_admin:
+        # Для МОЛ: показываем пользователей, которым МОЛ выдавал ТМЦ
+        # Получаем всех пользователей, которым МОЛ выдавал ТМЦ (включая возвращенные)
+        all_assignments = db.session.query(
+            EquipmentTempUsage.user_temp_id,
+            func.count(EquipmentTempUsage.id).label('total_assignments'),
+            func.sum(case((EquipmentTempUsage.returned == False, 1), else_=0)).label('active_assignments')
+        ).filter(
+            EquipmentTempUsage.mol_userid == current_user.id
+        ).group_by(EquipmentTempUsage.user_temp_id).all()
+        
+        # Получаем информацию о пользователях и их профилях
+        friends_data = []
+        for user_id, total_count, active_count in all_assignments:
+            user = Users.query.get(user_id)
+            if user:
+                # Получаем профиль пользователя
+                profile = UsersProfile.query.filter_by(usersid=user_id).first()
+                user_photo = url_for('static', filename='uploads/noimage.jpg')
+                if profile and profile.jpegphoto and profile.jpegphoto != 'noimage.jpg':
+                    user_photo = url_for('static', filename=f'uploads/{profile.jpegphoto}')
+                
+                friends_data.append({
+                    'user': user,
+                    'profile': profile,
+                    'photo': user_photo,
+                    'total_assignments': total_count or 0,
+                    'active_assignments': active_count or 0
+                })
+        
+        # Сортируем по количеству активных выдач (сначала те, у кого больше активных)
+        friends_data.sort(key=lambda x: x['active_assignments'], reverse=True)
+        
+        return render_template('my_friends.html', 
+                             friends_data=friends_data,
+                             is_mol=is_mol,
+                             is_admin=is_admin,
+                             is_mol_view=True)
+    else:
+        # Для обычных пользователей: показываем только МОЛ с активными выдачами
+        # Получаем всех МОЛ, которые выдавали ТМЦ текущему пользователю (только активные выдачи)
+        all_assignments = db.session.query(
+            EquipmentTempUsage.mol_userid,
+            func.count(EquipmentTempUsage.id).label('total_assignments'),
+            func.count(EquipmentTempUsage.id).label('active_assignments')
+        ).filter(
+            EquipmentTempUsage.user_temp_id == current_user.id,
+            EquipmentTempUsage.returned == False
+        ).group_by(EquipmentTempUsage.mol_userid).all()
+        
+        # Получаем информацию о МОЛ и их профилях
+        friends_data = []
+        for mol_id, total_count, active_count in all_assignments:
+            mol_user = Users.query.get(mol_id)
+            if mol_user:
+                # Получаем профиль МОЛ
+                profile = UsersProfile.query.filter_by(usersid=mol_id).first()
+                user_photo = url_for('static', filename='uploads/noimage.jpg')
+                if profile and profile.jpegphoto and profile.jpegphoto != 'noimage.jpg':
+                    user_photo = url_for('static', filename=f'uploads/{profile.jpegphoto}')
+                
+                friends_data.append({
+                    'user': mol_user,
+                    'profile': profile,
+                    'photo': user_photo,
+                    'total_assignments': total_count or 0,
+                    'active_assignments': active_count or 0
+                })
+        
+        # Сортируем по количеству активных выдач (сначала те, у кого больше активных)
+        friends_data.sort(key=lambda x: x['active_assignments'], reverse=True)
+        
+        return render_template('my_friends.html', 
+                             friends_data=friends_data,
+                             is_mol=False,
+                             is_admin=False,
+                             is_mol_view=False)
+
+@app.route('/friend_equipment/<int:friend_user_id>')
+@login_required
+def friend_equipment(friend_user_id):
+    """Страница со списком выданного имущества конкретному пользователю (для МОЛ) или выданного конкретным МОЛ (для обычных пользователей)."""
+    is_mol = current_user_has_role(1)
+    is_admin = current_user.mode == 1
+    
+    friend_user = Users.query.get_or_404(friend_user_id)
+    
+    if is_mol or is_admin:
+        # Для МОЛ: показываем ТМЦ, выданные конкретному пользователю
+        # Проверяем, что этот пользователь действительно получал ТМЦ от текущего МОЛ
+        active_usages = EquipmentTempUsage.query.filter_by(
+            mol_userid=current_user.id,
+            user_temp_id=friend_user_id,
+            returned=False
+        ).order_by(EquipmentTempUsage.dt_start.desc()).all()
+    else:
+        # Для обычных пользователей: показываем ТМЦ, выданные конкретным МОЛ текущему пользователю
+        # Проверяем, что этот МОЛ действительно выдавал ТМЦ текущему пользователю
+        active_usages = EquipmentTempUsage.query.filter_by(
+            mol_userid=friend_user_id,
+            user_temp_id=current_user.id,
+            returned=False
+        ).order_by(EquipmentTempUsage.dt_start.desc()).all()
+    
+    # Подсчитываем стоимость активных ТМЦ
+    active_cost = 0
+    
+    for usage in active_usages:
+        if usage.equipment and usage.equipment.cost:
+            cost_value = float(usage.equipment.cost) if usage.equipment.cost else 0
+            active_cost += cost_value
+    
+    # Получаем профиль пользователя
+    profile = UsersProfile.query.filter_by(usersid=friend_user_id).first()
+    user_photo = url_for('static', filename='uploads/noimage.jpg')
+    if profile and profile.jpegphoto and profile.jpegphoto != 'noimage.jpg':
+        user_photo = url_for('static', filename=f'uploads/{profile.jpegphoto}')
+    
+    return render_template('friend_equipment.html',
+                         friend_user=friend_user,
+                         friend_profile=profile,
+                         friend_photo=user_photo,
+                         active_usages=active_usages,
+                         active_cost=active_cost,
+                         is_mol=is_mol,
+                         is_admin=is_admin,
+                         is_mol_view=(is_mol or is_admin))
+
+# === УПРАВЛЕНИЕ НОВОСТЯМИ (только для админа) ===
+
+@app.route('/manage_news')
+@login_required
+def manage_news():
+    """Список всех новостей для управления (только для администраторов)."""
+    is_admin = current_user.mode == 1
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    all_news = News.query.order_by(News.pinned.desc(), News.dt.desc()).all()
+    return render_template('manage_news.html', all_news=all_news, is_admin=is_admin)
+
+@app.route('/add_news', methods=['GET', 'POST'])
+@login_required
+def add_news():
+    """Создание новой новости (только для администраторов)."""
+    is_admin = current_user.mode == 1
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        title = request.form.get('title', '').strip()
+        body = request.form.get('body', '').strip()
+        stiker = request.form.get('stiker') == 'on'
+        pinned = request.form.get('pinned') == 'on'
+        
+        if not title or not body:
+            flash('Заголовок и текст новости обязательны', 'danger')
+            return redirect(url_for('add_news'))
+        
+        # Если закрепляем новую новость, снимаем закрепление с остальных
+        if pinned:
+            News.query.filter_by(pinned=True).update({'pinned': False})
+        
+        new_news = News(
+            title=title,
+            body=body,
+            stiker=stiker,
+            pinned=pinned,
+            dt=datetime.utcnow()
+        )
+        
+        try:
+            db.session.add(new_news)
+            db.session.commit()
+            flash('Новость успешно создана!', 'success')
+            return redirect(url_for('manage_news'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Ошибка при создании новости: {str(e)}', 'danger')
+            return redirect(url_for('add_news'))
+    
+    return render_template('add_news.html', is_admin=is_admin)
+
+@app.route('/edit_news/<int:news_id>', methods=['GET', 'POST'])
+@login_required
+def edit_news(news_id):
+    """Редактирование новости (только для администраторов)."""
+    is_admin = current_user.mode == 1
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    news = News.query.get_or_404(news_id)
+    
+    if request.method == 'POST':
+        title = request.form.get('title', '').strip()
+        body = request.form.get('body', '').strip()
+        stiker = request.form.get('stiker') == 'on'
+        pinned = request.form.get('pinned') == 'on'
+        
+        if not title or not body:
+            flash('Заголовок и текст новости обязательны', 'danger')
+            return redirect(url_for('edit_news', news_id=news_id))
+        
+        # Если закрепляем новость, снимаем закрепление с остальных
+        if pinned and not news.pinned:
+            News.query.filter(News.pinned == True, News.id != news_id).update({'pinned': False})
+        
+        news.title = title
+        news.body = body
+        news.stiker = stiker
+        news.pinned = pinned
+        
+        try:
+            db.session.commit()
+            flash('Новость успешно обновлена!', 'success')
+            return redirect(url_for('manage_news'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Ошибка при обновлении новости: {str(e)}', 'danger')
+            return redirect(url_for('edit_news', news_id=news_id))
+    
+    return render_template('edit_news.html', news=news, is_admin=is_admin)
+
+@app.route('/delete_news/<int:news_id>', methods=['POST'])
+@login_required
+def delete_news(news_id):
+    """Удаление новости (только для администраторов)."""
+    is_admin = current_user.mode == 1
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    news = News.query.get_or_404(news_id)
+    
+    try:
+        db.session.delete(news)
+        db.session.commit()
+        flash('Новость успешно удалена!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ошибка при удалении новости: {str(e)}', 'danger')
+    
+    return redirect(url_for('manage_news'))
 
 # === ЗАПУСК ПРИЛОЖЕНИЯ ===
 

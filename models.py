@@ -172,6 +172,7 @@ class Nome(db.Model):
     photo = db.Column(db.String(255), nullable=False, default='')
     comment = db.Column(db.Text, nullable=True)  # Text позволяет хранить большие текстовые
     is_component = db.Column(db.Boolean, default=False, nullable=False)
+    is_composite = db.Column(db.Boolean, default=False, nullable=False)  # Флаг составного ТМЦ
     # Добавляем отношение
     group = db.relationship('GroupNome', backref='nomes')
 
@@ -312,6 +313,7 @@ class News(db.Model):
     title = db.Column(db.String(255), nullable=False)
     body = db.Column(db.Text, nullable=False)                                 # ← вместо 'content'
     stiker = db.Column(db.Boolean, nullable=False, default=False)             # ← вместо 'is_active'
+    pinned = db.Column(db.Boolean, nullable=False, default=False)              # ← закрепленная новость
 
     # author_id отсутствует в таблице — не добавляем
 
@@ -336,3 +338,20 @@ class EquipmentTempUsage(db.Model):
 
     def __repr__(self):
         return f'<TempUsage {self.id}: Eq {self.equipment_id} → User {self.user_temp_id}>'
+
+class EquipmentComments(db.Model):
+    """Модель для хранения истории комментариев к ТМЦ."""
+    __tablename__ = 'equipment_comments'
+    
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    equipment_id = db.Column(db.Integer, db.ForeignKey('equipment.id'), nullable=False)
+    comment = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    
+    # Связи
+    equipment = db.relationship('Equipment', backref='comment_history')
+    creator = db.relationship('Users', foreign_keys=[created_by])
+    
+    def __repr__(self):
+        return f'<EquipmentComment {self.id}: Eq {self.equipment_id} at {self.created_at}>'

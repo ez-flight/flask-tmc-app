@@ -122,7 +122,9 @@
         <select class="form-select" id="main_asset_id" name="main_asset_id">
             <option value="">— Не привязывать —</option>
             {% for asset in main_assets %}
-                <option value="{{ asset.id }}" {% if linked_main_asset_id == asset.id %}selected{% endif %}>
+                <option value="{{ asset.id }}" 
+                        {% if linked_main_asset_id == asset.id %}selected{% endif %}
+                        data-asset-id="{{ asset.id }}">
                     {{ asset.buhname }} ({{ asset.sernum or 'б/н' }})
                 </option>
             {% endfor %}
@@ -132,7 +134,36 @@
                 Текущая привязка: <a href="{{ url_for('info_tmc', tmc_id=linked_main_asset_id) }}">(просмотр)</a>
             </div>
         {% endif %}
+        <small class="form-text text-muted">
+            ТМЦ, к которым уже привязан данный тип комплектующего, не отображаются в списке (кроме текущей привязки).
+        </small>
     </div>
+    
+    <script>
+    // Фильтрация списка ТМЦ для редактирования комплектующего
+    document.addEventListener('DOMContentLoaded', function() {
+        const blockedAssets = {{ blocked_assets_by_nome|tojson }};
+        const currentNomeId = {{ current_component_nome_id }};
+        const linkedAssetId = {{ linked_main_asset_id or 'null' }};
+        const mainAssetSelect = document.getElementById('main_asset_id');
+        
+        // Получаем список заблокированных ТМЦ для данного типа (кроме текущей привязки)
+        const blockedAssetIds = blockedAssets[currentNomeId] || [];
+        
+        // Скрываем заблокированные ТМЦ, но оставляем видимым текущую привязку
+        mainAssetSelect.querySelectorAll('option').forEach(opt => {
+            if (opt.value === '') {
+                return; // Опция "Не привязывать" всегда видна
+            }
+            const assetId = parseInt(opt.value);
+            if (blockedAssetIds.includes(assetId) && assetId !== linkedAssetId) {
+                opt.style.display = 'none';
+            } else {
+                opt.style.display = '';
+            }
+        });
+    });
+    </script>
 
             <div class="d-flex gap-2 mt-4">
                 <button type="submit" class="btn btn-success">

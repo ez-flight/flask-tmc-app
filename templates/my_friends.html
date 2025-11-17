@@ -1,0 +1,104 @@
+<!-- templates/my_friends.html -->
+{% extends "base.html" %}
+{% block title %}Мои друзья{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Мои друзья</h1>
+    <div class="user-info">
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>На главную
+        </a>
+    </div>
+</div>
+
+{% if friends_data %}
+<div class="card">
+    <div class="card-header">
+        {% if is_mol_view %}
+            Пользователи, которым вы выдавали ТМЦ
+        {% else %}
+            МОЛ, которые выдавали вам ТМЦ
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col" style="width: 80px;">Фото</th>
+                        <th scope="col">{% if is_mol_view %}Пользователь{% else %}МОЛ{% endif %}</th>
+                        <th scope="col">ФИО</th>
+                        <th scope="col" class="text-center">Активных ТМЦ</th>
+                        <th scope="col" class="text-center">Всего выдач</th>
+                        {% if is_mol_view %}
+                        <th scope="col" class="text-end" style="width: 150px;">Действия</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for friend in friends_data %}
+                    <tr>
+                        <td>
+                            <img src="{{ friend.photo }}" 
+                                 alt="{{ friend.user.login }}" 
+                                 class="rounded"
+                                 style="width: 60px; height: 60px; object-fit: cover; border: 2px solid var(--vk-gray-dark);">
+                        </td>
+                        <td>
+                            <strong style="color: var(--vk-text);">{{ friend.user.login }}</strong>
+                        </td>
+                        <td>
+                            {% if friend.profile and friend.profile.fio %}
+                                <span style="color: var(--vk-text-light);">{{ friend.profile.fio }}</span>
+                            {% else %}
+                                <span class="text-muted" style="font-style: italic;">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if friend.active_assignments > 0 %}
+                                <span class="badge bg-primary">{{ friend.active_assignments }}</span>
+                            {% else %}
+                                <span class="text-muted">0</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span style="color: var(--vk-text);">{{ friend.total_assignments }}</span>
+                        </td>
+                        {% if is_mol_view %}
+                        <td class="text-end">
+                            <a href="{{ url_for('friend_equipment', friend_user_id=friend.user.id) }}" 
+                               class="btn btn-sm btn-primary">
+                                <i class="bi bi-box-seam me-1"></i>Имущество
+                            </a>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body">
+        <div class="text-center" style="padding: 60px 20px; color: var(--vk-text-light);">
+            <i class="bi bi-people" style="font-size: 4rem; opacity: 0.3; margin-bottom: 20px;"></i>
+            <h5>Нет друзей</h5>
+            {% if is_mol_view %}
+                <p class="mb-0">Вы еще не выдавали ТМЦ другим пользователям.</p>
+                <p class="mt-2" style="font-size: 14px;">
+                    Выдайте ТМЦ временно, и пользователи появятся в этом списке.
+                </p>
+            {% else %}
+                <p class="mb-0">Вам еще не выдавали ТМЦ.</p>
+                <p class="mt-2" style="font-size: 14px;">
+                    Когда МОЛ выдаст вам ТМЦ, он появится в этом списке.
+                </p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

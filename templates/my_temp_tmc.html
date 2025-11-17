@@ -2,11 +2,29 @@
 {% block title %}Мои временные ТМЦ{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h1>Мои временные ТМЦ</h1>
+    <h1>Полученные ТМЦ</h1>
     <div class="user-info">
         <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
             <i class="bi bi-arrow-left me-1"></i>Назад
         </a>
+    </div>
+</div>
+
+<!-- Статистика -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row text-center">
+            <div class="col-md-6 mb-3">
+                <h6 class="mb-1" style="color: var(--vk-text-light); font-size: 13px;">Получено ТМЦ</h6>
+                <p class="display-6 mb-0" style="color: var(--vk-blue); font-weight: 600;">{{ tmc_count }} шт.</p>
+            </div>
+            <div class="col-md-6 mb-3">
+                <h6 class="mb-1" style="color: var(--vk-text-light); font-size: 13px;">Общая стоимость</h6>
+                <p class="display-6 mb-0" style="color: #4caf50; font-weight: 600;">
+                    {{ "{:,.2f}".format(total_cost) }} ₽
+                </p>
+            </div>
+        </div>
     </div>
 </div>
 

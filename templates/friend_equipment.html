@@ -1,0 +1,132 @@
+<!-- templates/friend_equipment.html -->
+{% extends "base.html" %}
+{% block title %}Имущество пользователя {{ friend_user.login }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>{% if is_mol_view %}Имущество пользователя{% else %}Имущество от МОЛ{% endif %}</h1>
+    <div class="user-info">
+        <a href="{{ url_for('my_friends') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Назад к друзьям
+        </a>
+    </div>
+</div>
+
+<!-- Информация о пользователе -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="d-flex align-items-center">
+            <div class="me-3">
+                <img src="{{ friend_photo }}" 
+                     alt="{{ friend_user.login }}" 
+                     class="rounded"
+                     style="width: 100px; height: 100px; object-fit: cover; border: 2px solid var(--vk-gray-dark);">
+            </div>
+            <div class="flex-grow-1">
+                <h4 class="mb-1">{{ friend_user.login }}</h4>
+                {% if friend_profile and friend_profile.fio %}
+                    <p class="mb-1 text-muted">{{ friend_profile.fio }}</p>
+                {% endif %}
+                <div class="mt-3">
+                    <div class="row">
+                        <div class="col-md-4 mb-2">
+                            <div style="font-size: 13px; color: var(--vk-text-light);">Активных ТМЦ:</div>
+                            <div style="font-size: 18px; font-weight: 600; color: var(--vk-blue);">
+                                {{ active_usages|length }}
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-2">
+                            <div style="font-size: 13px; color: var(--vk-text-light);">Стоимость активных:</div>
+                            <div style="font-size: 18px; font-weight: 600; color: #4caf50;">
+                                {{ "{:,.2f}".format(active_cost) }} ₽
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Активные выдачи -->
+{% if active_usages %}
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-box-seam me-2"></i>Активные выдачи ({{ active_usages|length }})
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col" style="width: 80px;">Фото</th>
+                        <th scope="col">Наименование</th>
+                        <th scope="col">Серийный номер</th>
+                        <th scope="col">Инвентарный номер</th>
+                        <th scope="col">Комментарий</th>
+                        <th scope="col">Дата выдачи</th>
+                        <th scope="col" class="text-end" style="width: 100px;">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for usage in active_usages %}
+                    <tr class="clickable-row" onclick="window.location='{{ url_for('info_tmc', tmc_id=usage.equipment_id) }}'" style="cursor: pointer;">
+                        <td>
+                            {% if usage.equipment and usage.equipment.photo %}
+                                <img src="{{ url_for('static', filename='uploads/' + usage.equipment.photo) }}" 
+                                     alt="Фото" 
+                                     class="img-fluid rounded" 
+                                     style="max-height: 60px; max-width: 60px; object-fit: cover;">
+                            {% else %}
+                                <img src="{{ url_for('static', filename='uploads/noimage.jpg') }}" 
+                                     alt="Нет фото" 
+                                     class="img-fluid rounded" 
+                                     style="max-height: 60px; max-width: 60px; object-fit: cover;">
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if usage.equipment %}
+                                <strong>{{ usage.equipment.buhname }}</strong>
+                            {% else %}
+                                <span class="text-muted">ТМЦ #{{ usage.equipment_id }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ usage.equipment.sernum if usage.equipment and usage.equipment.sernum else '—' }}</td>
+                        <td>{{ usage.equipment.invnum if usage.equipment and usage.equipment.invnum else '—' }}</td>
+                        <td>
+                            {% if usage.comment and usage.comment.strip() %}
+                                <span title="{{ usage.comment|replace('"', '&quot;') }}" style="display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    {{ usage.comment }}
+                                </span>
+                            {% else %}
+                                <span class="text-muted" style="font-style: italic;">Нет комментария</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ usage.dt_start.strftime('%d.%m.%Y %H:%M') if usage.dt_start else '—' }}</td>
+                        <td class="text-end" onclick="event.stopPropagation();">
+                            <a href="{{ url_for('info_tmc', tmc_id=usage.equipment_id) }}" 
+                               class="btn btn-sm btn-primary">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if not active_usages %}
+<div class="card">
+    <div class="card-body">
+        <div class="text-center" style="padding: 40px 20px; color: var(--vk-text-light);">
+            <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3; margin-bottom: 15px;"></i>
+            <p class="mb-0">Нет выданного имущества этому пользователю.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+

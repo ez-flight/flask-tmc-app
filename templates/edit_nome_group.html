@@ -1,0 +1,53 @@
+<!-- templates/edit_nome_group.html -->
+{% extends "base.html" %}
+{% block title %}Редактировать группу ТМЦ: {{ nome.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Редактировать группу ТМЦ: "{{ nome.name }}"</h1>
+    </div>
+    <div class="user-info">
+        <a href="{{ url_for('list_by_nome', nome_id=nome.id) }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Назад
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="is_composite" name="is_composite" 
+                           {% if nome.is_composite %}checked{% endif %}>
+                    <label class="form-check-label" for="is_composite">
+                        <strong>Составное ТМЦ</strong>
+                    </label>
+                    <small class="form-text text-muted d-block">
+                        Если отмечено, к ТМЦ этого типа можно прикреплять комплектующие. 
+                        При прикреплении комплектующее наследует МОЛ от основного ТМЦ.
+                    </small>
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <label for="comment" class="form-label">Комментарий группы</label>
+                <textarea class="form-control" id="comment" name="comment" rows="4">{{ nome.comment or '' }}</textarea>
+                <small class="form-text text-muted">
+                    Комментарий, который будет отображаться на странице списка ТМЦ этой группы.
+                </small>
+            </div>
+            
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1"></i>Сохранить
+                </button>
+                <a href="{{ url_for('list_by_nome', nome_id=nome.id) }}" class="btn btn-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Отмена
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+

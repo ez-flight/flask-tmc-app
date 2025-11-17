@@ -42,11 +42,14 @@
         <select class="form-select" id="main_asset_id" name="main_asset_id">
             <option value="">— Не привязывать —</option>
             {% for asset in main_assets %}
-                <option value="{{ asset.id }}">
+                <option value="{{ asset.id }}" data-asset-id="{{ asset.id }}">
                     {{ asset.buhname }} ({{ asset.sernum or 'б/н' }})
                 </option>
             {% endfor %}
         </select>
+        <small class="form-text text-muted">
+            ТМЦ, к которым уже привязан выбранный тип комплектующего, не отображаются в списке.
+        </small>
     </div>
     <div class="mb-3">
         <label for="department_id" class="form-label">Отдел *</label>
@@ -179,8 +182,52 @@ function loadNomenclatures() {
                 opt.textContent = n.name;
                 nomeSelect.appendChild(opt);
             });
+            // Обновляем список ТМЦ после загрузки наименований
+            updateMainAssetsList();
         });
 }
+
+// Функция для фильтрации списка ТМЦ на основе выбранного типа комплектующего
+function updateMainAssetsList() {
+    const nomeId = document.getElementById('nomeid').value;
+    const mainAssetSelect = document.getElementById('main_asset_id');
+    const blockedAssets = {{ blocked_assets_by_nome|tojson }};
+    
+    // Если тип комплектующего не выбран, показываем все ТМЦ
+    if (!nomeId) {
+        mainAssetSelect.querySelectorAll('option').forEach(opt => {
+            if (opt.value !== '') {
+                opt.style.display = '';
+            }
+        });
+        return;
+    }
+    
+    // Получаем список заблокированных ТМЦ для данного типа
+    const blockedAssetIds = blockedAssets[nomeId] || [];
+    
+    // Скрываем/показываем опции в зависимости от того, заблокированы ли они
+    mainAssetSelect.querySelectorAll('option').forEach(opt => {
+        if (opt.value === '') {
+            // Опция "Не привязывать" всегда видна
+            return;
+        }
+        const assetId = parseInt(opt.value);
+        if (blockedAssetIds.includes(assetId)) {
+            opt.style.display = 'none';
+        } else {
+            opt.style.display = '';
+        }
+    });
+}
+
+// Обновляем список ТМЦ при изменении типа комплектующего
+document.addEventListener('DOMContentLoaded', function() {
+    const nomeSelect = document.getElementById('nomeid');
+    if (nomeSelect) {
+        nomeSelect.addEventListener('change', updateMainAssetsList);
+    }
+});
 </script>
 
 {% endblock %}

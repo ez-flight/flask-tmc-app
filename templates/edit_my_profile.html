@@ -1,0 +1,72 @@
+<!-- templates/edit_my_profile.html -->
+{% extends "base.html" %}
+{% block title %}Редактировать профиль{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Редактировать профиль</h1>
+    <div class="user-info">
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Назад
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="login" class="form-label">Логин</label>
+                <input type="text" class="form-control" id="login" value="{{ user.login }}" disabled>
+                <div class="form-text">Логин нельзя изменить самостоятельно. Обратитесь к администратору.</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="fio" class="form-label">ФИО</label>
+                <input type="text" class="form-control" id="fio" name="fio" value="{{ user_profile.fio if user_profile else '' }}" placeholder="Введите ваше ФИО">
+            </div>
+
+            <div class="mb-3">
+                <label for="password" class="form-label">Новый пароль (оставьте пустым, чтобы не менять)</label>
+                <input type="password" class="form-control" id="password" name="password" placeholder="Введите новый пароль...">
+                <div class="form-text">Если вы хотите изменить пароль, введите его здесь. Иначе оставьте поле пустым.</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="photo" class="form-label">Новое фото профиля</label>
+                <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
+                <div class="form-text">Выберите изображение для обновления аватара. Поддерживаются форматы: PNG, JPG, JPEG, GIF, WEBP.</div>
+            </div>
+
+            {% if user_profile and user_profile.jpegphoto %}
+            <div class="mb-3">
+                <label class="form-label">Текущее фото профиля</label><br>
+                {% if user_profile.jpegphoto != 'noimage.jpg' %}
+                    <img src="{{ url_for('static', filename='uploads/' + user_profile.jpegphoto) }}" 
+                         alt="Текущее фото {{ user.login }}" 
+                         width="150" 
+                         class="img-thumbnail rounded"
+                         style="object-fit: cover;">
+                {% else %}
+                    <img src="{{ url_for('static', filename='uploads/noimage.jpg') }}" 
+                         alt="Нет фото" 
+                         width="150" 
+                         class="img-thumbnail rounded"
+                         style="object-fit: cover;">
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="d-flex justify-content-between">
+                <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Отмена
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1"></i>Сохранить изменения
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+

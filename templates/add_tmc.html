@@ -94,17 +94,27 @@
     </div>
 
     <!-- Ответственный пользователь -->
-    <div class="mb-3">
-        <label for="usersid" class="form-label">Ответственный пользователь *</label>
-        <select class="form-select" id="usersid" name="usersid" required>
-            <option value="">-- Выберите пользователя --</option>
-            {% for user in users %}
-                {% if user.active %}
-                    <option value="{{ user.id }}">{{ user.login }}</option>
-                {% endif %}
-            {% endfor %}
-        </select>
-    </div>
+    {% if is_admin %}
+        <div class="mb-3">
+            <label for="usersid" class="form-label">Ответственный пользователь (МОЛ) *</label>
+            <select class="form-select" id="usersid" name="usersid" required>
+                <option value="">-- Выберите МОЛ --</option>
+                {% for user in users %}
+                    {% if user.active %}
+                        <option value="{{ user.id }}" {% if not is_admin and user.id == current_user.id %}selected{% endif %}>{{ user.login }}</option>
+                    {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+    {% else %}
+        <!-- Для МОЛ скрываем поле, автоматически устанавливается текущий пользователь -->
+        <input type="hidden" name="usersid" value="{{ current_user.id }}">
+        <div class="mb-3">
+            <label class="form-label">Ответственный пользователь</label>
+            <div class="form-control bg-light" readonly>{{ current_user.login }}</div>
+            <small class="form-text text-muted">Вы являетесь ответственным за это ТМЦ</small>
+        </div>
+    {% endif %}
 
     <!-- Группа ТМЦ -->
     {% if preselected_group %}

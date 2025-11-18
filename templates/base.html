@@ -605,6 +605,11 @@
                                     <i class="bi bi-newspaper"></i>Управление новостями
                                 </a>
                             </li>
+                            <li class="sidebar-menu-item">
+                                <a href="{{ url_for('my_departments') }}">
+                                    <i class="bi bi-building"></i>Мои отделы
+                                </a>
+                            </li>
                         {% else %}
                             <li class="sidebar-menu-item">
                                 <a href="{{ url_for('my_friends') }}">
@@ -644,6 +649,11 @@
                                     </a>
                                 </li>
                             {% endif %}
+                            <li class="sidebar-menu-item">
+                                <a href="{{ url_for('my_departments') }}">
+                                    <i class="bi bi-building"></i>Мои отделы
+                                </a>
+                            </li>
                         {% endif %}
                     </ul>
                 </div>

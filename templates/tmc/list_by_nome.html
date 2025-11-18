@@ -83,14 +83,16 @@
                 </td>
                 <td>{{ tmc.datepost.strftime('%d.%m.%Y') if tmc.datepost else '—' }}</td>
                 <td>{{ "{:,.2f}".format(tmc.cost) if tmc.cost else '0.00' }} руб.</td>
-                <td>
+                <td onclick="event.stopPropagation();">
                     {% if tmc.active %}
-                        {% if tmc.repair %}
-                            <span class="badge bg-warning">В ремонте</span>
+                        {% if tmc.lost %}
+                            <span class="badge bg-danger">Потерян</span>
+                        {% elif tmc.repair %}
+                            <span class="badge bg-warning text-dark">В ремонте</span>
                         {% elif tmc.mode %}
                             <span class="badge bg-info">На модернизации</span>
                         {% elif tmc.disposed %}
-                            <span class="badge bg-danger">Списано</span>
+                            <span class="badge bg-secondary">Списано</span>
                         {% else %}
                             <span class="badge bg-success">В эксплуатации</span>
                         {% endif %}

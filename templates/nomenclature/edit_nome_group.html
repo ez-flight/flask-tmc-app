@@ -31,6 +31,21 @@
             </div>
             
             <div class="mb-3">
+                <label for="category_sort" class="form-label">Категория (сорт)</label>
+                <select class="form-control" id="category_sort" name="category_sort">
+                    <option value="">Не указано</option>
+                    <option value="1" {% if nome.category_sort == 1 %}selected{% endif %}>1</option>
+                    <option value="2" {% if nome.category_sort == 2 %}selected{% endif %}>2</option>
+                    <option value="3" {% if nome.category_sort == 3 %}selected{% endif %}>3</option>
+                    <option value="4" {% if nome.category_sort == 4 %}selected{% endif %}>4</option>
+                    <option value="5" {% if nome.category_sort == 5 %}selected{% endif %}>5</option>
+                </select>
+                <small class="form-text text-muted">
+                    Значение категории (сорта) от 1 до 5 для группы ТМЦ. Используется в Форме 8.
+                </small>
+            </div>
+            
+            <div class="mb-3">
                 <label for="comment" class="form-label">Комментарий группы</label>
                 <textarea class="form-control" id="comment" name="comment" rows="4">{{ nome.comment or '' }}</textarea>
                 <small class="form-text text-muted">

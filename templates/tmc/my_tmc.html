@@ -63,14 +63,17 @@
                         <th scope="col" style="width: 80px;">Фото</th>
                         <th scope="col">Наименование</th>
                         <th scope="col" style="width: 100px;">Кол-во</th>
-                        <th scope="col" style="width: 120px;">Действия</th>
+                        <th scope="col" style="width: 100px;">Статусы</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% if grouped_tmc %}
                         {% for item in grouped_tmc %}
-                        <tr>
-                            <td>
+                        <tr onclick="window.location.href='{{ url_for('list_by_nome', nome_id=item.nomeid) }}'" 
+                            style="cursor: pointer;" 
+                            onmouseover="this.style.backgroundColor='#f8f9fa';" 
+                            onmouseout="this.style.backgroundColor='';">
+                            <td onclick="event.stopPropagation();">
                                 {% if item.nome_photo %}
                                     <img src="{{ url_for('static', filename='uploads/' + item.nome_photo) }}" 
                                          alt="Фото {{ item.nome_name }}" 
@@ -85,11 +88,18 @@
                             </td>
                             <td>{{ item.nome_name }}</td>
                             <td>{{ item.quantity }}</td>
-                            <td>
-                                <a href="{{ url_for('list_by_nome', nome_id=item.nomeid) }}" 
-                                   class="btn btn-sm btn-primary w-100">
-                                   <i class="bi bi-eye me-1"></i>Показать
-                                </a>
+                            <td onclick="event.stopPropagation();">
+                                <div class="d-flex flex-column gap-1" style="align-items: flex-start;">
+                                    {% if item.active_count and item.active_count > 0 %}
+                                    <span class="badge bg-success">Э {{ item.active_count }}</span>
+                                    {% endif %}
+                                    {% if item.repair_count and item.repair_count > 0 %}
+                                    <span class="badge bg-warning text-dark">Р {{ item.repair_count }}</span>
+                                    {% endif %}
+                                    {% if item.lost_count and item.lost_count > 0 %}
+                                    <span class="badge bg-danger">П {{ item.lost_count }}</span>
+                                    {% endif %}
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}

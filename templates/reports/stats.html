@@ -38,12 +38,54 @@
             </div>
             {% else %}
             <div class="col-md-3 col-6 mb-3">
-                <h6 class="mb-1" style="color: var(--vk-text-light); font-size: 13px;">В ремонте</h6>
-                <p class="display-6 mb-0" style="color: #dc3545; font-weight: 600;">{{ stats_data.get('status_counts', [0, 0])[1] }}</p>
+                <h6 class="mb-1" style="color: var(--vk-text-light); font-size: 13px;">Комплектующих</h6>
+                <p class="display-6 mb-0" style="color: #ff9800; font-weight: 600;">{{ stats_data.get('components_count', 0) }}</p>
             </div>
-            <div class="col-md-3 col-6 mb-3">
-                <h6 class="mb-1" style="color: var(--vk-text-light); font-size: 13px;">Активных</h6>
-                <p class="display-6 mb-0" style="color: #198754; font-weight: 600;">{{ stats_data.get('status_counts', [0, 0])[0] }}</p>
+            <div class="col-md-9 col-12 mb-3">
+                <h6 class="mb-2" style="color: var(--vk-text-light); font-size: 13px;">Статусы ТМЦ</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0" style="max-width: 500px;">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 30%; font-size: 12px;">Статус</th>
+                                <th style="width: 20%; text-align: center; font-size: 12px;">Кол-во</th>
+                                <th style="width: 25%; text-align: center; font-size: 12px;">Стоимость</th>
+                                <th style="width: 25%; text-align: center; font-size: 12px;">%</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% set status_counts = stats_data.get('status_counts', [0, 0, 0]) %}
+                            {% set status_costs = stats_data.get('status_costs', [0, 0, 0]) %}
+                            {% set status_labels = stats_data.get('status_labels', ['В эксплуатации', 'В ремонте', 'Потерян']) %}
+                            {% set total_status = status_counts[0] + status_counts[1] + status_counts[2] %}
+                            {% set total_cost_status = status_costs[0] + status_costs[1] + status_costs[2] %}
+                            {% if total_status > 0 %}
+                                <tr>
+                                    <td><span class="badge bg-success">В эксплуатации</span></td>
+                                    <td style="text-align: center; font-weight: 600;">{{ status_counts[0] }}</td>
+                                    <td style="text-align: center; font-size: 11px;">{{ "{:,.0f}".format(status_costs[0]) }} руб.</td>
+                                    <td style="text-align: center;">{{ "%.1f"|format((status_counts[0] / total_status * 100) if total_status > 0 else 0) }}%</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-warning text-dark">В ремонте</span></td>
+                                    <td style="text-align: center; font-weight: 600;">{{ status_counts[1] }}</td>
+                                    <td style="text-align: center; font-size: 11px;">{{ "{:,.0f}".format(status_costs[1]) }} руб.</td>
+                                    <td style="text-align: center;">{{ "%.1f"|format((status_counts[1] / total_status * 100) if total_status > 0 else 0) }}%</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="badge bg-danger">Потерян</span></td>
+                                    <td style="text-align: center; font-weight: 600;">{{ status_counts[2] }}</td>
+                                    <td style="text-align: center; font-size: 11px;">{{ "{:,.0f}".format(status_costs[2]) }} руб.</td>
+                                    <td style="text-align: center;">{{ "%.1f"|format((status_counts[2] / total_status * 100) if total_status > 0 else 0) }}%</td>
+                                </tr>
+                            {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted" style="font-size: 12px;">Нет данных</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
             {% endif %}
         </div>
@@ -74,19 +116,21 @@
                 </div>
             </div>
             
-            {% if is_admin %}
             <!-- Столбчатая диаграмма: Топ отделов -->
+            {% if stats_data.get('department_labels') and stats_data.get('department_labels')|length > 0 %}
             <div class="col-md-6 mb-4">
                 <div class="card">
                     <div class="card-header">
-                        Топ-10 отделов по количеству ТМЦ
+                        {% if is_admin %}Топ-10 отделов по количеству ТМЦ{% else %}ТМЦ по отделам{% endif %}
                     </div>
                     <div class="card-body">
                         <canvas id="departmentChart" height="250"></canvas>
                     </div>
                 </div>
             </div>
+            {% endif %}
             
+            {% if is_admin %}
             <!-- Столбчатая диаграмма: Топ пользователей -->
             <div class="col-md-6 mb-4">
                 <div class="card">
@@ -224,8 +268,7 @@ if (statsData.category_cost_labels && statsData.category_cost_labels.length > 0)
     document.getElementById('categoryCostChart').parentElement.innerHTML = '<p class="text-muted text-center py-4">Нет данных</p>';
 }
 
-{% if is_admin %}
-// График: Топ отделов
+// График: Топ отделов (для админа и МОЛ)
 if (statsData.department_labels && statsData.department_labels.length > 0) {
     const departmentCtx = document.getElementById('departmentChart').getContext('2d');
     new Chart(departmentCtx, {
@@ -273,9 +316,13 @@ if (statsData.department_labels && statsData.department_labels.length > 0) {
         }
     });
 } else {
-    document.getElementById('departmentChart').parentElement.innerHTML = '<p class="text-muted text-center py-4">Нет данных</p>';
+    const deptChartEl = document.getElementById('departmentChart');
+    if (deptChartEl) {
+        deptChartEl.parentElement.innerHTML = '<p class="text-muted text-center py-4">Нет данных</p>';
+    }
 }
 
+{% if is_admin %}
 // График: Топ пользователей
 if (statsData.user_labels && statsData.user_labels.length > 0) {
     const userCtx = document.getElementById('userChart').getContext('2d');
@@ -379,13 +426,18 @@ if (statsData.monthly_labels && statsData.monthly_labels.length > 0) {
 // График: Статусы ТМЦ
 if (statsData.status_labels && statsData.status_labels.length > 0) {
     const statusCtx = document.getElementById('statusChart').getContext('2d');
+    // Определяем цвета в зависимости от количества статусов
+    const statusColors = statsData.status_labels.length === 3 
+        ? ['#198754', '#ffc107', '#dc3545']  // В эксплуатации, В ремонте, Потерян
+        : ['#198754', '#dc3545'];  // Активные, В ремонте (старая версия)
+    
     new Chart(statusCtx, {
         type: 'pie',
         data: {
             labels: statsData.status_labels,
             datasets: [{
                 data: statsData.status_counts,
-                backgroundColor: ['#198754', '#dc3545'],
+                backgroundColor: statusColors,
                 borderWidth: 2,
                 borderColor: '#fff'
             }]

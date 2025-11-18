@@ -8,13 +8,13 @@ from dateutil.relativedelta import relativedelta
 from datetime import datetime, date
 import os
 import hashlib
-from sqlalchemy import func, case
+from sqlalchemy import func, case, and_
 from flask_sqlalchemy import SQLAlchemy
 from decimal import Decimal, InvalidOperation
 from sqlalchemy.exc import IntegrityError
 
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, url_for, abort
+from flask import Flask, flash, redirect, render_template, request, url_for, abort, send_file, Response
 from werkzeug.utils import secure_filename
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 
@@ -24,11 +24,15 @@ from models import Equipment, Nome, Org, Places, Users, db, GroupNome, Vendor, D
 # Загружаем переменные окружения из .env
 load_dotenv()
 
+# Проверяем тестовый режим
+TEST_MODE = os.getenv('TEST_MODE', 'false').lower() == 'true'
+
 # Создаём Flask-приложение
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'fallback-secret-key-for-dev')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['TEST_MODE'] = TEST_MODE
 db.init_app(app)
 
 
@@ -47,7 +51,21 @@ def inject_user_data():
         is_admin = current_user.mode == 1
         is_mol = current_user_has_role(1)
         
-        # Запрос ТМЦ для пользователя или всех (если админ)
+        # В тестовом режиме используем мок-данные
+        if TEST_MODE:
+            return {
+                'user_login': current_user.login,
+                'user_photo': url_for('static', filename='uploads/noimage.jpg'),
+                'tmc_count': 0,  # Тестовые данные
+                'total_cost': 0,  # Тестовые данные
+                'is_admin': is_admin,
+                'is_mol': is_mol,
+                'user_org_name': 'Тестовая организация',
+                'user_org_id': current_user.orgid if hasattr(current_user, 'orgid') else 1,
+                'test_mode': True
+            }
+        
+        # Реальный режим: запрос ТМЦ для пользователя или всех (если админ)
         if is_admin:
             tmc_query = Equipment.query.filter_by(active=True, os=True)
         else:
@@ -81,7 +99,8 @@ def inject_user_data():
             'is_admin': is_admin,
             'is_mol': is_mol,
             'user_org_name': user_org_name,
-            'user_org_id': current_user.orgid if hasattr(current_user, 'orgid') else None
+            'user_org_id': current_user.orgid if hasattr(current_user, 'orgid') else None,
+            'test_mode': False
         }
     return {
         'user_login': '',
@@ -89,7 +108,8 @@ def inject_user_data():
         'tmc_count': 0,
         'total_cost': 0,
         'is_admin': False,
-        'is_mol': False
+        'is_mol': False,
+        'test_mode': TEST_MODE
     }
 
 # === ФУНКЦИИ БЕЗОПАСНОСТИ ===
@@ -120,6 +140,10 @@ def current_user_has_role(role_id):
     """
     Проверяет, есть ли у текущего пользователя роль с указанным ID.
     """
+    if TEST_MODE and hasattr(current_user, '_roles'):
+        # В тестовом режиме проверяем роли из мок-объекта
+        return role_id in current_user._roles
+    
     from models import UsersRoles
     return db.session.query(UsersRoles).filter_by(userid=current_user.id, role=role_id).first() is not None
 
@@ -135,6 +159,13 @@ def user_has_role(user_id, role_id):
 @login_manager.user_loader
 def load_user(user_id):
     """Загружает пользователя по ID для Flask-Login."""
+    if TEST_MODE:
+        # В тестовом режиме возвращаем мок-пользователя
+        from test_mode import TEST_USERS
+        for user in TEST_USERS.values():
+            if str(user.id) == str(user_id):
+                return user
+        return None
     return db.session.get(Users, int(user_id))
 
 
@@ -174,21 +205,46 @@ def create_tables_once():
 def login():
     """Страница входа."""
     if request.method == 'POST':
-        login = request.form['login']
+        login_name = request.form['login']
         password = request.form['password']
 
-        # Ищем активного пользователя по логину
-        user = Users.query.filter_by(login=login, active=1).first()
-        if user and check_password(password, user.salt, user.password):
-            login_user(user)
-            response = redirect(url_for('index'))
-            # Устанавливаем куку, как в оригинальной системе
-            response.set_cookie('user_randomid_w3', user.randomid, max_age=60*60*24*30)  # 30 дней
-            return response
+        # Тестовый режим: используем мок-данные
+        if TEST_MODE:
+            from test_mode import get_test_user, check_test_password
+            # Нормализуем логин (приводим к нижнему регистру)
+            login_normalized = login_name.strip().lower() if login_name else ''
+            password_normalized = password.strip() if password else ''
+            
+            # Отладочная информация (можно убрать в продакшене)
+            if not login_normalized:
+                flash('Логин не может быть пустым', 'danger')
+            elif not password_normalized:
+                flash('Пароль не может быть пустым', 'danger')
+            elif check_test_password(login_normalized, password_normalized):
+                user = get_test_user(login_normalized)
+                if user:
+                    login_user(user)
+                    response = redirect(url_for('index'))
+                    response.set_cookie('user_randomid_w3', user.randomid, max_age=60*60*24*30)
+                    flash(f'Тестовый режим: вход выполнен как {user.login}', 'info')
+                    return response
+                else:
+                    flash('Пользователь не найден в тестовой базе', 'danger')
+            else:
+                flash(f'Неверный логин или пароль. Логин: "{login_normalized}", пароль проверен: {password_normalized == "test123"}', 'danger')
         else:
-            flash('Неверный логин или пароль', 'danger')
+            # Реальный режим: используем БД
+            user = Users.query.filter_by(login=login_name, active=1).first()
+            if user and check_password(password, user.salt, user.password):
+                login_user(user)
+                response = redirect(url_for('index'))
+                # Устанавливаем куку, как в оригинальной системе
+                response.set_cookie('user_randomid_w3', user.randomid, max_age=60*60*24*30)  # 30 дней
+                return response
+            else:
+                flash('Неверный логин или пароль', 'danger')
 
-    return render_template('login.html')
+    return render_template('auth/login.html', test_mode=TEST_MODE)
 
 
 @app.route('/logout')
@@ -209,7 +265,12 @@ def index():
     is_admin = current_user.mode == 1
     is_mol = current_user_has_role(1)
 
-    # Запрос ТМЦ для пользователя или всех (если админ)
+    # В тестовом режиме не делаем запросы к БД
+    if TEST_MODE:
+        news_list = []
+        return render_template('tmc/index.html', news_list=news_list)
+    
+    # Реальный режим: запрос ТМЦ для пользователя или всех (если админ)
     if is_admin:
         tmc_query = Equipment.query.filter_by(active=True, os=True)
     else:
@@ -321,35 +382,39 @@ def index():
         components_count = Equipment.query.filter_by(active=True, os=False).count()
         stats_data['components_count'] = components_count
 
-    # Фото пользователя
-    from models import UsersProfile
-    profile = UsersProfile.query.filter_by(usersid=current_user.id).first()
-    if profile and profile.jpegphoto and profile.jpegphoto != 'noimage.jpg':
-        user_photo = url_for('static', filename=f'uploads/{profile.jpegphoto}')
-    else:
-        user_photo = url_for('static', filename='uploads/noimage.jpg')
+    # Фото пользователя (только в реальном режиме)
+    if not TEST_MODE:
+        from models import UsersProfile
+        profile = UsersProfile.query.filter_by(usersid=current_user.id).first()
+        if profile and profile.jpegphoto and profile.jpegphoto != 'noimage.jpg':
+            user_photo = url_for('static', filename=f'uploads/{profile.jpegphoto}')
+        else:
+            user_photo = url_for('static', filename='uploads/noimage.jpg')
 
-    # Новости: закрепленные сверху, затем остальные, максимум 5
-    pinned_news = News.query.filter_by(stiker=True, pinned=True).order_by(News.dt.desc()).all()
-    unpinned_news = News.query.filter_by(stiker=True, pinned=False).order_by(News.dt.desc()).all()
-    
-    # Объединяем: сначала закрепленные, затем остальные, максимум 5
-    news_list = []
-    if pinned_news:
-        # Берем последнюю закрепленную новость
-        news_list.append(pinned_news[0])
-        # Добавляем остальные новости до лимита 5
-        remaining_slots = 4
-        for news in unpinned_news:
-            if remaining_slots <= 0:
-                break
-            news_list.append(news)
-            remaining_slots -= 1
+    # Новости: закрепленные сверху, затем остальные, максимум 5 (только в реальном режиме)
+    if not TEST_MODE:
+        pinned_news = News.query.filter_by(stiker=True, pinned=True).order_by(News.dt.desc()).all()
+        unpinned_news = News.query.filter_by(stiker=True, pinned=False).order_by(News.dt.desc()).all()
+        
+        # Объединяем: сначала закрепленные, затем остальные, максимум 5
+        news_list = []
+        if pinned_news:
+            # Берем последнюю закрепленную новость
+            news_list.append(pinned_news[0])
+            # Добавляем остальные новости до лимита 5
+            remaining_slots = 4
+            for news in unpinned_news:
+                if remaining_slots <= 0:
+                    break
+                news_list.append(news)
+                remaining_slots -= 1
+        else:
+            # Если нет закрепленных, берем просто 5 последних
+            news_list = unpinned_news[:5]
     else:
-        # Если нет закрепленных, берем просто 5 последних
-        news_list = unpinned_news[:5]
+        news_list = []
 
-    return render_template('index.html',
+    return render_template('tmc/index.html',
                            news_list=news_list)
 
 
@@ -433,6 +498,18 @@ def add_tmc():
         kntid = request.form.get('kntid')
         kntid = int(kntid) if kntid else None
 
+        # Обработка статуса ТМЦ
+        status = request.form.get('status', 'active')
+        if status == 'repair':
+            repair_status = True
+            lost_status = False
+        elif status == 'lost':
+            repair_status = False
+            lost_status = True
+        else:  # active
+            repair_status = False
+            lost_status = False
+        
         # === СОЗДАЁМ ОБЪЕКТ СРАЗУ ===
         new_tmc = Equipment(
             buhname=buhname,
@@ -455,7 +532,8 @@ def add_tmc():
             currentcost=0,
             os=True,
             mode=False,
-            repair=False,
+            repair=repair_status,
+            lost=lost_status,
             active=True,
             ip='',
             mapx='',
@@ -506,7 +584,7 @@ def add_tmc():
     # Получаем группы для выпадающего списка
     groups = GroupNome.query.filter_by(active=True).all()
 
-    return render_template('add_tmc.html',
+    return render_template('tmc/add_tmc.html',
                            organizations=organizations,
                            places=places,
                            users=users,
@@ -634,6 +712,18 @@ def edit_tmc(tmc_id):
         if dtendlife_str:
             tmc.dtendlife = datetime.strptime(dtendlife_str, '%Y-%m-%d').date()
 
+        # Обработка статуса ТМЦ
+        status = request.form.get('status', 'active')
+        if status == 'repair':
+            tmc.repair = True
+            tmc.lost = False
+        elif status == 'lost':
+            tmc.repair = False
+            tmc.lost = True
+        else:  # active
+            tmc.repair = False
+            tmc.lost = False
+
         if request.form.get('delete_passport'):
             if tmc.passport_filename:
                 old_path = os.path.join(app.config['UPLOAD_FOLDER'], tmc.passport_filename)
@@ -681,7 +771,7 @@ def edit_tmc(tmc_id):
             active=True
         ).order_by(Nome.name).all()
 
-    return render_template('edit_tmc.html',
+    return render_template('tmc/edit_tmc.html',
                            tmc=tmc,
                            organizations=organizations,
                            places=places,
@@ -802,7 +892,7 @@ def edit_nome(nome_id):
     groups = GroupNome.query.filter_by(active=True).all()
     vendors = Vendor.query.filter_by(active=True).all()
 
-    return render_template('edit_nome.html', nome=nome, groups=groups, vendors=vendors)
+    return render_template('nomenclature/edit_nome.html', nome=nome, groups=groups, vendors=vendors)
 
 @app.route('/bulk_edit_nome/<int:nome_id>', methods=['GET', 'POST'])
 @login_required
@@ -905,7 +995,7 @@ def bulk_edit_nome(nome_id):
             flash(f'Произошла ошибка при сохранении: {str(e)}', 'danger')
     # Для GET-запроса: предзаполняем форму данными из первого ТМЦ
     first_tmc = tmc_list[0]
-    return render_template('bulk_edit_nome.html',
+    return render_template('nomenclature/bulk_edit_nome.html',
                        nome=nome,
                        nome_id=nome_id,
                        nome_name=nome.name,
@@ -936,15 +1026,30 @@ def edit_nome_group(nome_id):
             comment = request.form.get('comment', '').strip()
             nome.comment = comment if comment else None
             
+            # Обновляем категорию (сорт) - значение от 1 до 5
+            category_sort_str = request.form.get('category_sort', '').strip()
+            if category_sort_str:
+                category_sort = int(category_sort_str)
+                if 1 <= category_sort <= 5:
+                    nome.category_sort = category_sort
+                else:
+                    flash('Категория (сорт) должна быть от 1 до 5', 'warning')
+                    nome.category_sort = None
+            else:
+                nome.category_sort = None
+            
             db.session.commit()
             flash('Группа ТМЦ успешно обновлена!', 'success')
             return redirect(url_for('list_by_nome', nome_id=nome_id))
+        except ValueError:
+            db.session.rollback()
+            flash('Ошибка: Категория (сорт) должна быть числом от 1 до 5', 'danger')
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка при сохранении: {str(e)}', 'danger')
     
     # GET: отображаем форму редактирования
-    return render_template('edit_nome_group.html',
+    return render_template('nomenclature/edit_nome_group.html',
                          nome=nome,
                          is_admin=is_admin,
                          is_mol=is_mol)
@@ -952,6 +1057,24 @@ def edit_nome_group(nome_id):
 @app.route('/list_by_nome/<int:nome_id>')
 @login_required
 def list_by_nome(nome_id):
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        from test_mode import MockUser
+        # Создаем мок-объект nome для шаблона
+        class MockNome:
+            id = nome_id
+            name = f'Тестовая группа {nome_id}'
+            photo = ''
+            is_composite = False
+            category_sort = None
+        nome = MockNome()
+        return render_template('tmc/list_by_nome.html',
+                             nome=nome,
+                             tmc_list=[],
+                             component_template=[],
+                             is_admin=current_user.mode == 1,
+                             is_mol=current_user_has_role(1))
+    
     nome = Nome.query.get_or_404(nome_id)
     # Проверяем, является ли пользователь администратором
     is_admin = current_user.mode == 1
@@ -970,7 +1093,7 @@ def list_by_nome(nome_id):
     # Проверяем, является ли пользователь МОЛ
     is_mol = current_user_has_role(1)
 
-    return render_template('list_by_nome.html',
+    return render_template('tmc/list_by_nome.html',
                            nome=nome,
                            tmc_list=tmc_list,
                            component_template=component_template,
@@ -1077,7 +1200,7 @@ def info_tmc(tmc_id):
         equipment_id=tmc_id
     ).order_by(EquipmentComments.created_at.desc()).all()
 
-    return render_template('info_tmc.html',
+    return render_template('tmc/info_tmc.html',
                            tmc=tmc,
                            components=components,
                            is_composite=is_composite,
@@ -1194,6 +1317,7 @@ def add_nome():
                 os=True,
                 mode=False,
                 repair=False,
+                lost=False,
                 active=True,
                 ip='',
                 mapx='',
@@ -1221,13 +1345,20 @@ def add_nome():
     users = db.session.query(Users).join(UsersRoles, Users.id == UsersRoles.userid)\
         .filter(Users.active == True, UsersRoles.role == 1)\
         .order_by(Users.login).all()
-    return render_template('add_nome.html', groups=groups, vendors=vendors, places=places, users=users)
+    return render_template('nomenclature/add_nome.html', groups=groups, vendors=vendors, places=places, users=users)
 
 @app.route('/invoice_list')
 @login_required
 def invoice_list():
     """Список накладных: для Admin — все, для МОЛ — только связанные с ним."""
     is_admin = current_user.mode == 1
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('invoices/invoice_list.html',
+                             invoices=[],
+                             is_admin=is_admin)
+    
 
     if is_admin:
         # Админ видит всё
@@ -1279,12 +1410,17 @@ def invoice_list():
         else:
             invoices = []
 
-    return render_template('invoice_list.html', invoices=invoices)
+    return render_template('invoices/invoice_list.html', invoices=invoices)
 
 
 @app.route('/create_invoice', methods=['GET', 'POST'])
 @login_required
 def create_invoice():
+    # В тестовом режиме запрещаем создание накладных
+    if TEST_MODE:
+        flash('Создание накладных недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('invoice_list'))
+    
     # Справочники
     departments = Department.query.filter_by(active=True).all()
     users = Users.query.filter_by(active=True).all()
@@ -1420,7 +1556,7 @@ def create_invoice():
 
     departments = Department.query.filter_by(active=True).all()
     users = Users.query.filter_by(active=True).all()
-    return render_template('create_invoice.html',
+    return render_template('invoices/create_invoice.html',
                            departments=departments,
                            users=users,
                            warehouses=warehouses,    
@@ -1431,6 +1567,11 @@ def create_invoice():
 @app.route('/api/equipment_by_user/<int:user_id>')
 @login_required
 def equipment_by_user(user_id):
+    # В тестовом режиме возвращаем пустой список
+    if TEST_MODE:
+        from flask import jsonify
+        return jsonify({'equipment': []})
+    
     equipment = Equipment.query.filter_by(usersid=user_id, active=True)\
         .join(Nome).order_by(Nome.name).all()
     return {
@@ -1450,6 +1591,11 @@ def equipment_by_user(user_id):
 @login_required
 def invoice_detail(invoice_id):
     """Просмотр деталей накладной."""
+    # В тестовом режиме запрещаем просмотр
+    if TEST_MODE:
+        flash('Просмотр накладных недоступен в тестовом режиме', 'warning')
+        return redirect(url_for('invoice_list'))
+    
     invoice = Invoices.query.options(
         db.joinedload(Invoices.department),
         db.joinedload(Invoices.from_user),
@@ -1464,11 +1610,16 @@ def invoice_detail(invoice_id):
     tmc_count = len(equipment_items)
     total_cost = sum(eq.cost for eq in equipment_items if eq.cost is not None)
 
-    return render_template('invoice_detail.html', invoice=invoice, tmc_count=tmc_count, total_cost=total_cost)
+    return render_template('invoices/invoice_detail.html', invoice=invoice, tmc_count=tmc_count, total_cost=total_cost)
 
 @app.route('/edit_invoice/<int:invoice_id>', methods=['GET', 'POST'])
 @login_required
 def edit_invoice(invoice_id):
+    # В тестовом режиме запрещаем редактирование
+    if TEST_MODE:
+        flash('Редактирование накладных недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('invoice_list'))
+    
     invoice = Invoices.query.get_or_404(invoice_id)
     departments = Department.query.filter_by(active=True).all()
     users = Users.query.filter_by(active=True).all()
@@ -1617,7 +1768,7 @@ def edit_invoice(invoice_id):
         # (склад не владеет ТМЦ)
         pass  # available_eqs останется пустым
 
-    return render_template('edit_invoice.html',
+    return render_template('invoices/edit_invoice.html',
                         invoice=invoice,
                         departments=departments,
                         users=users,
@@ -1629,6 +1780,11 @@ def edit_invoice(invoice_id):
 @app.route('/delete_invoice/<int:invoice_id>', methods=['POST'])
 @login_required
 def delete_invoice(invoice_id):
+    # В тестовом режиме запрещаем удаление
+    if TEST_MODE:
+        flash('Удаление накладных недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('invoice_list'))
+    
     invoice = Invoices.query.get_or_404(invoice_id)
 
     # Удаляем PDF-файл, если он больше нигде не используется
@@ -1661,6 +1817,17 @@ def all_tmc():
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
     
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('tmc/all_tmc.html',
+                             grouped_tmc=[],
+                             all_departments=[],
+                             all_categories=[],
+                             all_users=[],
+                             filter_user_id=None,
+                             filter_department_id=None,
+                             filter_category_id=None)
+    
     filter_user_id = request.args.get('user_id', type=int)
     filter_department_id = request.args.get('department_id', type=int)
     filter_category_id = request.args.get('category_id', type=int)
@@ -1685,14 +1852,20 @@ def all_tmc():
                           .filter(Equipment.id.in_([eq.id for eq in base_query.all()]))\
                           .scalar() or 0
     
-    # Запрос для группировки (используем тот же фильтр)
+    # Получаем все ID ТМЦ для подсчета статистики
+    tmc_ids = [eq.id for eq in base_query.all()]
+    
+    # Запрос для группировки с подсчетом статистики по статусам
     grouped_query = db.session.query(
         Equipment.nomeid,
         func.coalesce(Nome.name, '⚠️ Неизвестное наименование').label('nome_name'),
         func.count(Equipment.id).label('quantity'),
-        func.coalesce(Nome.photo, '').label('nome_photo')
+        func.coalesce(Nome.photo, '').label('nome_photo'),
+        func.sum(case((Equipment.repair == True, 1), else_=0)).label('repair_count'),
+        func.sum(case((Equipment.lost == True, 1), else_=0)).label('lost_count'),
+        func.sum(case((and_(Equipment.repair == False, Equipment.lost == False), 1), else_=0)).label('active_count')
     ).join(Nome, Equipment.nomeid == Nome.id)\
-     .filter(Equipment.id.in_([eq.id for eq in base_query.all()]))\
+     .filter(Equipment.id.in_(tmc_ids))\
      .group_by(Equipment.nomeid, Nome.name, Nome.photo)\
      .order_by(Nome.name)
     
@@ -1713,7 +1886,7 @@ def all_tmc():
                                    .filter(Equipment.active == True, Equipment.os == True)\
                                    .distinct().order_by(Category.name).all()
     
-    return render_template('all_tmc.html',
+    return render_template('tmc/all_tmc.html',
                            grouped_tmc=grouped_tmc,
                            all_users=all_users,
                            all_departments=all_departments,
@@ -1733,6 +1906,15 @@ def list_my_tmc():
     is_admin = current_user.mode == 1
     if is_admin:
         return redirect(url_for('all_tmc'))
+
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('tmc/my_tmc.html',
+                             grouped_tmc=[],
+                             all_departments=[],
+                             all_categories=[],
+                             filter_department_id=None,
+                             filter_category_id=None)
 
     # Фильтрация по текущему пользователю
     filter_department_id = request.args.get('department_id', type=int)
@@ -1760,12 +1942,18 @@ def list_my_tmc():
                           .filter(Equipment.id.in_(base_query.with_entities(Equipment.id)))\
                           .scalar() or 0
 
-    # Группировка
+    # Получаем все ID ТМЦ для подсчета статистики
+    tmc_ids = [eq.id for eq in base_query.with_entities(Equipment.id).all()]
+    
+    # Группировка с подсчетом статистики по статусам
     grouped_query = db.session.query(
         Equipment.nomeid,
         func.coalesce(Nome.name, '⚠️ Неизвестное наименование').label('nome_name'),
         func.count(Equipment.id).label('quantity'),
-        func.coalesce(Nome.photo, '').label('nome_photo')
+        func.coalesce(Nome.photo, '').label('nome_photo'),
+        func.sum(case((Equipment.repair == True, 1), else_=0)).label('repair_count'),
+        func.sum(case((Equipment.lost == True, 1), else_=0)).label('lost_count'),
+        func.sum(case((and_(Equipment.repair == False, Equipment.lost == False), 1), else_=0)).label('active_count')
     ).select_from(Equipment)\
      .join(Nome, Equipment.nomeid == Nome.id)
 
@@ -1777,9 +1965,7 @@ def list_my_tmc():
                                      .filter(GroupNome.category_id == filter_category_id)
 
     grouped_query = grouped_query.filter(
-        Equipment.usersid == current_user.id,
-        Equipment.active == True,
-        Equipment.os == True
+        Equipment.id.in_(tmc_ids)
     ).group_by(Equipment.nomeid, Nome.name, Nome.photo)\
      .order_by(Nome.name)
 
@@ -1802,7 +1988,7 @@ def list_my_tmc():
 
     is_mol = current_user_has_role(1)
     
-    return render_template('my_tmc.html',
+    return render_template('tmc/my_tmc.html',
                            grouped_tmc=grouped_tmc,
                            tmc_count=tmc_count,
                            total_cost=total_cost,
@@ -1817,6 +2003,13 @@ def list_my_tmc():
 @login_required
 def manage_categories():
     is_admin = current_user.mode == 1
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('categories/manage_categories.html',
+                             categories=[],
+                             is_admin=is_admin)
+    
     if not is_admin:
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
@@ -1853,7 +2046,7 @@ def manage_categories():
     # Группы, которые уже привязаны к категориям
     assigned_groups = [g for g in all_groups if g.category_id is not None]
 
-    return render_template('manage_categories.html',
+    return render_template('admin/manage_categories.html',
                            all_groups=all_groups,
                            all_categories=all_categories,
                            unassigned_groups=unassigned_groups,
@@ -1864,6 +2057,13 @@ def manage_categories():
 def all_components():
     # Только для администраторов
     is_admin = current_user.mode == 1
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('components/all_components.html',
+                             components=[],
+                             is_admin=is_admin)
+    
     if not is_admin:
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
@@ -1929,7 +2129,7 @@ def all_components():
         .distinct().subquery()
     all_categories = Category.query.filter(Category.id.in_(active_categories_ids), Category.active == True).all()
 
-    return render_template('all_components.html',
+    return render_template('components/all_components.html',
                            grouped_tmc=grouped_tmc,
                            all_users=all_users,
                            all_departments=all_departments,
@@ -1946,6 +2146,11 @@ def all_components():
 @login_required
 def add_component():
     """Добавление нового комплектующего (не ОС)."""
+    # В тестовом режиме запрещаем добавление
+    if TEST_MODE:
+        flash('Добавление комплектующих недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('all_components'))
+    
     if request.method == 'POST':
         # Получаем данные формы
         nomeid = int(request.form['nomeid'])
@@ -2016,6 +2221,7 @@ def add_component():
             os=False,  # КЛЮЧЕВОЕ: это НЕ основное средство
             mode=False,
             repair=False,
+            lost=False,
             active=True,
             ip='',
             mapx='',
@@ -2105,7 +2311,7 @@ def add_component():
             blocked_assets_by_nome[link.id_nome_component] = []
         blocked_assets_by_nome[link.id_nome_component].append(link.id_main_asset)
 
-    return render_template('add_component.html',
+    return render_template('components/add_component.html',
                         organizations=organizations,
                         places=places,
                         users=users,
@@ -2121,6 +2327,11 @@ def add_component():
 @login_required
 def edit_component(component_id):
     """Редактирование комплектующего (os=False)."""
+    # В тестовом режиме запрещаем редактирование
+    if TEST_MODE:
+        flash('Редактирование комплектующих недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('all_components'))
+    
     component = Equipment.query.get_or_404(component_id)
 
     # Проверяем, что это комплектующее (os=False)
@@ -2338,7 +2549,7 @@ def edit_component(component_id):
 
     # --- КОНЕЦ НОВОГО ---
 
-    return render_template('edit_component.html',
+    return render_template('components/edit_component.html',
                            tmc=component,  # используем переменную tmc для совместимости с шаблоном
                            organizations=organizations,
                            places=places,
@@ -2363,6 +2574,13 @@ def edit_component(component_id):
 def manage_users():
     """Страница просмотра и управления пользователями (только для администраторов)."""
     is_admin = current_user.mode == 1
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('users/manage_users.html',
+                             users=[],
+                             is_admin=is_admin)
+    
     if not is_admin:
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
@@ -2398,7 +2616,7 @@ def manage_users():
 
     # --- КОНЕЦ НОВОГО ПОДХОДА ---
 
-    return render_template('manage_users.html',
+    return render_template('users/manage_users.html',
                            all_users=all_users,
                            user_profiles=user_profiles,
                            roles_dict=roles_dict,
@@ -2467,7 +2685,7 @@ def edit_my_profile():
             flash(f'Ошибка при сохранении: {str(e)}', 'danger')
     
     # GET: отображаем форму с текущими данными пользователя
-    return render_template('edit_my_profile.html',
+    return render_template('users/edit_my_profile.html',
                         user=user,
                         user_profile=user_profile,
                         user_login=current_user.login)
@@ -2477,6 +2695,12 @@ def edit_my_profile():
 def edit_user(user_id):
     """Редактирование пользователя (только для администраторов)."""
     is_admin = current_user.mode == 1
+    
+    # В тестовом режиме запрещаем редактирование
+    if TEST_MODE:
+        flash('Редактирование пользователей недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('manage_users'))
+    
     if not is_admin:
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
@@ -2507,7 +2731,7 @@ def edit_user(user_id):
         if not new_login:
             flash('Логин не может быть пустым.', 'danger')
             orgs = Org.query.all()
-            return render_template('edit_user.html', user=user, user_profile=user_profile, 
+            return render_template('users/edit_user.html', user=user, user_profile=user_profile, 
                                  orgs=orgs, is_admin=is_admin, user_login=current_user.login)
 
         # Проверка уникальности логина
@@ -2515,7 +2739,7 @@ def edit_user(user_id):
         if existing_user:
             flash(f'Логин "{new_login}" уже занят другим пользователем.', 'danger')
             orgs = Org.query.all()
-            return render_template('edit_user.html', user=user, user_profile=user_profile, 
+            return render_template('users/edit_user.html', user=user, user_profile=user_profile, 
                                  orgs=orgs, is_admin=is_admin, user_login=current_user.login)
 
         # Обновление основных полей пользователя
@@ -2547,7 +2771,7 @@ def edit_user(user_id):
         else:
             flash('Некорректное значение роли. Допустимый диапазон: 0-10.', 'danger')
             orgs = Org.query.all()
-            return render_template('edit_user.html', user=user, user_profile=user_profile, 
+            return render_template('users/edit_user.html', user=user, user_profile=user_profile, 
                                 orgs=orgs, is_admin=is_admin, current_role=current_role,
                                 user_login=current_user.login)
 
@@ -2575,7 +2799,7 @@ def edit_user(user_id):
             else:
                 flash('Неверный формат файла фото. Допустимые форматы: png, jpg, jpeg, gif, bmp, webp.', 'danger')
                 orgs = Org.query.all()
-                return render_template('edit_user.html', user=user, user_profile=user_profile, 
+                return render_template('users/edit_user.html', user=user, user_profile=user_profile, 
                                      orgs=orgs, is_admin=is_admin, user_login=current_user.login)
 
         try:
@@ -2588,7 +2812,7 @@ def edit_user(user_id):
 
     # GET: отображаем форму с текущими данными пользователя
     orgs = Org.query.all()
-    return render_template('edit_user.html',
+    return render_template('users/edit_user.html',
                         user=user,
                         user_profile=user_profile,
                         orgs=orgs,
@@ -2599,6 +2823,11 @@ def edit_user(user_id):
 @app.route('/temp_assign', methods=['POST'])
 @login_required
 def temp_assign():
+    # В тестовом режиме запрещаем выдачу
+    if TEST_MODE:
+        flash('Выдача ТМЦ недоступна в тестовом режиме', 'warning')
+        return redirect(url_for('index'))
+    
     # Проверка: текущий пользователь — МОЛ (role=1) ИЛИ админ (mode==1)
     is_admin = current_user.mode == 1
     is_mol = current_user_has_role(1)
@@ -2679,6 +2908,11 @@ def temp_assign():
 @app.route('/temp_return/<int:usage_id>', methods=['POST'])
 @login_required
 def temp_return(usage_id):
+    # В тестовом режиме запрещаем возврат
+    if TEST_MODE:
+        flash('Возврат ТМЦ недоступен в тестовом режиме', 'warning')
+        return redirect(url_for('my_temp_tmc'))
+    
     usage = EquipmentTempUsage.query.get_or_404(usage_id)
     mol_user_id = usage.mol_userid
     is_admin = current_user.mode == 1
@@ -2702,6 +2936,13 @@ def temp_return(usage_id):
 @login_required
 def my_temp_tmc():
     # Страница доступна всем авторизованным пользователям
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('temp_usage/my_temp_tmc.html',
+                             active_usages=[],
+                             tmc_count=0,
+                             total_cost=0)
+    
     # Получаем активные выдачи для текущего пользователя
     active_usages = EquipmentTempUsage.query.filter_by(
         user_temp_id=current_user.id,
@@ -2717,7 +2958,7 @@ def my_temp_tmc():
             cost_value = float(usage.equipment.cost) if usage.equipment.cost else 0
             total_cost += cost_value
 
-    return render_template('my_temp_tmc.html', 
+    return render_template('temp_usage/my_temp_tmc.html', 
                          usages=active_usages,
                          tmc_count=tmc_count,
                          total_cost=total_cost)
@@ -2832,6 +3073,34 @@ def all_stats():
     """Страница статистики для администратора - статистика по всем ТМЦ."""
     is_admin = current_user.mode == 1
     
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        empty_stats = {
+            'tmc_count': 0,
+            'total_cost': 0,
+            'active_users': 0,
+            'category_labels': [],
+            'category_counts': [],
+            'category_cost_labels': [],
+            'category_costs': [],
+            'department_labels': [],
+            'department_counts': [],
+            'user_labels': [],
+            'user_counts': [],
+            'monthly_labels': [],
+            'monthly_counts': [],
+            'status_labels': ['В эксплуатации', 'В ремонте', 'Потеряно'],
+            'status_counts': [0, 0, 0],
+            'components_count': 0
+        }
+        return render_template('reports/stats.html', 
+                             stats_data=empty_stats, 
+                             tmc_count=0,
+                             total_cost=0,
+                             active_users=0,
+                             is_admin=True,
+                             page_title='Статистика системы')
+    
     if not is_admin:
         flash('Доступ запрещён. Только администратор может просматривать общую статистику.', 'danger')
         return redirect(url_for('index'))
@@ -2853,7 +3122,7 @@ def all_stats():
     stats_data = calculate_stats_data(tmc_query, is_admin=True)
     stats_data['components_count'] = Equipment.query.filter_by(active=True, os=False).count()
     
-    return render_template('stats.html',
+    return render_template('reports/stats.html',
                          tmc_count=tmc_count,
                          total_cost=total_cost,
                          active_users=active_users,
@@ -2868,21 +3137,96 @@ def my_stats():
     is_mol = current_user_has_role(1)
     is_admin = current_user.mode == 1
     
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        empty_stats = {
+            'tmc_count': 0,
+            'total_cost': 0,
+            'status_counts': {'active': 0, 'repair': 0, 'lost': 0},
+            'status_costs': {'active': 0, 'repair': 0, 'lost': 0},
+            'components_count': 0,
+            'department_labels': [],
+            'department_counts': []
+        }
+        return render_template('reports/stats.html', stats_data=empty_stats, is_admin=False)
+    
     if not (is_mol or is_admin):
         flash('Доступ запрещён. Только МОЛ может просматривать свою статистику.', 'danger')
         return redirect(url_for('index'))
     
     # Запрос ТМЦ текущего МОЛ
     tmc_query = Equipment.query.filter_by(usersid=current_user.id, active=True, os=True)
-    tmc_count = tmc_query.count()
+    tmc_ids = [eq.id for eq in tmc_query.all()]
+    tmc_count = len(tmc_ids)
     total_cost = db.session.query(func.coalesce(func.sum(Equipment.cost), 0)).filter(
-        Equipment.id.in_([eq.id for eq in tmc_query.all()])
-    ).scalar()
+        Equipment.id.in_(tmc_ids)
+    ).scalar() or 0
     
-    # Рассчитываем статистику
+    # Рассчитываем базовую статистику
     stats_data = calculate_stats_data(tmc_query, is_admin=False)
     
-    return render_template('stats.html',
+    # Дополнительная статистика по статусам (включая "Потерян")
+    if tmc_ids:
+        # Количество по статусам
+        active_count = Equipment.query.filter(
+            Equipment.id.in_(tmc_ids),
+            Equipment.repair == False,
+            Equipment.lost == False
+        ).count()
+        repair_count = Equipment.query.filter(
+            Equipment.id.in_(tmc_ids),
+            Equipment.repair == True
+        ).count()
+        lost_count = Equipment.query.filter(
+            Equipment.id.in_(tmc_ids),
+            Equipment.lost == True
+        ).count()
+        
+        # Стоимость по статусам
+        active_cost = db.session.query(func.coalesce(func.sum(Equipment.cost), 0)).filter(
+            Equipment.id.in_(tmc_ids),
+            Equipment.repair == False,
+            Equipment.lost == False
+        ).scalar() or 0
+        
+        repair_cost = db.session.query(func.coalesce(func.sum(Equipment.cost), 0)).filter(
+            Equipment.id.in_(tmc_ids),
+            Equipment.repair == True
+        ).scalar() or 0
+        
+        lost_cost = db.session.query(func.coalesce(func.sum(Equipment.cost), 0)).filter(
+            Equipment.id.in_(tmc_ids),
+            Equipment.lost == True
+        ).scalar() or 0
+        
+        stats_data['status_labels'] = ['В эксплуатации', 'В ремонте', 'Потерян']
+        stats_data['status_counts'] = [active_count, repair_count, lost_count]
+        stats_data['status_costs'] = [float(active_cost), float(repair_cost), float(lost_cost)]
+    
+    # Статистика по отделам для МОЛ
+    if tmc_ids:
+        department_stats = db.session.query(
+            Department.name.label('department_name'),
+            func.count(Equipment.id).label('count')
+        ).join(Equipment, Department.id == Equipment.department_id)\
+         .filter(Equipment.id.in_(tmc_ids))\
+         .group_by(Department.id, Department.name)\
+         .order_by(func.count(Equipment.id).desc())\
+         .limit(10)\
+         .all()
+        
+        stats_data['department_labels'] = [row.department_name for row in department_stats] if department_stats else []
+        stats_data['department_counts'] = [row.count for row in department_stats] if department_stats else []
+    
+    # Статистика по комплектующим МОЛ
+    components_count = Equipment.query.filter_by(
+        usersid=current_user.id,
+        active=True,
+        os=False
+    ).count()
+    stats_data['components_count'] = components_count
+    
+    return render_template('reports/stats.html',
                          tmc_count=tmc_count,
                          total_cost=total_cost,
                          active_users=0,
@@ -2895,6 +3239,11 @@ def my_stats():
 def all_moves():
     """Страница всех перемещений для администратора."""
     is_admin = current_user.mode == 1
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('reports/all_moves.html', moves_data=[])
+    
     
     if not is_admin:
         flash('Доступ запрещён. Только администратор может просматривать все перемещения.', 'danger')
@@ -2921,7 +3270,7 @@ def all_moves():
             'user_to': user_to
         })
     
-    return render_template('all_moves.html', moves_data=moves_data)
+    return render_template('reports/all_moves.html', moves_data=moves_data)
 
 @app.route('/my_moves')
 @login_required
@@ -2929,6 +3278,11 @@ def my_moves():
     """Страница перемещений для МОЛ - только перемещения его ТМЦ и комплектующих."""
     is_mol = current_user_has_role(1)
     is_admin = current_user.mode == 1
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('reports/my_moves.html', moves_data=[], is_mol=is_mol)
+    
     
     if not (is_mol or is_admin):
         flash('Доступ запрещён. Только МОЛ может просматривать свои перемещения.', 'danger')
@@ -2981,7 +3335,7 @@ def my_moves():
             'user_to': user_to
         })
     
-    return render_template('my_moves.html', moves_data=moves_data, is_mol=is_mol)
+    return render_template('reports/my_moves.html', moves_data=moves_data, is_mol=is_mol)
 
 @app.route('/my_friends')
 @login_required
@@ -2989,6 +3343,13 @@ def my_friends():
     """Страница "Мои друзья" - для МОЛ показывает пользователей, которым выдавал ТМЦ, для обычных пользователей - МОЛ, которые выдавали им ТМЦ."""
     is_mol = current_user_has_role(1)
     is_admin = current_user.mode == 1
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('temp_usage/my_friends.html',
+                             friends=[],
+                             is_mol=is_mol,
+                             is_admin=is_admin)
     
     if is_mol or is_admin:
         # Для МОЛ: показываем пользователей, которым МОЛ выдавал ТМЦ
@@ -3023,7 +3384,7 @@ def my_friends():
         # Сортируем по количеству активных выдач (сначала те, у кого больше активных)
         friends_data.sort(key=lambda x: x['active_assignments'], reverse=True)
         
-        return render_template('my_friends.html', 
+        return render_template('temp_usage/my_friends.html', 
                              friends_data=friends_data,
                              is_mol=is_mol,
                              is_admin=is_admin,
@@ -3062,7 +3423,7 @@ def my_friends():
         # Сортируем по количеству активных выдач (сначала те, у кого больше активных)
         friends_data.sort(key=lambda x: x['active_assignments'], reverse=True)
         
-        return render_template('my_friends.html', 
+        return render_template('temp_usage/my_friends.html', 
                              friends_data=friends_data,
                              is_mol=False,
                              is_admin=False,
@@ -3072,6 +3433,14 @@ def my_friends():
 @login_required
 def friend_equipment(friend_user_id):
     """Страница со списком выданного имущества конкретному пользователю (для МОЛ) или выданного конкретным МОЛ (для обычных пользователей)."""
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('temp_usage/friend_equipment.html',
+                             active_usages=[],
+                             active_cost=0,
+                             friend_user_id=friend_user_id,
+                             is_mol_view=current_user_has_role(1) or current_user.mode == 1)
+    
     is_mol = current_user_has_role(1)
     is_admin = current_user.mode == 1
     
@@ -3108,7 +3477,7 @@ def friend_equipment(friend_user_id):
     if profile and profile.jpegphoto and profile.jpegphoto != 'noimage.jpg':
         user_photo = url_for('static', filename=f'uploads/{profile.jpegphoto}')
     
-    return render_template('friend_equipment.html',
+    return render_template('temp_usage/friend_equipment.html',
                          friend_user=friend_user,
                          friend_profile=profile,
                          friend_photo=user_photo,
@@ -3125,17 +3494,29 @@ def friend_equipment(friend_user_id):
 def manage_news():
     """Список всех новостей для управления (только для администраторов)."""
     is_admin = current_user.mode == 1
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('news/manage_news.html',
+                             all_news=[],
+                             is_admin=is_admin)
+    
     if not is_admin:
         flash('Доступ запрещён', 'danger')
         return redirect(url_for('index'))
     
     all_news = News.query.order_by(News.pinned.desc(), News.dt.desc()).all()
-    return render_template('manage_news.html', all_news=all_news, is_admin=is_admin)
+    return render_template('news/manage_news.html', all_news=all_news, is_admin=is_admin)
 
 @app.route('/add_news', methods=['GET', 'POST'])
 @login_required
 def add_news():
     """Создание новой новости (только для администраторов)."""
+    # В тестовом режиме запрещаем создание
+    if TEST_MODE:
+        flash('Создание новостей недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('manage_news'))
+    
     is_admin = current_user.mode == 1
     if not is_admin:
         flash('Доступ запрещён', 'danger')
@@ -3173,12 +3554,17 @@ def add_news():
             flash(f'Ошибка при создании новости: {str(e)}', 'danger')
             return redirect(url_for('add_news'))
     
-    return render_template('add_news.html', is_admin=is_admin)
+    return render_template('news/add_news.html', is_admin=is_admin)
 
 @app.route('/edit_news/<int:news_id>', methods=['GET', 'POST'])
 @login_required
 def edit_news(news_id):
     """Редактирование новости (только для администраторов)."""
+    # В тестовом режиме запрещаем редактирование
+    if TEST_MODE:
+        flash('Редактирование новостей недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('manage_news'))
+    
     is_admin = current_user.mode == 1
     if not is_admin:
         flash('Доступ запрещён', 'danger')
@@ -3214,12 +3600,17 @@ def edit_news(news_id):
             flash(f'Ошибка при обновлении новости: {str(e)}', 'danger')
             return redirect(url_for('edit_news', news_id=news_id))
     
-    return render_template('edit_news.html', news=news, is_admin=is_admin)
+    return render_template('news/edit_news.html', news=news, is_admin=is_admin)
 
 @app.route('/delete_news/<int:news_id>', methods=['POST'])
 @login_required
 def delete_news(news_id):
     """Удаление новости (только для администраторов)."""
+    # В тестовом режиме запрещаем удаление
+    if TEST_MODE:
+        flash('Удаление новостей недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('manage_news'))
+    
     is_admin = current_user.mode == 1
     if not is_admin:
         flash('Доступ запрещён', 'danger')
@@ -3236,6 +3627,856 @@ def delete_news(news_id):
         flash(f'Ошибка при удалении новости: {str(e)}', 'danger')
     
     return redirect(url_for('manage_news'))
+
+# === УПРАВЛЕНИЕ ОТДЕЛАМИ ===
+
+@app.route('/my_departments')
+@login_required
+def my_departments():
+    """Отображение отделов: для МОЛ - только отделы с ТМЦ, для админа - все отделы."""
+    is_admin = current_user.mode == 1
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('departments/my_departments.html',
+                             departments=[],
+                             is_admin=is_admin)
+    
+    if is_admin:
+        # Для админа - все отделы
+        departments = Department.query.filter_by(active=True).order_by(Department.name).all()
+    else:
+        # Для МОЛ - только отделы, где у него есть ТМЦ
+        departments = db.session.query(Department).join(
+            Equipment, Department.id == Equipment.department_id
+        ).filter(
+            Equipment.usersid == current_user.id,
+            Equipment.active == True,
+            Equipment.os == True,
+            Department.active == True
+        ).distinct().order_by(Department.name).all()
+    
+    # Подсчёт статистики по каждому отделу
+    department_stats = []
+    for dept in departments:
+        if is_admin:
+            # Для админа - все ТМЦ в отделе
+            tmc_count = Equipment.query.filter_by(
+                department_id=dept.id,
+                active=True,
+                os=True
+            ).count()
+            total_cost = db.session.query(
+                func.coalesce(func.sum(Equipment.cost), 0)
+            ).filter_by(
+                department_id=dept.id,
+                active=True,
+                os=True
+            ).scalar()
+        else:
+            # Для МОЛ - только его ТМЦ в отделе
+            tmc_count = Equipment.query.filter_by(
+                department_id=dept.id,
+                usersid=current_user.id,
+                active=True,
+                os=True
+            ).count()
+            total_cost = db.session.query(
+                func.coalesce(func.sum(Equipment.cost), 0)
+            ).filter_by(
+                department_id=dept.id,
+                usersid=current_user.id,
+                active=True,
+                os=True
+            ).scalar()
+        
+        department_stats.append({
+            'department': dept,
+            'tmc_count': tmc_count,
+            'total_cost': float(total_cost) if total_cost else 0.0
+        })
+    
+    return render_template('departments/my_departments.html',
+                          department_stats=department_stats,
+                          is_admin=is_admin)
+
+@app.route('/add_department', methods=['GET', 'POST'])
+@login_required
+def add_department():
+    """Создание нового отдела (только для администраторов)."""
+    is_admin = current_user.mode == 1
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('my_departments'))
+    
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        code = request.form.get('code', '').strip()
+        
+        if not name or not code:
+            flash('Все поля обязательны для заполнения', 'danger')
+            return redirect(url_for('add_department'))
+        
+        # Проверяем уникальность кода
+        existing_dept = Department.query.filter_by(code=code).first()
+        if existing_dept:
+            flash(f'Отдел с кодом "{code}" уже существует', 'danger')
+            return redirect(url_for('add_department'))
+        
+        try:
+            new_department = Department(
+                name=name,
+                code=code,
+                active=True
+            )
+            db.session.add(new_department)
+            db.session.commit()
+            flash(f'Отдел "{name}" успешно создан', 'success')
+            return redirect(url_for('my_departments'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Ошибка при создании отдела: {str(e)}', 'danger')
+    
+    return render_template('departments/add_department.html')
+
+@app.route('/edit_department/<int:department_id>', methods=['GET', 'POST'])
+@login_required
+def edit_department(department_id):
+    """Редактирование отдела (только для администраторов)."""
+    is_admin = current_user.mode == 1
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('my_departments'))
+    
+    department = Department.query.get_or_404(department_id)
+    
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        code = request.form.get('code', '').strip()
+        active = request.form.get('active') == 'on'
+        
+        if not name or not code:
+            flash('Все поля обязательны для заполнения', 'danger')
+            return redirect(url_for('edit_department', department_id=department_id))
+        
+        # Проверяем уникальность кода (кроме текущего отдела)
+        existing_dept = Department.query.filter(
+            Department.code == code,
+            Department.id != department_id
+        ).first()
+        if existing_dept:
+            flash(f'Отдел с кодом "{code}" уже существует', 'danger')
+            return redirect(url_for('edit_department', department_id=department_id))
+        
+        try:
+            department.name = name
+            department.code = code
+            department.active = active
+            db.session.commit()
+            flash(f'Отдел "{name}" успешно обновлён', 'success')
+            return redirect(url_for('my_departments'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Ошибка при обновлении отдела: {str(e)}', 'danger')
+    
+    return render_template('departments/edit_department.html',
+                          department=department)
+
+@app.route('/delete_department/<int:department_id>', methods=['POST'])
+@login_required
+def delete_department(department_id):
+    """Удаление отдела (только для администраторов)."""
+    is_admin = current_user.mode == 1
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('my_departments'))
+    
+    department = Department.query.get_or_404(department_id)
+    
+    # Проверяем, есть ли ТМЦ, привязанные к этому отделу
+    tmc_count = Equipment.query.filter_by(
+        department_id=department_id,
+        active=True
+    ).count()
+    
+    if tmc_count > 0:
+        flash(f'Невозможно удалить отдел "{department.name}": к нему привязано {tmc_count} ТМЦ. Сначала удалите или переместите ТМЦ.', 'danger')
+        return redirect(url_for('my_departments'))
+    
+    try:
+        # Помечаем отдел как неактивный вместо физического удаления
+        department.active = False
+        db.session.commit()
+        flash(f'Отдел "{department.name}" успешно удалён', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ошибка при удалении отдела: {str(e)}', 'danger')
+    
+    return redirect(url_for('my_departments'))
+
+@app.route('/generate_form8/<int:department_id>')
+@login_required
+def generate_form8(department_id):
+    """Генерация формы 8 (Книга учета материальных ценностей) для отдела."""
+    is_admin = current_user.mode == 1
+    department = Department.query.get_or_404(department_id)
+    
+    # Проверка доступа: МОЛ может видеть только свои отделы
+    if not is_admin:
+        # Проверяем, есть ли у пользователя ТМЦ в этом отделе
+        user_tmc_in_dept = Equipment.query.filter_by(
+            department_id=department_id,
+            usersid=current_user.id,
+            active=True,
+            os=True
+        ).first()
+        if not user_tmc_in_dept:
+            flash('Доступ запрещён', 'danger')
+            return redirect(url_for('my_departments'))
+    
+    # Получаем ТМЦ отдела
+    if is_admin:
+        equipment_list = Equipment.query.filter_by(
+            department_id=department_id,
+            active=True,
+            os=True
+        ).order_by(Equipment.invnum, Equipment.buhname).all()
+    else:
+        equipment_list = Equipment.query.filter_by(
+            department_id=department_id,
+            usersid=current_user.id,
+            active=True,
+            os=True
+        ).order_by(Equipment.invnum, Equipment.buhname).all()
+    
+    if not equipment_list:
+        flash('В отделе нет ТМЦ для формирования отчета', 'warning')
+        return redirect(url_for('my_departments'))
+    
+    # Генерируем PDF файл формы 8
+    from io import BytesIO
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import mm
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    import os
+    
+    # Регистрируем шрифт Times New Roman (или Liberation Serif как аналог)
+    # Пытаемся найти системный шрифт с кириллицей (Times New Roman или аналог)
+    times_font_paths = [
+        '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+        '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    ]
+    
+    # Ищем доступный шрифт (приоритет Serif, затем Sans)
+    regular_font_path = None
+    bold_font_path = None
+    
+    # Сначала ищем Serif (Times New Roman аналог)
+    for path in times_font_paths:
+        if os.path.exists(path) and 'Serif' in path and 'Regular' in path:
+            regular_font_path = path
+            break
+    
+    # Если не нашли Serif, ищем Sans
+    if not regular_font_path:
+        for path in times_font_paths:
+            if os.path.exists(path) and ('Regular' in path or ('Sans.ttf' in path and 'Bold' not in path and 'Serif' not in path)):
+                regular_font_path = path
+                break
+    
+    # Ищем Bold версию
+    for path in times_font_paths:
+        if os.path.exists(path) and 'Bold' in path:
+            # Предпочитаем Serif Bold, если есть
+            if 'Serif' in path:
+                bold_font_path = path
+                break
+            elif not bold_font_path:  # Сохраняем первый найденный Bold
+                bold_font_path = path
+    
+    # Регистрируем шрифты, если найдены
+    if regular_font_path:
+        try:
+            pdfmetrics.registerFont(TTFont('TimesFont', regular_font_path))
+            font_name = 'TimesFont'
+        except:
+            font_name = 'Helvetica'
+    else:
+        font_name = 'Helvetica'
+    
+    if bold_font_path:
+        try:
+            pdfmetrics.registerFont(TTFont('TimesFontBold', bold_font_path))
+            bold_font_name = 'TimesFontBold'
+        except:
+            bold_font_name = 'Helvetica-Bold'
+    else:
+        bold_font_name = 'Helvetica-Bold'
+    
+    # Создаем буфер для PDF
+    buffer = BytesIO()
+    
+    # Создаем документ в альбомной ориентации
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
+                           rightMargin=10*mm, leftMargin=10*mm,
+                           topMargin=10*mm, bottomMargin=10*mm)
+    
+    # Контейнер для элементов документа
+    elements = []
+    
+    # Стили
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=14,
+        textColor=colors.HexColor('#000000'),
+        spaceAfter=6,
+        alignment=TA_CENTER,
+        fontName=bold_font_name
+    )
+    
+    normal_style = ParagraphStyle(
+        'CustomNormal',
+        parent=styles['Normal'],
+        fontSize=9,
+        textColor=colors.HexColor('#000000'),
+        alignment=TA_LEFT,
+        fontName=font_name
+    )
+    
+    small_style = ParagraphStyle(
+        'CustomSmall',
+        parent=styles['Normal'],
+        fontSize=7,
+        textColor=colors.HexColor('#000000'),
+        alignment=TA_CENTER,
+        fontName=font_name,
+        leading=8  # Межстрочный интервал
+    )
+    
+    # Стиль для данных в таблице (меньший размер для лучшего масштабирования)
+    table_data_style = ParagraphStyle(
+        'TableData',
+        parent=styles['Normal'],
+        fontSize=6,
+        textColor=colors.HexColor('#000000'),
+        alignment=TA_CENTER,  # Центрирование
+        fontName=font_name,
+        leading=7
+    )
+    
+    # Стиль для чисел в таблице
+    table_number_style = ParagraphStyle(
+        'TableNumber',
+        parent=styles['Normal'],
+        fontSize=6,
+        textColor=colors.HexColor('#000000'),
+        alignment=TA_CENTER,  # Центрирование для чисел
+        fontName=font_name,
+        leading=7
+    )
+    
+    # Стиль для заголовков таблицы (без переноса)
+    table_header_style = ParagraphStyle(
+        'TableHeader',
+        parent=styles['Normal'],
+        fontSize=6,
+        textColor=colors.HexColor('#000000'),
+        alignment=TA_CENTER,
+        fontName=bold_font_name,
+        leading=7
+    )
+    
+    # Титульная страница
+    # Заголовок формы
+    elements.append(Spacer(1, 20*mm))
+    form_title = Paragraph('Форма № 8', normal_style)
+    elements.append(form_title)
+    elements.append(Spacer(1, 5*mm))
+    
+    # Основной заголовок
+    main_title = Paragraph('КНИГА № ____<br/>УЧЕТА МАТЕРИАЛЬНЫХ ЦЕННОСТЕЙ', title_style)
+    elements.append(main_title)
+    elements.append(Spacer(1, 10*mm))
+    
+    # Получаем организацию пользователя
+    user_org = None
+    if hasattr(current_user, 'orgid') and current_user.orgid:
+        user_org = db.session.get(Org, current_user.orgid)
+    org_name = user_org.name if user_org else 'Не указано'
+    
+    # Получаем МОЛ (берем первого из списка ТМЦ или текущего пользователя)
+    mol_name = 'Не указано'
+    if equipment_list and equipment_list[0].users:
+        mol_name = equipment_list[0].users.login
+    elif current_user:
+        mol_name = current_user.login
+    
+    # Информация об отделе и датах
+    info_data = [
+        [
+            Paragraph('Учреждение:', normal_style),
+            Paragraph(org_name, normal_style),
+            Paragraph('по ОКУД', normal_style),
+            Paragraph('', normal_style)
+        ],
+        [
+            Paragraph('Структурное подразделение:', normal_style),
+            Paragraph(department.name, normal_style),
+            Paragraph('Дата открытия', normal_style),
+            Paragraph('', normal_style)
+        ],
+        [
+            Paragraph('Материально ответственное лицо:', normal_style),
+            Paragraph(mol_name, normal_style),
+            Paragraph('Дата закрытия', normal_style),
+            Paragraph('', normal_style)
+        ],
+        [
+            Paragraph('', normal_style),
+            Paragraph('', normal_style),
+            Paragraph('по ОКПО', normal_style),
+            Paragraph('', normal_style)
+        ]
+    ]
+    
+    info_table = Table(info_data, colWidths=[50*mm, 90*mm, 35*mm, 25*mm])
+    info_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (0, -1), bold_font_name),
+        ('FONTNAME', (1, 0), (1, -1), font_name),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 10*mm))
+    
+    # Даты начала и окончания
+    date_text = f'Начата «____» ________ {datetime.now().year} г.<br/>Окончена «____» ________ {datetime.now().year} г.'
+    date_para = Paragraph(date_text, normal_style)
+    elements.append(date_para)
+    elements.append(Spacer(1, 5*mm))
+    elements.append(PageBreak())
+    
+    # Пояснения к форме
+    explanations = [
+        'Пояснения к форме:',
+        '1. Книга используется для учета материальных ценностей, выданных в установленных случаях во временное пользование на период не более одного месяца.',
+        '2. Книга ведется в подразделении, на складе, в мастерской (цехе) воинской части.',
+        '3. В книге отдельные листы отводятся для каждого наименования материальных ценностей или для каждой единицы (военнослужащего), получающей их.',
+    ]
+    
+    for exp in explanations:
+        elements.append(Paragraph(exp, normal_style))
+        elements.append(Spacer(1, 3*mm))
+    
+    elements.append(PageBreak())
+    
+    # Группируем ТМЦ по nomeid (группам ТМЦ)
+    from collections import defaultdict
+    equipment_by_nome = defaultdict(list)
+    for eq in equipment_list:
+        equipment_by_nome[eq.nomeid].append(eq)
+    
+    # Для каждой группы ТМЦ создаем отдельную страницу
+    for nome_id, nome_equipment_list in equipment_by_nome.items():
+        # Получаем название группы ТМЦ
+        nome = Nome.query.get(nome_id)
+        nome_name = nome.name if nome else f'Группа ID {nome_id}'
+        
+        # Создаем единую таблицу для всей страницы
+        # Берем данные из первого ТМЦ группы (если есть)
+        first_eq = nome_equipment_list[0] if nome_equipment_list else None
+        
+        # Получаем данные для верхней секции
+        # Убеждаемся, что все значения являются строками (не None)
+        def safe_str(value):
+            """Безопасное преобразование в строку, возвращает '' если None"""
+            return str(value) if value is not None else ''
+        
+        warehouse = safe_str(first_eq.places.name) if first_eq and first_eq.places else ''  # Склад (из places)
+        rack = safe_str(getattr(first_eq, 'warehouse_rack', None)) if first_eq else ''  # Стеллаж
+        cell = safe_str(getattr(first_eq, 'warehouse_cell', None)) if first_eq else ''  # Ячейка
+        unit_name = safe_str(getattr(first_eq, 'unit_name', None)) if first_eq else ''  # Единица измерения (наименование)
+        unit_code = safe_str(getattr(first_eq, 'unit_code', None)) if first_eq else ''  # Единица измерения (код)
+        price = f"{float(first_eq.cost):,.2f}".replace(',', ' ') if first_eq and first_eq.cost else ''  # Цена
+        
+        # Марка (из vendor через vendorid)
+        brand = ''
+        if first_eq and first_eq.nome and first_eq.nome.vendorid:
+            vendor = Vendor.query.get(first_eq.nome.vendorid)
+            brand = safe_str(vendor.name) if vendor else ''
+        
+        # Категория (сорт) - значение от 1 до 5 из группы ТМЦ
+        category = ''
+        if first_eq and first_eq.nome and first_eq.nome.category_sort:
+            category = str(first_eq.nome.category_sort)  # Категория (сорт) - значение от 1 до 5
+        profile = safe_str(getattr(first_eq, 'profile', None)) if first_eq else ''  # Профиль
+        size = safe_str(getattr(first_eq, 'size', None)) if first_eq else ''  # Размер
+        stock_norm = safe_str(getattr(first_eq, 'stock_norm', None)) if first_eq else ''  # Норма запаса
+        service_life = first_eq.dtendlife.strftime('%d.%m.%Y') if first_eq and first_eq.dtendlife else ''  # Срок службы
+        
+        # Создаем единую таблицу
+        table_data = []
+        
+        # Первая строка - заголовки верхней секции
+        # Только заголовки, без значений
+        header_row1 = [
+            Paragraph('Склад', table_header_style),
+            Paragraph('Стеллаж', table_header_style),
+            Paragraph('Ячейка', table_header_style),
+            Paragraph('Единица измерения', table_header_style),
+            Paragraph('', table_header_style),  # Пустая ячейка для объединения
+            Paragraph('Цена, руб. коп.', table_header_style),
+            Paragraph('Марка', table_header_style),
+            Paragraph('Категория (сорт)', table_header_style),
+            Paragraph('Профиль', table_header_style),
+            Paragraph('Размер', table_header_style),
+            Paragraph('Норма запаса', table_header_style),
+            Paragraph('Срок службы', table_header_style)
+        ]
+        table_data.append(header_row1)
+        
+        # Вторая строка - подзаголовки
+        # Для объединяемых столбцов (0,1,2,5,6,7,8,9,10,11) - пустые ячейки
+        # Для столбцов 3,4 - подзаголовки "наименование" и "код"
+        header_row2 = [
+            Paragraph('', table_data_style),  # Столбец 0 - пусто (будет объединен)
+            Paragraph('', table_data_style),  # Столбец 1 - пусто (будет объединен)
+            Paragraph('', table_data_style),  # Столбец 2 - пусто (будет объединен)
+            Paragraph('наименование', table_header_style),
+            Paragraph('код', table_header_style),
+            Paragraph('', table_data_style),  # Столбец 5 - пусто (будет объединен)
+            Paragraph('', table_data_style),  # Столбец 6 - пусто (будет объединен)
+            Paragraph('', table_data_style),  # Столбец 7 - пусто (будет объединен)
+            Paragraph('', table_data_style),  # Столбец 8 - пусто (будет объединен)
+            Paragraph('', table_data_style),  # Столбец 9 - пусто (будет объединен)
+            Paragraph('', table_data_style),  # Столбец 10 - пусто (будет объединен)
+            Paragraph('', table_data_style)  # Столбец 11 - пусто (будет объединен)
+        ]
+        table_data.append(header_row2)
+        
+        # Третья строка - все данные из базы данных
+        # Для объединяемых столбцов (0,1,2,5,6,7,8,9,10,11) - значения из БД
+        # Для столбцов 3,4 - значения единицы измерения из БД
+        data_row3 = [
+            Paragraph(warehouse, table_data_style) if warehouse else Paragraph('', table_data_style),  # Столбец 0 - значение склада
+            Paragraph(rack, table_data_style) if rack else Paragraph('', table_data_style),  # Столбец 1 - значение стеллажа
+            Paragraph(cell, table_data_style) if cell else Paragraph('', table_data_style),  # Столбец 2 - значение ячейки
+            Paragraph(unit_name, table_data_style) if unit_name else Paragraph('', table_data_style),  # Столбец 3 - значение единицы измерения (наименование)
+            Paragraph(unit_code, table_data_style) if unit_code else Paragraph('', table_data_style),  # Столбец 4 - значение единицы измерения (код)
+            Paragraph(price, table_data_style) if price else Paragraph('', table_data_style),  # Столбец 5 - значение цены
+            Paragraph(brand, table_data_style) if brand else Paragraph('', table_data_style),  # Столбец 6 - значение марки
+            Paragraph(category, table_data_style) if category else Paragraph('', table_data_style),  # Столбец 7 - значение категории
+            Paragraph(profile, table_data_style) if profile else Paragraph('', table_data_style),  # Столбец 8 - значение профиля
+            Paragraph(size, table_data_style) if size else Paragraph('', table_data_style),  # Столбец 9 - значение размера
+            Paragraph(stock_norm, table_data_style) if stock_norm else Paragraph('', table_data_style),  # Столбец 10 - значение нормы запаса
+            Paragraph(service_life, table_data_style) if service_life else Paragraph('', table_data_style)  # Столбец 11 - значение срока службы
+        ]
+        table_data.append(data_row3)
+        
+        # Четвертая строка - "Наименование материальных ценностей" с названием группы (объединенная ячейка на всю ширину)
+        nome_row = [
+            Paragraph(f'Наименование материальных ценностей "{nome_name}"', table_header_style),
+            Paragraph('', table_data_style),  # Пустые ячейки для объединения
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style)
+        ]
+        table_data.append(nome_row)
+        
+        # Пятая строка - заголовки основной таблицы
+        main_header_row1 = [
+            Paragraph('Порядковый<br/>номер<br/>записи', table_header_style),
+            Paragraph('Дата<br/>записи', table_header_style),
+            Paragraph('Документ', table_header_style),
+            Paragraph('Документ', table_header_style),
+            Paragraph('Документ', table_header_style),
+            Paragraph('От кого получено<br/>(кому отпущено)', table_header_style),
+            Paragraph('Заводской номер<br/>(иной номер)', table_header_style),
+            Paragraph('Инвентарный<br/>номер', table_header_style),
+            Paragraph('Приход', table_header_style),
+            Paragraph('Расход', table_header_style),
+            Paragraph('Остаток', table_header_style),
+            Paragraph('Контроль<br/>(подпись и дата)', table_header_style)
+        ]
+        table_data.append(main_header_row1)
+        
+        # Шестая строка - подзаголовки для документа
+        main_header_row2 = [
+            Paragraph('', table_header_style),
+            Paragraph('', table_header_style),
+            Paragraph('наименование', table_header_style),
+            Paragraph('дата', table_header_style),
+            Paragraph('номер', table_header_style),
+            Paragraph('', table_header_style),
+            Paragraph('', table_header_style),
+            Paragraph('', table_header_style),
+            Paragraph('', table_header_style),
+            Paragraph('', table_header_style),
+            Paragraph('', table_header_style),
+            Paragraph('', table_header_style)
+        ]
+        table_data.append(main_header_row2)
+        
+        # Данные для этой группы
+        total_cost = 0
+        for idx, eq in enumerate(nome_equipment_list, 1):
+            # Дата поступления
+            date_str = eq.datepost.strftime('%d.%m.%Y') if eq.datepost else ''
+            
+            # Документ (можно использовать накладные или другие документы)
+            # Ищем связанные накладные
+            doc_name = 'Поступление'
+            doc_date = date_str
+            doc_number = ''
+            
+            # Пытаемся найти первую накладную для этого ТМЦ (по дате накладной)
+            # Сортируем по дате накладной, чтобы получить самую раннюю
+            invoice_eq = InvoiceEquipment.query.join(Invoices).filter(
+                InvoiceEquipment.equipment_id == eq.id
+            ).order_by(Invoices.invoice_date.asc()).first()
+            
+            if invoice_eq and invoice_eq.invoice:
+                doc_name = 'Накладная'
+                doc_date = invoice_eq.invoice.invoice_date.strftime('%d.%m.%Y') if invoice_eq.invoice.invoice_date else date_str
+                doc_number = invoice_eq.invoice.invoice_number or ''
+                
+                # Определяем, от кого был принят ТМЦ согласно первой накладной
+                invoice = invoice_eq.invoice
+                from_info = ''
+                
+                # Загружаем связанные данные, если они не загружены
+                if invoice.type == 'Склад-МОЛ':
+                    # От склада (from_knt)
+                    if invoice.from_knt_id:
+                        knt = Knt.query.get(invoice.from_knt_id)
+                        if knt and knt.name:
+                            from_info = knt.name
+                        else:
+                            from_info = f'Склад ID {invoice.from_knt_id}'
+                    else:
+                        from_info = 'Склад (не указан)'
+                elif invoice.type == 'МОЛ-МОЛ':
+                    # От МОЛ (from_user)
+                    if invoice.from_user_id:
+                        from_user = Users.query.get(invoice.from_user_id)
+                        if from_user and from_user.login:
+                            from_info = from_user.login
+                        else:
+                            from_info = f'МОЛ ID {invoice.from_user_id}'
+                    else:
+                        from_info = 'МОЛ (не указан)'
+                elif invoice.type == 'МОЛ-Склад':
+                    # От МОЛ (from_user) - при возврате на склад
+                    if invoice.from_user_id:
+                        from_user = Users.query.get(invoice.from_user_id)
+                        if from_user and from_user.login:
+                            from_info = from_user.login
+                        else:
+                            from_info = f'МОЛ ID {invoice.from_user_id}'
+                    else:
+                        from_info = 'МОЛ (не указан)'
+                else:
+                    from_info = 'Не указано'
+                
+                from_to_info = from_info
+            else:
+                # Если накладной нет, используем текущего МОЛ как fallback
+                mol_name = eq.users.login if eq.users else 'Не указан'
+                from_to_info = mol_name
+            
+            # Заводской номер
+            factory_num = eq.sernum or ''
+            
+            # Инвентарный номер
+            inv_num = eq.invnum or ''
+            
+            # Приход (стоимость при поступлении)
+            cost = float(eq.cost) if eq.cost else 0.0
+            total_cost += cost
+            receipt = f"{cost:,.2f}".replace(',', ' ') if cost > 0 else ''
+            
+            # Расход (пусто, так как это книга учета)
+            expense = ''
+            
+            # Остаток (равен приходу для учета)
+            balance = receipt
+            
+            # Используем Paragraph для всех текстовых элементов для корректного масштабирования
+            row = [
+                Paragraph(str(idx), table_data_style),
+                Paragraph(date_str, table_data_style) if date_str else '',
+                Paragraph(doc_name, table_data_style) if doc_name else '',
+                Paragraph(doc_date, table_data_style) if doc_date else '',
+                Paragraph(doc_number, table_data_style) if doc_number else '',
+                Paragraph(from_to_info, table_data_style) if from_to_info else '',  # Наименование ТМЦ и МОЛ
+                Paragraph(factory_num, table_data_style) if factory_num else '',
+                Paragraph(inv_num, table_data_style) if inv_num else '',
+                Paragraph(receipt, table_number_style) if receipt else '',
+                Paragraph(expense, table_number_style) if expense else '',
+                Paragraph(balance, table_number_style) if balance else '',
+                Paragraph('', table_data_style)  # Контроль (подпись и дата)
+            ]
+            table_data.append(row)
+        
+        # Итоговая строка для этой группы
+        total_cost_str = f"{total_cost:,.2f}".replace(',', ' ')
+        total_row = [
+            Paragraph('ИТОГО', table_header_style),  # Используем стиль заголовка для "ИТОГО"
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph('', table_data_style),
+            Paragraph(total_cost_str, table_number_style),
+            Paragraph('', table_data_style),
+            Paragraph(total_cost_str, table_number_style),
+            Paragraph('', table_data_style)
+        ]
+        table_data.append(total_row)
+        
+        # Создаем таблицу (для альбомной ориентации увеличиваем ширину колонок)
+        # Увеличиваем ширину колонок для предотвращения переноса слов
+        table = Table(table_data, colWidths=[
+            15*mm,  # Порядковый номер (увеличено)
+            18*mm,  # Дата записи (увеличено)
+            22*mm,  # Документ - наименование (увеличено)
+            18*mm,  # Документ - дата (увеличено)
+            18*mm,  # Документ - номер (увеличено)
+            40*mm,  # От кого получено (увеличено)
+            22*mm,  # Заводской номер (увеличено)
+            20*mm,  # Инвентарный номер (увеличено)
+            20*mm,  # Приход (увеличено)
+            20*mm,  # Расход (увеличено)
+            20*mm,  # Остаток (увеличено)
+            28*mm   # Контроль (увеличено)
+        ])
+        
+        # Стиль единой таблицы (белый фон)
+        table.setStyle(TableStyle([
+            # Общие стили для всей таблицы - белый фон
+            ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            
+            # Первая строка (индекс 0) - заголовки верхней секции
+            ('FONTNAME', (0, 0), (-1, 0), bold_font_name),
+            ('FONTSIZE', (0, 0), (-1, 0), 6),
+            # Объединение ячеек для "Единица измерения" в первой строке (горизонтально)
+            ('SPAN', (3, 0), (4, 0)),
+            
+            # Вторая строка (индекс 1) - значения верхней секции
+            ('FONTSIZE', (0, 1), (-1, 1), 6),
+            # Подзаголовки единицы измерения (столбцы 3 и 4 не объединяем)
+            ('FONTNAME', (3, 1), (4, 1), bold_font_name),
+            
+            # Объединение 1-й и 2-й строк для столбцов 0,1,2,5,6,7,8,9,10,11 (вертикально)
+            # НЕ объединяем с третьей строкой, чтобы данные из строки 2 были видны
+            # В ReportLab при SPAN отображается только содержимое первой ячейки
+            # Поэтому объединяем только строки 0 и 1, а данные в строке 2 будут видны отдельно
+            ('SPAN', (0, 0), (0, 1)),  # Столбец 0 (Склад) - объединяем строки 0 и 1
+            ('SPAN', (1, 0), (1, 1)),  # Столбец 1 (Стеллаж) - объединяем строки 0 и 1
+            ('SPAN', (2, 0), (2, 1)),  # Столбец 2 (Ячейка) - объединяем строки 0 и 1
+            ('SPAN', (5, 0), (5, 1)),  # Столбец 5 (Цена) - объединяем строки 0 и 1
+            ('SPAN', (6, 0), (6, 1)),  # Столбец 6 (Марка) - объединяем строки 0 и 1
+            ('SPAN', (7, 0), (7, 1)),  # Столбец 7 (Категория) - объединяем строки 0 и 1
+            ('SPAN', (8, 0), (8, 1)),  # Столбец 8 (Профиль) - объединяем строки 0 и 1
+            ('SPAN', (9, 0), (9, 1)),  # Столбец 9 (Размер) - объединяем строки 0 и 1
+            ('SPAN', (10, 0), (10, 1)),  # Столбец 10 (Норма запаса) - объединяем строки 0 и 1
+            ('SPAN', (11, 0), (11, 1)),  # Столбец 11 (Срок службы) - объединяем строки 0 и 1
+            
+            # Третья строка (индекс 2) - все данные из базы данных
+            ('FONTSIZE', (0, 2), (-1, 2), 6),
+            
+            # Четвертая строка (индекс 3) - "Наименование материальных ценностей" (объединенная на всю ширину)
+            ('FONTNAME', (0, 3), (-1, 3), bold_font_name),
+            ('FONTSIZE', (0, 3), (-1, 3), 6),
+            ('SPAN', (0, 3), (-1, 3)),  # Объединяем все ячейки в строке
+            
+            # Пятая строка (индекс 4) - заголовки основной таблицы
+            ('FONTNAME', (0, 4), (-1, 4), bold_font_name),
+            ('FONTSIZE', (0, 4), (-1, 4), 6),
+            # Объединение ячеек для заголовка "Документ"
+            ('SPAN', (2, 4), (4, 4)),
+            
+            # Шестая строка (индекс 5) - подзаголовки документа
+            ('FONTNAME', (0, 5), (-1, 5), font_name),
+            ('FONTSIZE', (0, 5), (-1, 5), 5),
+            
+            # Данные (начиная с седьмой строки, индекс 6)
+            ('FONTNAME', (0, 6), (-1, -2), font_name),
+            ('FONTSIZE', (0, 6), (-1, -2), 6),
+            ('ALIGN', (0, 6), (-1, -2), 'CENTER'),  # Все данные по центру
+            
+            # Общие стили для всей таблицы
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            
+            # Итоговая строка
+            ('FONTNAME', (0, -1), (-1, -1), bold_font_name),
+            ('FONTSIZE', (0, -1), (-1, -1), 6),
+        ]))
+        
+        elements.append(table)
+        
+        # Разрыв страницы перед следующей группой (кроме последней)
+        nome_ids_list = list(equipment_by_nome.keys())
+        if nome_id != nome_ids_list[-1]:
+            elements.append(PageBreak())
+    
+    # Собираем PDF
+    doc.build(elements)
+    
+    # Подготовка ответа
+    buffer.seek(0)
+    
+    # Создаем безопасное имя файла (только ASCII символы)
+    safe_dept_name = department.name.replace(' ', '_').encode('ascii', 'ignore').decode('ascii')
+    if not safe_dept_name:
+        safe_dept_name = 'department'
+    filename_ascii = f"form8_{safe_dept_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    
+    # Для кириллицы используем RFC 2231 encoding
+    from urllib.parse import quote
+    filename_utf8 = f"form8_{department.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    filename_encoded = quote(filename_utf8.encode('utf-8'))
+    
+    response = Response(
+        buffer.getvalue(),
+        mimetype='application/pdf',
+        headers={
+            'Content-Disposition': f'inline; filename="{filename_ascii}"; filename*=UTF-8\'\'{filename_encoded}'
+        }
+    )
+    
+    return response
 
 # === ЗАПУСК ПРИЛОЖЕНИЯ ===
 

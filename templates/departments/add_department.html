@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Добавить отдел{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Добавить отдел</h1>
+        <p class="text-muted mb-0">Создание нового отдела в системе</p>
+    </div>
+    <div class="user-info">
+        <a href="{{ url_for('my_departments') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Назад
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST" novalidate>
+            <div class="mb-3">
+                <label for="name" class="form-label">
+                    Название отдела <span class="text-danger">*</span>
+                </label>
+                <input type="text" 
+                       class="form-control" 
+                       id="name" 
+                       name="name" 
+                       required 
+                       placeholder="Например: Бухгалтерия">
+            </div>
+            
+            <div class="mb-3">
+                <label for="code" class="form-label">
+                    Код отдела <span class="text-danger">*</span>
+                </label>
+                <input type="text" 
+                       class="form-control" 
+                       id="code" 
+                       name="code" 
+                       required 
+                       placeholder="Например: BUKH"
+                       pattern="[A-Z0-9_-]+"
+                       title="Только заглавные буквы, цифры, дефис и подчёркивание">
+                <small class="form-text text-muted">
+                    Уникальный код отдела (только заглавные буквы, цифры, дефис и подчёркивание)
+                </small>
+            </div>
+            
+            <div class="d-flex justify-content-between">
+                <a href="{{ url_for('my_departments') }}" class="btn btn-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Отмена
+                </a>
+                <button type="submit" class="btn btn-success">
+                    <i class="bi bi-check-circle me-1"></i>Создать отдел
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+

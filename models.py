@@ -48,7 +48,8 @@ class Equipment(db.Model):
     mode = db.Column(db.Boolean, nullable=False, default=False)
     comment = db.Column(db.Text, nullable=True, default='')
     photo = db.Column(db.String(255), nullable=True, default='')
-    repair = db.Column(db.Boolean, nullable=False, default=False)
+    repair = db.Column(db.Boolean, nullable=False, default=False)  # В ремонте
+    lost = db.Column(db.Boolean, nullable=False, default=False)  # Потерян
     active = db.Column(db.Boolean, nullable=False, default=True)
     ip = db.Column(db.String(100), nullable=True, default='')
     mapx = db.Column(db.String(8), nullable=True, default='')
@@ -63,6 +64,14 @@ class Equipment(db.Model):
     invoice_file = db.Column(db.String(255), nullable=False, default='')
     passport_filename = db.Column(db.String(255), nullable=True)
     dtendlife = db.Column(db.Date, nullable=True)
+    # Дополнительные поля для Формы 8 (необязательные)
+    warehouse_rack = db.Column(db.String(100), nullable=True)  # Стеллаж
+    warehouse_cell = db.Column(db.String(100), nullable=True)  # Ячейка
+    unit_name = db.Column(db.String(50), nullable=True)  # Единица измерения (наименование)
+    unit_code = db.Column(db.String(10), nullable=True)  # Единица измерения (код)
+    profile = db.Column(db.String(100), nullable=True)  # Профиль
+    size = db.Column(db.String(100), nullable=True)  # Размер
+    stock_norm = db.Column(db.String(50), nullable=True)  # Норма запаса
     invoice_links = db.relationship('InvoiceEquipment', back_populates='equipment')
     # Связи
     org = db.relationship('Org', backref='equipment')
@@ -173,6 +182,7 @@ class Nome(db.Model):
     comment = db.Column(db.Text, nullable=True)  # Text позволяет хранить большие текстовые
     is_component = db.Column(db.Boolean, default=False, nullable=False)
     is_composite = db.Column(db.Boolean, default=False, nullable=False)  # Флаг составного ТМЦ
+    category_sort = db.Column(db.Integer, nullable=True)  # Категория (сорт) - значение от 1 до 5
     # Добавляем отношение
     group = db.relationship('GroupNome', backref='nomes')
 

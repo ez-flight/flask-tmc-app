@@ -10,7 +10,7 @@
         
         {% if current_user.is_authenticated %}
             <p>Вы уже авторизованы!</p>
-            <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Перейти в личный кабинет</a>
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Перейти на главную</a>
         {% else %}
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
@@ -23,6 +23,20 @@
                 {% endif %}
             {% endwith %}
 
+            {% if test_mode %}
+            <div class="alert alert-info mb-4">
+                <h5 class="alert-heading">Тестовый режим</h5>
+                <p class="mb-2">Для тестирования системы доступны следующие тестовые пользователи:</p>
+                <hr>
+                <ul class="mb-0">
+                    <li><strong>admin</strong> — администратор (пароль: test123)</li>
+                    <li><strong>mol</strong> — МОЛ (пароль: test123)</li>
+                    <li><strong>user</strong> — обычный пользователь (пароль: test123)</li>
+                    <li><strong>test</strong> — тестовый пользователь (пароль: test123)</li>
+                </ul>
+            </div>
+            {% endif %}
+            
             <form method="POST">
                 <div class="mb-3">
                     <label for="login" class="form-label">Логин</label>

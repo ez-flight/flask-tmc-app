@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Мои отделы{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Мои отделы</h1>
+        <p class="text-muted mb-0">
+            {% if is_admin %}
+                Все отделы в системе
+            {% else %}
+                Отделы, где у вас есть ТМЦ
+            {% endif %}
+        </p>
+    </div>
+    <div class="user-info">
+        {% if is_admin %}
+            <a href="{{ url_for('add_department') }}" class="btn btn-success btn-sm">
+                <i class="bi bi-plus-circle me-1"></i>Добавить отдел
+            </a>
+        {% endif %}
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>На главную
+        </a>
+    </div>
+</div>
+
+{% if department_stats %}
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col" style="width: 50px;">#</th>
+                        <th scope="col">Название отдела</th>
+                        <th scope="col" style="width: 120px;" class="text-end">Кол-во ТМЦ</th>
+                        <th scope="col" style="width: 150px;" class="text-end">Общая стоимость</th>
+                        <th scope="col" style="width: 180px;" class="text-center">Действия</th>
+                        {% if is_admin %}
+                            <th scope="col" style="width: 120px;">Статус</th>
+                            <th scope="col" style="width: 150px;" class="text-center">Управление</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stat in department_stats %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>
+                            <strong>{{ stat.department.name }}</strong>
+                        </td>
+                        <td class="text-end">
+                            <span class="badge bg-info">{{ stat.tmc_count }}</span>
+                        </td>
+                        <td class="text-end">
+                            <strong>{{ "{:,.2f}".format(stat.total_cost) }} руб.</strong>
+                        </td>
+                        <td class="text-center">
+                            <a href="{{ url_for('generate_form8', department_id=stat.department.id) }}" 
+                               class="btn btn-sm btn-success" 
+                               title="Сформировать форму 8 (Книга учета материальных ценностей)">
+                                <i class="bi bi-file-earmark-spreadsheet me-1"></i>Форма 8
+                            </a>
+                        </td>
+                        {% if is_admin %}
+                            <td>
+                                {% if stat.department.active %}
+                                    <span class="badge bg-success">Активен</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Неактивен</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <a href="{{ url_for('edit_department', department_id=stat.department.id) }}" 
+                                   class="btn btn-sm btn-outline-primary" 
+                                   title="Редактировать">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <form method="POST" 
+                                      action="{{ url_for('delete_department', department_id=stat.department.id) }}" 
+                                      style="display: inline;"
+                                      onsubmit="return confirm('Вы уверены, что хотите удалить отдел &quot;{{ stat.department.name }}&quot;?');">
+                                    <button type="submit" 
+                                            class="btn btn-sm btn-outline-danger" 
+                                            title="Удалить"
+                                            {% if not stat.department.active %}disabled{% endif %}>
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-building" style="font-size: 48px; color: #ccc;"></i>
+        <p class="text-muted mt-3 mb-0">
+            {% if is_admin %}
+                Отделы не найдены. Создайте первый отдел.
+            {% else %}
+                У вас нет ТМЦ, привязанных к отделам.
+            {% endif %}
+        </p>
+        {% if is_admin %}
+            <a href="{{ url_for('add_department') }}" class="btn btn-success mt-3">
+                <i class="bi bi-plus-circle me-1"></i>Добавить отдел
+            </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+

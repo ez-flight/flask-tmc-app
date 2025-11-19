@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Мои помещения{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Мои помещения</h1>
+        <p class="text-muted mb-0">
+            {% if is_admin %}
+                Все помещения в системе
+            {% else %}
+                Помещения, где у вас есть ТМЦ
+            {% endif %}
+        </p>
+    </div>
+    <div class="user-info">
+        {% if is_admin %}
+            <a href="{{ url_for('add_place') }}" class="btn btn-success btn-sm">
+                <i class="bi bi-plus-circle me-1"></i>Добавить помещение
+            </a>
+        {% endif %}
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>На главную
+        </a>
+    </div>
+</div>
+
+{% if places_stats %}
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col" style="width: 50px;">#</th>
+                        <th scope="col"><i class="bi bi-geo-alt me-1"></i>Название помещения</th>
+                        <th scope="col" style="width: 120px;" class="text-end"><i class="bi bi-box-seam me-1"></i>Кол-во ТМЦ</th>
+                        <th scope="col" style="width: 220px; min-width: 220px;" class="text-end"><i class="bi bi-currency-exchange me-1"></i>Общая стоимость</th>
+                        {% if is_admin %}
+                            <th scope="col" style="width: 120px;"><i class="bi bi-toggle-on me-1"></i>Статус</th>
+                            <th scope="col" style="width: 150px;" class="text-center"><i class="bi bi-gear me-1"></i>Управление</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stat in places_stats %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>
+                            <a href="{{ url_for('place_equipment', place_id=stat.place.id) }}" 
+                               class="text-decoration-none fw-bold"
+                               style="color: var(--vk-blue);">
+                                <i class="bi bi-geo-alt me-1"></i>{{ stat.place.name }}
+                            </a>
+                        </td>
+                        <td class="text-end">
+                            <span class="badge bg-info">{{ stat.tmc_count }}</span>
+                        </td>
+                        <td class="text-end">
+                            <strong style="color: #198754; white-space: nowrap; font-size: 0.95em; font-weight: 600;">
+                                {{ "{:,.2f}".format(stat.total_cost).replace(',', ' ').replace('.', ',') }} ₽
+                            </strong>
+                        </td>
+                        {% if is_admin %}
+                            <td>
+                                {% if stat.place.active %}
+                                    <span class="badge bg-success">Активно</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Неактивно</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <a href="{{ url_for('edit_place', place_id=stat.place.id) }}" 
+                                   class="btn btn-sm btn-outline-primary" 
+                                   title="Редактировать">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <form method="POST" 
+                                      action="{{ url_for('delete_place', place_id=stat.place.id) }}" 
+                                      style="display: inline;"
+                                      onsubmit="return confirm('Вы уверены, что хотите удалить помещение &quot;{{ stat.place.name }}&quot;?');">
+                                    <button type="submit" 
+                                            class="btn btn-sm btn-outline-danger" 
+                                            title="Удалить"
+                                            {% if not stat.place.active %}disabled{% endif %}>
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-geo-alt" style="font-size: 48px; color: #ccc;"></i>
+        <p class="text-muted mt-3 mb-0">
+            {% if is_admin %}
+                Помещения не найдены. Создайте первое помещение.
+            {% else %}
+                У вас нет ТМЦ, привязанных к помещениям.
+            {% endif %}
+        </p>
+        {% if is_admin %}
+            <a href="{{ url_for('add_place') }}" class="btn btn-success mt-3">
+                <i class="bi bi-plus-circle me-1"></i>Добавить помещение
+            </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+

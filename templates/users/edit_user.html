@@ -5,7 +5,15 @@
 
 {% block content %}
 <div class="page-header">
-    <h1>Редактировать пользователя: {{ user.login }}</h1>
+    <div>
+        <h1>Редактировать пользователя</h1>
+        <p class="text-muted mb-0">
+            <i class="bi bi-person-circle me-1"></i>{{ user.login }}
+            {% if user_profile and user_profile.fio %}
+                <span class="ms-2">— {{ user_profile.fio }}</span>
+            {% endif %}
+        </p>
+    </div>
     <div class="user-info">
         <a href="{{ url_for('manage_users') }}" class="btn btn-secondary btn-sm">
             <i class="bi bi-arrow-left me-1"></i>Назад к списку
@@ -14,103 +22,233 @@
 </div>
 
 {% if is_admin %}
-<div class="alert alert-success d-flex align-items-center mb-3" role="alert">
-    <i class="bi bi-shield-check me-2"></i>
-    <span>Вы администратор. У вас полный доступ к системе.</span>
+<div class="alert alert-info d-flex align-items-center mb-3" role="alert">
+    <i class="bi bi-info-circle me-2"></i>
+    <span>Вы администратор. У вас полный доступ к редактированию пользователей.</span>
 </div>
 {% endif %}
 
-<div class="card shadow-sm">
+<div class="card">
     <div class="card-body">
-        <form method="POST" enctype="multipart/form-data"> <!-- Добавлен enctype для загрузки файлов -->
-    <div class="mb-3">
-        <label for="login" class="form-label">Логин *</label>
-        <input type="text" class="form-control" id="login" name="login" value="{{ user.login }}" required>
-    </div>
-
-    <div class="mb-3">
-        <label for="fio" class="form-label">ФИО</label>
-        <input type="text" class="form-control" id="fio" name="fio" value="{{ user_profile.fio if user_profile else '' }}">
-    </div>
-    
-    <div class="mb-3">
-        <label for="orgid" class="form-label">ID Организации</label>
-        {% if orgs %}
-        <select class="form-select" id="orgid" name="orgid">
-            {% for org in orgs %}
-            <option value="{{ org.id }}" {% if user.orgid == org.id %}selected{% endif %}>{{ org.name }} ({{ org.id }})</option>
-            {% endfor %}
-        </select>
-        {% else %}
-        <input type="number" class="form-control" id="orgid" name="orgid" value="{{ user.orgid }}" min="1" required>
-        {% endif %}
-    </div>
-
-<!-- Активность и Администратор — в одной строке -->
-<div class="row mb-3">
-  <div class="col form-check">
-    <input type="checkbox" class="form-check-input" id="active" name="active" {% if user.active %}checked{% endif %}>
-    <label class="form-check-label" for="active">Активен</label>
-  </div>
-  <div class="col form-check">
-    <input type="checkbox" class="form-check-input" id="is_admin" name="is_admin" {% if user.mode == 1 %}checked{% endif %}>
-    <label class="form-check-label" for="is_admin">Администратор</label>
-  </div>
-</div>
-
-<!-- Роли от 0 до 10 в выпадающем списке -->
-<div class="mb-3">
-  <label for="role" class="form-label">Роль пользователя</label>
-  <select class="form-select" id="role" name="role">
-    <option value="0" {% if current_role == 0 %}selected{% endif %}>0 - Обычный пользователь</option>
-    <option value="1" {% if current_role == 1 %}selected{% endif %}>1 - МОЛ (материально-ответственное лицо)</option>
-    <option value="2" {% if current_role == 2 %}selected{% endif %}>2 - Пользователь (получил ТМЦ во временное пользование)</option>
-    <option value="3" {% if current_role == 3 %}selected{% endif %}>3 - Инженер</option>
-    <option value="4" {% if current_role == 4 %}selected{% endif %}>4 - Менеджер по закупкам</option>
-    <option value="5" {% if current_role == 5 %}selected{% endif %}>5 - Руководитель отдела</option>
-    <option value="6" {% if current_role == 6 %}selected{% endif %}>6 - Сотрудник склада</option>
-    <option value="7" {% if current_role == 7 %}selected{% endif %}>7 - IT-специалист</option>
-    <option value="8" {% if current_role == 8 %}selected{% endif %}>8 - Аудитор</option>
-    <option value="9" {% if current_role == 9 %}selected{% endif %}>9 - Заместитель директора</option>
-    <option value="10" {% if current_role == 10 %}selected{% endif %}>10 - Директор</option>
-  </select>
-  <div class="form-text">Выберите роль пользователя в системе.</div>
-</div>
-
-    <div class="mb-3">
-        <label for="password" class="form-label">Новый пароль (оставьте пустым, чтобы не менять)</label>
-        <input type="password" class="form-control" id="password" name="password" placeholder="Введите новый пароль...">
-        <div class="form-text">Если вы хотите изменить пароль, введите его здесь. Иначе оставьте поле пустым.</div>
-    </div>
-
-    <!-- --- НОВОЕ: Поле для загрузки фото --- -->
-    <div class="mb-3">
-        <label for="photo" class="form-label">Новое фото профиля</label>
-        <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
-        <div class="form-text">Выберите изображение для обновления аватара пользователя. Оставьте пустым, чтобы не менять.</div>
-    </div>
-
-    {% if user_profile and user_profile.jpegphoto %}
-    <div class="mb-3">
-        <label class="form-label">Текущее фото профиля</label><br>
-        {% if user_profile.jpegphoto != 'noimage.jpg' %}
-            <img src="{{ url_for('static', filename='uploads/' + user_profile.jpegphoto) }}" alt="Текущее фото {{ user.login }}" width="100" class="img-thumbnail">
-        {% else %}
-            <img src="{{ url_for('static', filename='uploads/noimage.jpg') }}" alt="Нет фото" width="100" class="img-thumbnail">
-        {% endif %}
-    </div>
-    {% endif %}
-    <!-- --- КОНЕЦ НОВОГО --- -->
-
-    <!-- Поля lastlogin, sessionid, passw обычно не редактируются пользователем -->
-
-            <div class="d-flex gap-2 mt-4">
-                <button type="submit" class="btn btn-success">
-                    <i class="bi bi-check-circle me-1"></i>Сохранить изменения
-                </button>
+        <form method="POST" enctype="multipart/form-data">
+            
+            <!-- Секция: Основная информация -->
+            <div class="mb-4">
+                <h5 class="mb-3 d-flex align-items-center">
+                    <i class="bi bi-person me-2 text-primary"></i>
+                    Основная информация
+                </h5>
+                
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="login" class="form-label">
+                            <i class="bi bi-at me-1"></i>Логин <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="login" 
+                               name="login" 
+                               value="{{ user.login }}" 
+                               required
+                               placeholder="Введите логин">
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label for="fio" class="form-label">
+                            <i class="bi bi-person-badge me-1"></i>ФИО
+                        </label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="fio" 
+                               name="fio" 
+                               value="{{ user_profile.fio if user_profile else '' }}"
+                               placeholder="Фамилия Имя Отчество">
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label for="position" class="form-label">
+                            <i class="bi bi-briefcase me-1"></i>Должность
+                        </label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="position" 
+                               name="position" 
+                               value="{{ current_position if current_position else '' }}" 
+                               placeholder="Например: Инженер-программист">
+                        <small class="form-text text-muted">Должность пользователя в организации</small>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label for="orgid" class="form-label">
+                            <i class="bi bi-building me-1"></i>Организация
+                        </label>
+                        {% if orgs %}
+                        <select class="form-select" id="orgid" name="orgid">
+                            {% for org in orgs %}
+                            <option value="{{ org.id }}" {% if user.orgid == org.id %}selected{% endif %}>
+                                {{ org.name }} (ID: {{ org.id }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
+                        <input type="number" 
+                               class="form-control" 
+                               id="orgid" 
+                               name="orgid" 
+                               value="{{ user.orgid }}" 
+                               min="1" 
+                               required>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <hr class="my-4">
+            
+            <!-- Секция: Права доступа и роли -->
+            <div class="mb-4">
+                <h5 class="mb-3 d-flex align-items-center">
+                    <i class="bi bi-shield-lock me-2 text-primary"></i>
+                    Права доступа
+                </h5>
+                
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <div class="p-3 border rounded">
+                            <div class="form-check form-switch d-flex align-items-start">
+                                <input class="form-check-input me-3 mt-1" 
+                                       type="checkbox" 
+                                       id="active" 
+                                       name="active" 
+                                       {% if user.active %}checked{% endif %}>
+                                <label class="form-check-label flex-grow-1" for="active">
+                                    <strong>Активен</strong>
+                                    <br>
+                                    <small class="text-muted">Пользователь может входить в систему</small>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="p-3 border rounded">
+                            <div class="form-check form-switch d-flex align-items-start">
+                                <input class="form-check-input me-3 mt-1" 
+                                       type="checkbox" 
+                                       id="is_admin" 
+                                       name="is_admin" 
+                                       {% if user.mode == 1 %}checked{% endif %}>
+                                <label class="form-check-label flex-grow-1" for="is_admin">
+                                    <strong>Администратор</strong>
+                                    <br>
+                                    <small class="text-muted">Полный доступ к системе</small>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="role" class="form-label">
+                        <i class="bi bi-person-gear me-1"></i>Роль в системе
+                    </label>
+                    <select class="form-select" id="role" name="role">
+                        <option value="0" {% if current_role == 0 %}selected{% endif %}>0 - Обычный пользователь</option>
+                        <option value="1" {% if current_role == 1 %}selected{% endif %}>1 - МОЛ (материально-ответственное лицо)</option>
+                        <option value="2" {% if current_role == 2 %}selected{% endif %}>2 - Пользователь (получил ТМЦ во временное пользование)</option>
+                        <option value="3" {% if current_role == 3 %}selected{% endif %}>3 - Инженер</option>
+                        <option value="4" {% if current_role == 4 %}selected{% endif %}>4 - Менеджер по закупкам</option>
+                        <option value="5" {% if current_role == 5 %}selected{% endif %}>5 - Руководитель отдела</option>
+                        <option value="6" {% if current_role == 6 %}selected{% endif %}>6 - Сотрудник склада</option>
+                        <option value="7" {% if current_role == 7 %}selected{% endif %}>7 - IT-специалист</option>
+                        <option value="8" {% if current_role == 8 %}selected{% endif %}>8 - Аудитор</option>
+                        <option value="9" {% if current_role == 9 %}selected{% endif %}>9 - Заместитель директора</option>
+                        <option value="10" {% if current_role == 10 %}selected{% endif %}>10 - Директор</option>
+                    </select>
+                    <small class="form-text text-muted">Определяет права и возможности пользователя в системе</small>
+                </div>
+            </div>
+            
+            <hr class="my-4">
+            
+            <!-- Секция: Безопасность -->
+            <div class="mb-4">
+                <h5 class="mb-3 d-flex align-items-center">
+                    <i class="bi bi-key me-2 text-primary"></i>
+                    Безопасность
+                </h5>
+                
+                <div class="mb-3">
+                    <label for="password" class="form-label">
+                        <i class="bi bi-lock me-1"></i>Новый пароль
+                    </label>
+                    <input type="password" 
+                           class="form-control" 
+                           id="password" 
+                           name="password" 
+                           placeholder="Введите новый пароль...">
+                    <small class="form-text text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Оставьте поле пустым, если не хотите менять пароль
+                    </small>
+                </div>
+            </div>
+            
+            <hr class="my-4">
+            
+            <!-- Секция: Фото профиля -->
+            <div class="mb-4">
+                <h5 class="mb-3 d-flex align-items-center">
+                    <i class="bi bi-image me-2 text-primary"></i>
+                    Фото профиля
+                </h5>
+                
+                {% if user_profile and user_profile.jpegphoto %}
+                <div class="mb-3">
+                    <label class="form-label">Текущее фото</label>
+                    <div class="d-flex align-items-center gap-3">
+                        {% if user_profile.jpegphoto != 'noimage.jpg' %}
+                            <img src="{{ url_for('static', filename='uploads/' + user_profile.jpegphoto) }}" 
+                                 alt="Текущее фото {{ user.login }}" 
+                                 class="img-thumbnail rounded"
+                                 style="width: 120px; height: 120px; object-fit: cover;">
+                        {% else %}
+                            <img src="{{ url_for('static', filename='uploads/noimage.jpg') }}" 
+                                 alt="Нет фото" 
+                                 class="img-thumbnail rounded"
+                                 style="width: 120px; height: 120px; object-fit: cover;">
+                        {% endif %}
+                        <div class="flex-grow-1">
+                            <small class="text-muted d-block">Текущее изображение профиля</small>
+                            <small class="text-muted">Загрузите новое изображение, чтобы заменить</small>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="mb-3">
+                    <label for="photo" class="form-label">
+                        <i class="bi bi-upload me-1"></i>Загрузить новое фото
+                    </label>
+                    <input type="file" 
+                           class="form-control" 
+                           id="photo" 
+                           name="photo" 
+                           accept="image/*">
+                    <small class="form-text text-muted">
+                        Поддерживаются форматы: PNG, JPG, JPEG, GIF, WEBP. Максимальный размер: 5 МБ
+                    </small>
+                </div>
+            </div>
+            
+            <!-- Кнопки действий -->
+            <div class="d-flex justify-content-between align-items-center pt-3 border-top">
                 <a href="{{ url_for('manage_users') }}" class="btn btn-secondary">
                     <i class="bi bi-x-circle me-1"></i>Отмена
                 </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1"></i>Сохранить изменения
+                </button>
             </div>
         </form>
     </div>

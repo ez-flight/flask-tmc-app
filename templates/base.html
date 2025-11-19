@@ -610,6 +610,11 @@
                                     <i class="bi bi-building"></i>Мои отделы
                                 </a>
                             </li>
+                            <li class="sidebar-menu-item">
+                                <a href="{{ url_for('my_places') }}">
+                                    <i class="bi bi-geo-alt"></i>Мои помещения
+                                </a>
+                            </li>
                         {% else %}
                             <li class="sidebar-menu-item">
                                 <a href="{{ url_for('my_friends') }}">
@@ -652,6 +657,11 @@
                             <li class="sidebar-menu-item">
                                 <a href="{{ url_for('my_departments') }}">
                                     <i class="bi bi-building"></i>Мои отделы
+                                </a>
+                            </li>
+                            <li class="sidebar-menu-item">
+                                <a href="{{ url_for('my_places') }}">
+                                    <i class="bi bi-geo-alt"></i>Мои помещения
                                 </a>
                             </li>
                         {% endif %}

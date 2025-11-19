@@ -4,7 +4,13 @@
 
 {% block content %}
 <div class="page-header">
-    <h1>Создать новую накладную</h1>
+    <div>
+        <h1>Создать новую накладную</h1>
+        <p class="text-muted mb-0">
+            <i class="bi bi-file-earmark-text me-1"></i>
+            Создание документа о перемещении ТМЦ
+        </p>
+    </div>
     <div class="user-info">
         <a href="{{ url_for('invoice_list') }}" class="btn btn-secondary btn-sm">
             <i class="bi bi-arrow-left me-1"></i>Назад к списку
@@ -12,99 +18,167 @@
     </div>
 </div>
 
-<div class="card shadow-sm">
+<div class="card">
     <div class="card-body">
         <form method="POST" enctype="multipart/form-data">
-    <div class="row">
-        <!-- Левый столбец -->
-        <div class="col-md-6">
-            <div class="mb-3">
-                <label class="form-label">Номер накладной <span class="text-danger">*</span></label>
-                <input type="text" name="invoice_number" class="form-control" required>
-            </div>
+            
+            <!-- Секция: Основная информация -->
+            <div class="mb-4">
+                <h5 class="mb-3 d-flex align-items-center">
+                    <i class="bi bi-info-circle me-2 text-primary"></i>
+                    Основная информация
+                </h5>
+                
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="invoice_number" class="form-label">
+                            <i class="bi bi-hash me-1"></i>Номер накладной <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" 
+                               name="invoice_number" 
+                               id="invoice_number"
+                               class="form-control" 
+                               required
+                               placeholder="Введите номер накладной">
+                    </div>
 
-            <div class="mb-3">
-                <label class="form-label">Дата <span class="text-danger">*</span></label>
-                <input type="date" name="invoice_date" class="form-control" value="{{ now_date }}" required>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label">Отдел</label>
-                <select name="department_id" class="form-select">
-                    <option value="">Не указан</option>
-                    {% for d in departments %}
-                        <option value="{{ d.id }}">{{ d.name }} ({{ d.code }})</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label">PDF-файл накладной <span class="text-danger">*</span></label>
-                <input type="file" name="pdf_file" accept=".pdf" class="form-control" required>
-            </div>
-        </div>
-
-        <!-- Правый столбец -->
-        <div class="col-md-6">
-            <div class="mb-3">
-                <label class="form-label">Тип <span class="text-danger">*</span></label>
-                <select name="type" class="form-select" required>
-                    <option value="">-- Выберите --</option>
-                    <option value="Склад-МОЛ">Склад → МОЛ</option>
-                    <option value="МОЛ-МОЛ">МОЛ → МОЛ</option>
-                    <option value="МОЛ-Склад">МОЛ → Склад</option>
-                </select>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label">От кого</label>
-                <div id="from_user_wrapper" class="field-wrapper">
-                    <select name="from_user_id" class="form-select">
-                        <option value="">-- Выберите МОЛ --</option>
-                        {% for u in users %}
-                            <option value="{{ u.id }}">{{ u.login }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div id="from_knt_wrapper" class="field-wrapper mt-2" style="display: none;">
-                    <select name="from_knt_id" class="form-select">
-                        <option value="">-- Выберите склад --</option>
-                        {% for k in warehouses %}
-                            <option value="{{ k.id }}">{{ k.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label">Кому</label>
-                <div id="to_user_wrapper" class="field-wrapper">
-                    <select name="to_user_id" class="form-select">
-                        <option value="">-- Выберите МОЛ --</option>
-                        {% for u in users %}
-                            <option value="{{ u.id }}">{{ u.login }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div id="to_knt_wrapper" class="field-wrapper mt-2" style="display: none;">
-                    <select name="to_knt_id" class="form-select">
-                        <option value="">-- Выберите склад --</option>
-                        {% for k in warehouses %}
-                            <option value="{{ k.id }}">{{ k.name }}</option>
-                        {% endfor %}
-                    </select>
+                    <div class="col-md-6">
+                        <label for="invoice_date" class="form-label">
+                            <i class="bi bi-calendar-event me-1"></i>Дата <span class="text-danger">*</span>
+                        </label>
+                        <input type="date" 
+                               name="invoice_date" 
+                               id="invoice_date"
+                               class="form-control" 
+                               value="{{ now_date }}" 
+                               required>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label for="department_id" class="form-label">
+                            <i class="bi bi-diagram-3 me-1"></i>Отдел
+                        </label>
+                        <select name="department_id" 
+                                id="department_id"
+                                class="form-select">
+                            <option value="">Не указан</option>
+                            {% for d in departments %}
+                                <option value="{{ d.id }}">{{ d.name }} ({{ d.code }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label for="pdf_file" class="form-label">
+                            <i class="bi bi-file-earmark-pdf me-1"></i>PDF-файл накладной <span class="text-danger">*</span>
+                        </label>
+                        <input type="file" 
+                               name="pdf_file" 
+                               id="pdf_file"
+                               accept=".pdf" 
+                               class="form-control" 
+                               required>
+                        <small class="form-text text-muted">
+                            Загрузите PDF-файл накладной
+                        </small>
+                    </div>
                 </div>
             </div>
-        </div>
-    </div>
+            
+            <hr class="my-4">
+            
+            <!-- Секция: Тип и участники перемещения -->
+            <div class="mb-4">
+                <h5 class="mb-3 d-flex align-items-center">
+                    <i class="bi bi-arrow-left-right me-2 text-primary"></i>
+                    Тип и участники перемещения
+                </h5>
+                
+                <div class="row g-3">
+                    <div class="col-md-12">
+                        <label for="type" class="form-label">
+                            <i class="bi bi-diagram-2 me-1"></i>Тип перемещения <span class="text-danger">*</span>
+                        </label>
+                        <select name="type" 
+                                id="type"
+                                class="form-select" 
+                                required>
+                            <option value="">-- Выберите тип --</option>
+                            <option value="Склад-МОЛ">
+                                <i class="bi bi-arrow-right"></i> Склад → МОЛ
+                            </option>
+                            <option value="МОЛ-МОЛ">МОЛ → МОЛ</option>
+                            <option value="МОЛ-Склад">МОЛ → Склад</option>
+                        </select>
+                        <small class="form-text text-muted">
+                            Выберите тип перемещения ТМЦ
+                        </small>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label class="form-label">
+                            <i class="bi bi-person-arrow-up me-1"></i>От кого
+                        </label>
+                        <div id="from_user_wrapper" class="field-wrapper">
+                            <select name="from_user_id" 
+                                    class="form-select">
+                                <option value="">-- Выберите МОЛ --</option>
+                                {% for u in users %}
+                                    <option value="{{ u.id }}">{{ u.login }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div id="from_knt_wrapper" class="field-wrapper mt-2" style="display: none;">
+                            <select name="from_knt_id" 
+                                    class="form-select">
+                                <option value="">-- Выберите склад --</option>
+                                {% for k in warehouses %}
+                                    <option value="{{ k.id }}">{{ k.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <small class="form-text text-muted d-block mt-1">
+                            Отправитель ТМЦ
+                        </small>
+                    </div>
 
-            <div class="d-flex gap-2 mt-4">
-                <button type="submit" class="btn btn-success">
-                    <i class="bi bi-check-circle me-1"></i>Создать накладную
-                </button>
+                    <div class="col-md-6">
+                        <label class="form-label">
+                            <i class="bi bi-person-arrow-down me-1"></i>Кому
+                        </label>
+                        <div id="to_user_wrapper" class="field-wrapper">
+                            <select name="to_user_id" 
+                                    class="form-select">
+                                <option value="">-- Выберите МОЛ --</option>
+                                {% for u in users %}
+                                    <option value="{{ u.id }}">{{ u.login }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div id="to_knt_wrapper" class="field-wrapper mt-2" style="display: none;">
+                            <select name="to_knt_id" 
+                                    class="form-select">
+                                <option value="">-- Выберите склад --</option>
+                                {% for k in warehouses %}
+                                    <option value="{{ k.id }}">{{ k.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <small class="form-text text-muted d-block mt-1">
+                            Получатель ТМЦ
+                        </small>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Кнопки действий -->
+            <div class="d-flex justify-content-between align-items-center pt-3 border-top">
                 <a href="{{ url_for('invoice_list') }}" class="btn btn-secondary">
                     <i class="bi bi-x-circle me-1"></i>Отмена
                 </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1"></i>Создать накладную
+                </button>
             </div>
         </form>
     </div>

@@ -1,54 +1,270 @@
-<!-- templates/login.html -->
+<!-- templates/auth/login.html -->
 {% extends "base.html" %}
 
 {% block title %}Вход в систему{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-md-4">
-        <h2 class="text-center mb-4">Вход</h2>
-        
-        {% if current_user.is_authenticated %}
-            <p>Вы уже авторизованы!</p>
-            <a href="{{ url_for('index') }}" class="btn btn-primary">Перейти на главную</a>
-        {% else %}
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show">
-                            {{ message }}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                        </div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
+<style>
+    .login-container {
+        min-height: calc(100vh - 200px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem 1rem;
+        background: linear-gradient(135deg, #f5f6f8 0%, #e1e3e6 100%);
+    }
+    
+    .login-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        width: 100%;
+        max-width: 450px;
+    }
+    
+    .login-header {
+        background: linear-gradient(135deg, #5181B8 0%, #42648b 100%);
+        color: white;
+        padding: 2rem;
+        text-align: center;
+    }
+    
+    .login-header h1 {
+        margin: 0;
+        font-size: 1.75rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.75rem;
+    }
+    
+    .login-header p {
+        margin: 0.5rem 0 0 0;
+        opacity: 0.9;
+        font-size: 0.95rem;
+    }
+    
+    .login-body {
+        padding: 2rem;
+    }
+    
+    .form-icon-wrapper {
+        position: relative;
+    }
+    
+    .form-icon-wrapper .bi {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #6c757d;
+        z-index: 10;
+    }
+    
+    .form-icon-wrapper input {
+        padding-left: 2.75rem;
+    }
+    
+    .test-users-card {
+        background: #f8f9fa;
+        border-left: 4px solid #0dcaf0;
+        border-radius: 8px;
+        padding: 1.25rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .test-users-card h6 {
+        color: #0dcaf0;
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .test-users-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    
+    .test-users-list li {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #dee2e6;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .test-users-list li:last-child {
+        border-bottom: none;
+    }
+    
+    .test-users-list .badge {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .btn-login {
+        background: linear-gradient(135deg, #5181B8 0%, #42648b 100%);
+        border: none;
+        padding: 0.75rem;
+        font-weight: 600;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+    }
+    
+    .btn-login:hover {
+        background: linear-gradient(135deg, #42648b 0%, #5181B8 100%);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(65, 100, 139, 0.3);
+    }
+    
+    .already-authenticated {
+        text-align: center;
+        padding: 2rem;
+    }
+    
+    .already-authenticated .bi {
+        font-size: 3rem;
+        color: #28a745;
+        margin-bottom: 1rem;
+    }
+</style>
 
-            {% if test_mode %}
-            <div class="alert alert-info mb-4">
-                <h5 class="alert-heading">Тестовый режим</h5>
-                <p class="mb-2">Для тестирования системы доступны следующие тестовые пользователи:</p>
-                <hr>
-                <ul class="mb-0">
-                    <li><strong>admin</strong> — администратор (пароль: test123)</li>
-                    <li><strong>mol</strong> — МОЛ (пароль: test123)</li>
-                    <li><strong>user</strong> — обычный пользователь (пароль: test123)</li>
-                    <li><strong>test</strong> — тестовый пользователь (пароль: test123)</li>
-                </ul>
+<div class="login-container">
+    <div class="login-card">
+        {% if current_user.is_authenticated %}
+            <div class="login-header">
+                <h1>
+                    <i class="bi bi-check-circle-fill"></i>
+                    Вы уже авторизованы
+                </h1>
             </div>
-            {% endif %}
+            <div class="already-authenticated">
+                <i class="bi bi-person-check"></i>
+                <h5 class="mb-3">Добро пожаловать, {{ current_user.login }}!</h5>
+                <a href="{{ url_for('index') }}" class="btn btn-primary btn-lg">
+                    <i class="bi bi-house-door me-2"></i>Перейти на главную
+                </a>
+            </div>
+        {% else %}
+            <div class="login-header">
+                <h1>
+                    <i class="bi bi-box-arrow-in-right"></i>
+                    Вход в систему
+                </h1>
+                <p>Управление материальными ценностями</p>
+            </div>
             
-            <form method="POST">
-                <div class="mb-3">
-                    <label for="login" class="form-label">Логин</label>
-                    <input type="text" class="form-control" id="login" name="login" required>
+            <div class="login-body">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show d-flex align-items-center" role="alert">
+                                <i class="bi bi-{{ 'exclamation-triangle-fill' if category == 'error' or category == 'danger' else 'info-circle-fill' }} me-2"></i>
+                                <div>{{ message }}</div>
+                                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                {% if test_mode %}
+                <div class="test-users-card">
+                    <h6>
+                        <i class="bi bi-info-circle"></i>
+                        Тестовый режим
+                    </h6>
+                    <p class="mb-2 small">Для тестирования системы доступны следующие тестовые пользователи:</p>
+                    <ul class="test-users-list">
+                        <li>
+                            <i class="bi bi-shield-check text-primary"></i>
+                            <strong>admin</strong>
+                            <span class="badge bg-primary ms-auto">Администратор</span>
+                            <span class="text-muted small ms-2">(пароль: test123)</span>
+                        </li>
+                        <li>
+                            <i class="bi bi-person-badge text-success"></i>
+                            <strong>mol</strong>
+                            <span class="badge bg-success ms-auto">МОЛ</span>
+                            <span class="text-muted small ms-2">(пароль: test123)</span>
+                        </li>
+                        <li>
+                            <i class="bi bi-person text-info"></i>
+                            <strong>user</strong>
+                            <span class="badge bg-info ms-auto">Пользователь</span>
+                            <span class="text-muted small ms-2">(пароль: test123)</span>
+                        </li>
+                        <li>
+                            <i class="bi bi-person-circle text-secondary"></i>
+                            <strong>test</strong>
+                            <span class="badge bg-secondary ms-auto">Тестовый</span>
+                            <span class="text-muted small ms-2">(пароль: test123)</span>
+                        </li>
+                    </ul>
                 </div>
-                <div class="mb-3">
-                    <label for="password" class="form-label">Пароль</label>
-                    <input type="password" class="form-control" id="password" name="password" required>
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Войти</button>
-            </form>
+                {% endif %}
+                
+                <form method="POST" id="loginForm">
+                    <div class="mb-3">
+                        <label for="login" class="form-label fw-semibold">
+                            <i class="bi bi-person me-1"></i>Логин
+                        </label>
+                        <div class="form-icon-wrapper">
+                            <i class="bi bi-person"></i>
+                            <input type="text" 
+                                   class="form-control form-control-lg" 
+                                   id="login" 
+                                   name="login" 
+                                   placeholder="Введите логин"
+                                   required
+                                   autofocus>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="password" class="form-label fw-semibold">
+                            <i class="bi bi-lock me-1"></i>Пароль
+                        </label>
+                        <div class="form-icon-wrapper">
+                            <i class="bi bi-lock"></i>
+                            <input type="password" 
+                                   class="form-control form-control-lg" 
+                                   id="password" 
+                                   name="password" 
+                                   placeholder="Введите пароль"
+                                   required>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-login w-100 btn-lg">
+                        <i class="bi bi-box-arrow-in-right me-2"></i>
+                        Войти в систему
+                    </button>
+                </form>
+            </div>
         {% endif %}
     </div>
 </div>
+
+<script>
+    // Автофокус на поле логина при загрузке страницы
+    document.addEventListener('DOMContentLoaded', function() {
+        const loginInput = document.getElementById('login');
+        if (loginInput && !loginInput.value) {
+            loginInput.focus();
+        }
+    });
+    
+    // Обработка Enter в форме
+    document.getElementById('loginForm')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            this.submit();
+        }
+    });
+</script>
 {% endblock %}

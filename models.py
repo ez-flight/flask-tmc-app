@@ -166,6 +166,7 @@ class Vendor(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(155), nullable=False)                  # Название производителя
     active = db.Column(db.Boolean, nullable=False, default=True)      # Активен ли поставщик
+    comment = db.Column(db.Text, nullable=True, default='')          # Комментарий
 
 class Nome(db.Model):
     """

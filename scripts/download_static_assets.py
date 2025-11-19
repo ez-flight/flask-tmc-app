@@ -39,7 +39,7 @@ files_to_download = [
         "path": JS_DIR / "chart.umd.min.js"
     },
     {
-        "url": "https://cdn.tiny.cloud/1/no-api-key/tinymce/6/tinymce.min.js",
+        "url": "https://download.tiny.cloud/tinymce/community/tinymce_6.8.3/tinymce.min.js",
         "path": JS_DIR / "tinymce.min.js"
     }
 ]

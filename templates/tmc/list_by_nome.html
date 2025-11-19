@@ -22,6 +22,11 @@
         <a href="{{ url_for('bulk_edit_nome', nome_id=nome.id) }}" class="btn btn-primary me-2">
             <i class="bi bi-pencil-square me-1"></i>Групповое редактирование
         </a>
+        {% if tmc_list %}
+        <button type="button" class="btn btn-warning me-2" data-bs-toggle="modal" data-bs-target="#bulkCreateModal">
+            <i class="bi bi-stack me-1"></i>Массовое создание ТМЦ
+        </button>
+        {% endif %}
     {% endif %}
     {% if is_admin or is_mol %}
         <a href="{{ url_for('edit_nome_group', nome_id=nome.id) }}" class="btn btn-info">
@@ -146,6 +151,167 @@
             </div>
         </div>
     </div>
+{% endif %}
+
+<!-- Модальное окно для массового создания ТМЦ -->
+{% if is_admin and tmc_list %}
+<div class="modal fade" id="bulkCreateModal" tabindex="-1" aria-labelledby="bulkCreateModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="bulkCreateModalLabel">
+                    <i class="bi bi-stack me-2"></i>Массовое создание ТМЦ
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="{{ url_for('bulk_create_tmc', nome_id=nome.id) }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="template_tmc" class="form-label">Выберите ТМЦ-шаблон <span class="text-danger">*</span></label>
+                        <select class="form-select" id="template_tmc" name="template_tmc_id" required>
+                            <option value="">-- Выберите ТМЦ --</option>
+                            {% for tmc in tmc_list %}
+                            <option value="{{ tmc.id }}">
+                                {{ tmc.buhname }}
+                                {% if tmc.sernum %} ({{ tmc.sernum }}){% endif %}
+                                {% if tmc.invnum %} [{{ tmc.invnum }}]{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <small class="form-text text-muted">Выберите ТМЦ, данные которого будут использованы как шаблон</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="quantity" class="form-label">Количество ТМЦ для создания <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" id="quantity" name="quantity" min="1" max="100" value="1" required>
+                        <small class="form-text text-muted">Укажите количество ТМЦ, которые нужно создать (от 1 до 100)</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Выберите поля для копирования:</label>
+                        <div class="border rounded p-3" style="max-height: 400px; overflow-y: auto;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="orgid" id="copy_orgid" checked>
+                                        <label class="form-check-label" for="copy_orgid">Организация</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="placesid" id="copy_placesid" checked>
+                                        <label class="form-check-label" for="copy_placesid">Место размещения</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="usersid" id="copy_usersid" checked>
+                                        <label class="form-check-label" for="copy_usersid">Ответственный (МОЛ)</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="buhname" id="copy_buhname" checked>
+                                        <label class="form-check-label" for="copy_buhname">Бухгалтерское наименование</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="cost" id="copy_cost" checked>
+                                        <label class="form-check-label" for="copy_cost">Стоимость</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="currentcost" id="copy_currentcost" checked>
+                                        <label class="form-check-label" for="copy_currentcost">Текущая стоимость</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="comment" id="copy_comment">
+                                        <label class="form-check-label" for="copy_comment">Комментарий</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="photo" id="copy_photo">
+                                        <label class="form-check-label" for="copy_photo">Фото</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="passport_filename" id="copy_passport">
+                                        <label class="form-check-label" for="copy_passport">Паспорт</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="kntid" id="copy_kntid">
+                                        <label class="form-check-label" for="copy_kntid">Поставщик</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="department_id" id="copy_department">
+                                        <label class="form-check-label" for="copy_department">Отдел</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="datepost" id="copy_datepost">
+                                        <label class="form-check-label" for="copy_datepost">Дата поступления</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="dtendgar" id="copy_dtendgar">
+                                        <label class="form-check-label" for="copy_dtendgar">Дата окончания гарантии</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="dtendlife" id="copy_dtendlife">
+                                        <label class="form-check-label" for="copy_dtendlife">Дата окончания срока службы</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="date_start" id="copy_date_start">
+                                        <label class="form-check-label" for="copy_date_start">Дата начала эксплуатации</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="os" id="copy_os" checked>
+                                        <label class="form-check-label" for="copy_os">Основное средство</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="ip" id="copy_ip">
+                                        <label class="form-check-label" for="copy_ip">IP-адрес</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="invoice_file" id="copy_invoice">
+                                        <label class="form-check-label" for="copy_invoice">Файл накладной</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="warehouse_rack" id="copy_warehouse_rack">
+                                        <label class="form-check-label" for="copy_warehouse_rack">Стеллаж</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="warehouse_cell" id="copy_warehouse_cell">
+                                        <label class="form-check-label" for="copy_warehouse_cell">Ячейка</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="unit_name" id="copy_unit_name">
+                                        <label class="form-check-label" for="copy_unit_name">Единица измерения (наименование)</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="unit_code" id="copy_unit_code">
+                                        <label class="form-check-label" for="copy_unit_code">Единица измерения (код)</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="profile" id="copy_profile">
+                                        <label class="form-check-label" for="copy_profile">Профиль</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="size" id="copy_size">
+                                        <label class="form-check-label" for="copy_size">Размер</label>
+                                    </div>
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" name="copy_fields" value="stock_norm" id="copy_stock_norm">
+                                        <label class="form-check-label" for="copy_stock_norm">Норма запаса</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <small class="form-text text-muted mt-2 d-block">
+                            <strong>Примечание:</strong> Серийный и инвентарный номера не копируются (останутся пустыми для новых ТМЦ)
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-check-circle me-1"></i>Создать ТМЦ
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endif %}
 
 {% endblock %}

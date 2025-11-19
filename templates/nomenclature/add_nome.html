@@ -20,21 +20,31 @@
     </div>
     <div class="mb-3">
         <label for="groupid" class="form-label">Группа *</label>
-        <select class="form-select" id="groupid" name="groupid" required>
-            <option value="">-- Выберите группу --</option>
-            {% for group in groups %}
-                <option value="{{ group.id }}">{{ group.name }}</option>
-            {% endfor %}
-        </select>
+        <div class="input-group">
+            <select class="form-select" id="groupid" name="groupid" required>
+                <option value="">-- Выберите группу --</option>
+                {% for group in groups %}
+                    <option value="{{ group.id }}">{{ group.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#addGroupModal" title="Добавить новую группу">
+                <i class="bi bi-plus-lg"></i>
+            </button>
+        </div>
     </div>
     <div class="mb-3">
         <label for="vendorid" class="form-label">Производитель *</label>
-        <select class="form-select" id="vendorid" name="vendorid" required>
-            <option value="">-- Выберите производителя --</option>
-            {% for vendor in vendors %}
-                <option value="{{ vendor.id }}">{{ vendor.name }}</option>
-            {% endfor %}
-        </select>
+        <div class="input-group">
+            <select class="form-select" id="vendorid" name="vendorid" required>
+                <option value="">-- Выберите производителя --</option>
+                {% for vendor in vendors %}
+                    <option value="{{ vendor.id }}">{{ vendor.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#addVendorModal" title="Добавить нового производителя">
+                <i class="bi bi-plus-lg"></i>
+            </button>
+        </div>
     </div> 
     <!-- Поле количества ТМЦ -->
     <div class="mb-3">
@@ -54,6 +64,16 @@
                 <option value="{{ place.id }}">{{ place.name }}</option>
             {% endfor %}
         </select>
+    </div>
+    <div class="mb-3">
+        <label for="department_id" class="form-label">Отдел</label>
+        <select class="form-select" id="department_id" name="department_id">
+            <option value="">-- Выберите отдел (необязательно) --</option>
+            {% for department in departments %}
+                <option value="{{ department.id }}">{{ department.name }} ({{ department.code }})</option>
+            {% endfor %}
+        </select>
+        <small class="form-text text-muted">Отдел, к которому относится ТМЦ</small>
     </div>
     <!-- Стоимость -->
     <div class="mb-3">
@@ -102,4 +122,163 @@
         </form>
     </div>
 </div>
+
+<!-- Модальное окно для добавления новой группы -->
+<div class="modal fade" id="addGroupModal" tabindex="-1" aria-labelledby="addGroupModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addGroupModalLabel">
+                    <i class="bi bi-plus-circle me-2"></i>Добавить новую группу
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="addGroupForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="new_group_name" class="form-label">Название группы <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="new_group_name" name="name" required maxlength="255" placeholder="Введите название группы">
+                    </div>
+                    <div class="mb-3">
+                        <label for="new_group_comment" class="form-label">Комментарий (необязательно)</label>
+                        <textarea class="form-control" id="new_group_comment" name="comment" rows="2" placeholder="Описание группы"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-circle me-1"></i>Добавить
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для добавления нового производителя -->
+<div class="modal fade" id="addVendorModal" tabindex="-1" aria-labelledby="addVendorModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addVendorModalLabel">
+                    <i class="bi bi-plus-circle me-2"></i>Добавить нового производителя
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="addVendorForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="new_vendor_name" class="form-label">Название производителя <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="new_vendor_name" name="name" required maxlength="155" placeholder="Введите название производителя">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-circle me-1"></i>Добавить
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Обработка добавления новой группы
+document.getElementById('addGroupForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const name = formData.get('name').trim();
+    const comment = formData.get('comment')?.trim() || '';
+    
+    if (!name) {
+        alert('Название группы обязательно');
+        return;
+    }
+    
+    fetch('{{ url_for("add_group_ajax") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+            name: name,
+            comment: comment
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Добавляем новую группу в селект
+            const select = document.getElementById('groupid');
+            const option = document.createElement('option');
+            option.value = data.id;
+            option.textContent = data.name;
+            option.selected = true;
+            select.appendChild(option);
+            
+            // Закрываем модальное окно
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addGroupModal'));
+            modal.hide();
+            
+            // Очищаем форму
+            document.getElementById('addGroupForm').reset();
+        } else {
+            alert('Ошибка: ' + (data.message || 'Не удалось добавить группу'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка при добавлении группы');
+    });
+});
+
+// Обработка добавления нового производителя
+document.getElementById('addVendorForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const name = formData.get('name').trim();
+    
+    if (!name) {
+        alert('Название производителя обязательно');
+        return;
+    }
+    
+    fetch('{{ url_for("add_vendor_ajax") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+            name: name
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Добавляем нового производителя в селект
+            const select = document.getElementById('vendorid');
+            const option = document.createElement('option');
+            option.value = data.id;
+            option.textContent = data.name;
+            option.selected = true;
+            select.appendChild(option);
+            
+            // Закрываем модальное окно
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addVendorModal'));
+            modal.hide();
+            
+            // Очищаем форму
+            document.getElementById('addVendorForm').reset();
+        } else {
+            alert('Ошибка: ' + (data.message || 'Не удалось добавить производителя'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Произошла ошибка при добавлении производителя');
+    });
+});
+</script>
+
 {% endblock %}

@@ -34,7 +34,7 @@
                         <th scope="col" style="width: 50px;">#</th>
                         <th scope="col">Название отдела</th>
                         <th scope="col" style="width: 120px;" class="text-end">Кол-во ТМЦ</th>
-                        <th scope="col" style="width: 150px;" class="text-end">Общая стоимость</th>
+                        <th scope="col" style="width: 220px; min-width: 220px;" class="text-end">Общая стоимость</th>
                         <th scope="col" style="width: 180px;" class="text-center">Действия</th>
                         {% if is_admin %}
                             <th scope="col" style="width: 120px;">Статус</th>
@@ -52,8 +52,8 @@
                         <td class="text-end">
                             <span class="badge bg-info">{{ stat.tmc_count }}</span>
                         </td>
-                        <td class="text-end">
-                            <strong>{{ "{:,.2f}".format(stat.total_cost) }} руб.</strong>
+                        <td class="text-end" style="font-family: 'Courier New', monospace; font-size: 1.05em; letter-spacing: 0.5px;">
+                            <strong style="color: #198754; white-space: nowrap;">{{ "{:,.2f}".format(stat.total_cost).replace(',', ' ').replace('.', ',') }} ₽</strong>
                         </td>
                         <td class="text-center">
                             <a href="{{ url_for('generate_form8', department_id=stat.department.id) }}" 

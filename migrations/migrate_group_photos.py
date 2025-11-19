@@ -1,6 +1,11 @@
 # migrate_group_photos.py
 import os
+import sys
 import shutil
+
+# Добавляем корневую директорию проекта в sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from app import app, db
 from models import Nome
 

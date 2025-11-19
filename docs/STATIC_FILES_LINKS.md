@@ -31,11 +31,13 @@
 - Ссылка: https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js
 - Сохранить как: `chart.umd.min.js`
 
-## 4. TinyMCE 6
+## 4. TinyMCE 6 (Self-hosted, GPL версия)
 
 **JavaScript:**
-- Ссылка: https://cdn.tiny.cloud/1/no-api-key/tinymce/6/tinymce.min.js
+- Ссылка: https://download.tiny.cloud/tinymce/community/tinymce_6.8.3/tinymce.min.js
 - Сохранить как: `tinymce.min.js`
+
+**Примечание:** Используется self-hosted GPL версия, которая не требует API ключ.
 
 ---
 

@@ -14,7 +14,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy.exc import IntegrityError
 
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, url_for, abort, send_file, Response
+from flask import Flask, flash, redirect, render_template, request, url_for, abort, send_file, Response, jsonify
 from werkzeug.utils import secure_filename
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 
@@ -861,6 +861,71 @@ def add_nomenclature():
     db.session.commit()
     return {'success': True, 'id': new_nome.id, 'name': new_nome.name}
 
+@app.route('/add_group_ajax', methods=['POST'])
+@login_required
+def add_group_ajax():
+    """Добавление новой группы через AJAX."""
+    # Проверка доступа: только админ
+    if current_user.mode != 1:
+        return jsonify({'success': False, 'message': 'Доступ запрещен. Только администратор может добавлять группы.'}), 403
+    
+    name = request.form.get('name', '').strip()
+    comment = request.form.get('comment', '').strip() or None
+    
+    if not name:
+        return jsonify({'success': False, 'message': 'Название группы обязательно'}), 400
+    
+    # Проверка на дубликат
+    existing = GroupNome.query.filter_by(name=name).first()
+    if existing:
+        return jsonify({'success': False, 'message': 'Группа с таким названием уже существует'}), 409
+    
+    try:
+        new_group = GroupNome(
+            name=name,
+            comment=comment,
+            active=True
+        )
+        db.session.add(new_group)
+        db.session.commit()
+        return jsonify({'success': True, 'id': new_group.id, 'name': new_group.name})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Ошибка при добавлении группы: {str(e)}'}), 500
+
+@app.route('/add_vendor_ajax', methods=['POST'])
+@login_required
+def add_vendor_ajax():
+    """Добавление нового производителя через AJAX."""
+    # Проверка доступа: только админ
+    if current_user.mode != 1:
+        return jsonify({'success': False, 'message': 'Доступ запрещен. Только администратор может добавлять производителей.'}), 403
+    
+    name = request.form.get('name', '').strip()
+    
+    if not name:
+        return jsonify({'success': False, 'message': 'Название производителя обязательно'}), 400
+    
+    # Проверка на дубликат
+    existing = Vendor.query.filter_by(name=name).first()
+    if existing:
+        return jsonify({'success': False, 'message': 'Производитель с таким названием уже существует'}), 409
+    
+    try:
+        # Используем прямой SQL для гарантированного указания всех полей
+        # Это необходимо, если в БД поле comment NOT NULL без DEFAULT
+        result = db.session.execute(
+            db.text("INSERT INTO vendor (name, active, comment) VALUES (:name, :active, :comment)"),
+            {'name': name, 'active': 1, 'comment': ''}
+        )
+        db.session.commit()
+        # Получаем ID вставленной записи
+        vendor_id = result.lastrowid
+        return jsonify({'success': True, 'id': vendor_id, 'name': name})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Ошибка при добавлении производителя: {str(e)}'}), 500
+
 @app.route('/edit_nome/<int:nome_id>', methods=['GET', 'POST'])
 def edit_nome(nome_id):
     nome = Nome.query.get_or_404(nome_id)
@@ -1101,6 +1166,176 @@ def list_by_nome(nome_id):
                            is_admin=is_admin,
                            is_mol=is_mol)
 
+@app.route('/bulk_create_tmc/<int:nome_id>', methods=['POST'])
+@login_required
+def bulk_create_tmc(nome_id):
+    """
+    Массовое создание ТМЦ на основе шаблона.
+    Доступно только администраторам.
+    """
+    # Проверяем права доступа
+    if current_user.mode != 1:
+        flash('Доступ запрещен. Только администраторы могут создавать ТМЦ массово.', 'danger')
+        return redirect(url_for('list_by_nome', nome_id=nome_id))
+    
+    # Проверяем существование группы
+    nome = Nome.query.get_or_404(nome_id)
+    
+    # Получаем данные из формы
+    template_tmc_id = request.form.get('template_tmc_id')
+    quantity = request.form.get('quantity', type=int)
+    copy_fields = request.form.getlist('copy_fields')
+    
+    # Валидация
+    if not template_tmc_id:
+        flash('Не выбран ТМЦ-шаблон', 'danger')
+        return redirect(url_for('list_by_nome', nome_id=nome_id))
+    
+    if not quantity or quantity < 1 or quantity > 100:
+        flash('Количество должно быть от 1 до 100', 'danger')
+        return redirect(url_for('list_by_nome', nome_id=nome_id))
+    
+    # Получаем шаблон ТМЦ
+    template_tmc = Equipment.query.filter_by(id=template_tmc_id, nomeid=nome_id).first_or_404()
+    
+    # Создаем копии
+    created_count = 0
+    try:
+        for i in range(quantity):
+            # Создаем новый ТМЦ
+            new_tmc = Equipment(
+                nomeid=nome_id,
+                # Базовые поля (всегда копируются или устанавливаются)
+                active=True,
+                repair=False,
+                lost=False,
+                mode=False,
+                os=False,
+                mapmoved=0,
+                mapyet=False,
+                tmcgo=0,
+                sernum='',  # Серийный номер не копируется
+                invnum='',  # Инвентарный номер не копируется
+                shtrihkod='',
+                ip='',
+                mapx='',
+                mapy='',
+                cost=Decimal('0.00'),
+                currentcost=Decimal('0.00'),
+            )
+            
+            # Копируем выбранные поля
+            if 'orgid' in copy_fields:
+                new_tmc.orgid = template_tmc.orgid
+            else:
+                new_tmc.orgid = current_user.orgid
+            
+            if 'placesid' in copy_fields:
+                new_tmc.placesid = template_tmc.placesid
+            else:
+                # Используем первое доступное место
+                first_place = Places.query.filter_by(orgid=current_user.orgid, active=True).first()
+                if first_place:
+                    new_tmc.placesid = first_place.id
+                else:
+                    flash('Не найдено место размещения. Создайте место размещения в системе.', 'danger')
+                    db.session.rollback()
+                    return redirect(url_for('list_by_nome', nome_id=nome_id))
+            
+            if 'usersid' in copy_fields:
+                new_tmc.usersid = template_tmc.usersid
+            else:
+                new_tmc.usersid = current_user.id
+            
+            if 'buhname' in copy_fields:
+                new_tmc.buhname = template_tmc.buhname
+            else:
+                new_tmc.buhname = nome.name
+            
+            if 'cost' in copy_fields:
+                new_tmc.cost = template_tmc.cost
+            if 'currentcost' in copy_fields:
+                new_tmc.currentcost = template_tmc.currentcost
+            
+            if 'comment' in copy_fields:
+                new_tmc.comment = template_tmc.comment
+            
+            if 'photo' in copy_fields:
+                new_tmc.photo = template_tmc.photo
+            
+            if 'passport_filename' in copy_fields:
+                new_tmc.passport_filename = template_tmc.passport_filename
+            
+            if 'kntid' in copy_fields:
+                new_tmc.kntid = template_tmc.kntid
+            
+            if 'department_id' in copy_fields:
+                new_tmc.department_id = template_tmc.department_id
+            
+            if 'datepost' in copy_fields:
+                new_tmc.datepost = template_tmc.datepost
+            else:
+                new_tmc.datepost = datetime.utcnow()
+            
+            if 'dtendgar' in copy_fields:
+                new_tmc.dtendgar = template_tmc.dtendgar
+            else:
+                # По умолчанию: дата поступления + 1 год
+                if new_tmc.datepost:
+                    new_tmc.dtendgar = (new_tmc.datepost + relativedelta(years=1)).date() if isinstance(new_tmc.datepost, datetime) else new_tmc.datepost
+                else:
+                    new_tmc.dtendgar = datetime.utcnow().date()
+            
+            if 'dtendlife' in copy_fields:
+                new_tmc.dtendlife = template_tmc.dtendlife
+            
+            if 'date_start' in copy_fields:
+                new_tmc.date_start = template_tmc.date_start
+            else:
+                new_tmc.date_start = date.today()
+            
+            if 'os' in copy_fields:
+                new_tmc.os = template_tmc.os
+            
+            if 'ip' in copy_fields:
+                new_tmc.ip = template_tmc.ip
+            
+            if 'invoice_file' in copy_fields:
+                new_tmc.invoice_file = template_tmc.invoice_file
+            
+            if 'warehouse_rack' in copy_fields:
+                new_tmc.warehouse_rack = template_tmc.warehouse_rack
+            
+            if 'warehouse_cell' in copy_fields:
+                new_tmc.warehouse_cell = template_tmc.warehouse_cell
+            
+            if 'unit_name' in copy_fields:
+                new_tmc.unit_name = template_tmc.unit_name
+            
+            if 'unit_code' in copy_fields:
+                new_tmc.unit_code = template_tmc.unit_code
+            
+            if 'profile' in copy_fields:
+                new_tmc.profile = template_tmc.profile
+            
+            if 'size' in copy_fields:
+                new_tmc.size = template_tmc.size
+            
+            if 'stock_norm' in copy_fields:
+                new_tmc.stock_norm = template_tmc.stock_norm
+            
+            db.session.add(new_tmc)
+            created_count += 1
+        
+        db.session.commit()
+        flash(f'Успешно создано {created_count} ТМЦ', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ошибка при создании ТМЦ: {str(e)}', 'danger')
+    
+    return redirect(url_for('list_by_nome', nome_id=nome_id))
+
 @app.route('/info_tmc/<int:tmc_id>')
 @login_required
 def info_tmc(tmc_id):
@@ -1232,6 +1467,7 @@ def add_nome():
         usersid = int(request.form['usersid'])  # ← НОВОЕ: выбранный МОЛ
         cost_str = request.form.get('cost', '').strip()  # ← НОВОЕ: стоимость
         comment = request.form.get('comment', '').strip()  # ← НОВОЕ: комментарий к наименованию
+        department_id = request.form.get('department_id', type=int)  # ← Отдел
 
         if not name:
             flash('Наименование не может быть пустым', 'danger')
@@ -1305,7 +1541,7 @@ def add_nome():
                 placesid=placesid,
                 usersid=usersid,  # ← выбранный МОЛ
                 nomeid=new_nome.id,
-                department_id=None,
+                department_id=department_id,  # ← Отдел из формы
                 photo=tmc_photo,
                 passport_filename='',
                 kntid=None,
@@ -1341,11 +1577,12 @@ def add_nome():
     groups = GroupNome.query.filter_by(active=True).all()
     vendors = Vendor.query.filter_by(active=True).all()
     places = Places.query.filter_by(active=True).all()
+    departments = Department.query.filter_by(active=True).order_by(Department.name).all()
     # Только активные пользователи, имеющие роль 1 (МОЛ с Full доступ, не путать с Admin)
     users = db.session.query(Users).join(UsersRoles, Users.id == UsersRoles.userid)\
         .filter(Users.active == True, UsersRoles.role == 1)\
         .order_by(Users.login).all()
-    return render_template('nomenclature/add_nome.html', groups=groups, vendors=vendors, places=places, users=users)
+    return render_template('nomenclature/add_nome.html', groups=groups, vendors=vendors, places=places, users=users, departments=departments)
 
 @app.route('/invoice_list')
 @login_required
@@ -3695,6 +3932,9 @@ def my_departments():
             'tmc_count': tmc_count,
             'total_cost': float(total_cost) if total_cost else 0.0
         })
+    
+    # Сортировка по убыванию суммы (от большей к меньшей)
+    department_stats.sort(key=lambda x: x['total_cost'], reverse=True)
     
     return render_template('departments/my_departments.html',
                           department_stats=department_stats,

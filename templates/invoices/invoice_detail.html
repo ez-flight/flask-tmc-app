@@ -5,54 +5,123 @@
 <div class="page-header">
     <div>
         <h1>Накладная №{{ invoice.invoice_number }}</h1>
-        <p class="text-muted mb-0">Дата: {{ invoice.invoice_date.strftime('%d.%m.%Y') }} | ТМЦ: {{ tmc_count }} шт. | Стоимость: {{ "{:,.2f}".format(total_cost)|replace(',', ' ') }} ₽</p>
+        <p class="text-muted mb-0">
+            <i class="bi bi-calendar-event me-1"></i>{{ invoice.invoice_date.strftime('%d.%m.%Y') }}
+            <span class="ms-3"><i class="bi bi-box-seam me-1"></i>ТМЦ: {{ tmc_count }} шт.</span>
+            <span class="ms-3"><i class="bi bi-currency-exchange me-1"></i>Стоимость: {{ "{:,.2f}".format(total_cost).replace(',', ' ').replace('.', ',') }} ₽</span>
+        </p>
     </div>
     <div class="user-info">
         <a href="javascript:history.back()" class="btn btn-secondary btn-sm me-2">
             <i class="bi bi-arrow-left me-1"></i>Назад
         </a>
-        <a href="{{ url_for('edit_invoice', invoice_id=invoice.id) }}" class="btn btn-warning btn-sm me-2">
+        <a href="{{ url_for('edit_invoice', invoice_id=invoice.id) }}" class="btn btn-primary btn-sm me-2">
             <i class="bi bi-pencil me-1"></i>Редактировать
         </a>
-        <form method="POST" action="{{ url_for('delete_invoice', invoice_id=invoice.id) }}" style="display:inline;" onsubmit="return confirm('Вы уверены, что хотите удалить накладную? Это действие нельзя отменить.');">
+        <form method="POST" 
+              action="{{ url_for('delete_invoice', invoice_id=invoice.id) }}" 
+              style="display:inline;" 
+              onsubmit="return confirm('Вы уверены, что хотите удалить накладную? Это действие нельзя отменить.');">
             <button type="submit" class="btn btn-danger btn-sm me-2">
                 <i class="bi bi-trash me-1"></i>Удалить
             </button>
         </form>
         {% if invoice.pdf_path %}
-            <a href="{{ url_for('static', filename=invoice.pdf_path.split('/uploads/')[-1]) }}" target="_blank" class="btn btn-primary btn-sm">
-                <i class="bi bi-file-pdf me-1"></i>PDF
+            <a href="{{ url_for('static', filename=invoice.pdf_path.split('/uploads/')[-1]) }}" 
+               target="_blank" 
+               class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-file-pdf me-1"></i>Открыть PDF
             </a>
         {% endif %}
     </div>
 </div>
 
-<div class="card shadow-sm mb-3">
-  <div class="card-header">
-    <h5 class="mb-0">Основная информация</h5>
-  </div>
-  <div class="card-body">
-    <p><strong>Тип:</strong> {{ invoice.type }}</p>
-    <p><strong>Отдел:</strong> {{ invoice.department.name if invoice.department else '—' }}</p>
-
-    <hr>
-    <h6 class="fw-bold">Участники</h6>
-    {% if invoice.type == 'Склад-МОЛ' %}
-      <p><strong>Откуда (склад):</strong> {{ invoice.from_knt.name if invoice.from_knt else '—' }}</p>
-      <p><strong>Кому (МОЛ):</strong> {{ invoice.to_user.login if invoice.to_user else '—' }}</p>
-    {% elif invoice.type == 'МОЛ-Склад' %}
-      <p><strong>От кого (МОЛ):</strong> {{ invoice.from_user.login if invoice.from_user else '—' }}</p>
-      <p><strong>Куда (склад):</strong> {{ invoice.to_knt.name if invoice.to_knt else '—' }}</p>
-    {% elif invoice.type == 'МОЛ-МОЛ' %}
-      <p><strong>От кого:</strong> {{ invoice.from_user.login if invoice.from_user else '—' }}</p>
-      <p><strong>Кому:</strong> {{ invoice.to_user.login if invoice.to_user else '—' }}</p>
-    {% endif %}
-  </div>
+<!-- Основная информация в двух колонках -->
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title d-flex align-items-center mb-3">
+                    <i class="bi bi-info-circle me-2 text-primary"></i>
+                    Основная информация
+                </h5>
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <th style="width: 40%;"><i class="bi bi-diagram-2 me-1 text-muted"></i>Тип:</th>
+                        <td>
+                            {% if invoice.type == 'Склад-МОЛ' %}
+                              <span class="badge bg-info">{{ invoice.type }}</span>
+                            {% elif invoice.type == 'МОЛ-Склад' %}
+                              <span class="badge bg-warning text-dark">{{ invoice.type }}</span>
+                            {% elif invoice.type == 'МОЛ-МОЛ' %}
+                              <span class="badge bg-primary">{{ invoice.type }}</span>
+                            {% else %}
+                              <span class="badge bg-secondary">{{ invoice.type }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-diagram-3 me-1 text-muted"></i>Отдел:</th>
+                        <td>{{ invoice.department.name if invoice.department else '—' }}</td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-calendar-event me-1 text-muted"></i>Дата:</th>
+                        <td>{{ invoice.invoice_date.strftime('%d.%m.%Y') }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title d-flex align-items-center mb-3">
+                    <i class="bi bi-people me-2 text-primary"></i>
+                    Участники перемещения
+                </h5>
+                <table class="table table-borderless mb-0">
+                    {% if invoice.type == 'Склад-МОЛ' %}
+                      <tr>
+                          <th style="width: 40%;"><i class="bi bi-building me-1 text-muted"></i>Откуда (склад):</th>
+                          <td>{{ invoice.from_knt.name if invoice.from_knt else '—' }}</td>
+                      </tr>
+                      <tr>
+                          <th><i class="bi bi-person me-1 text-muted"></i>Кому (МОЛ):</th>
+                          <td>{{ invoice.to_user.login if invoice.to_user else '—' }}</td>
+                      </tr>
+                    {% elif invoice.type == 'МОЛ-Склад' %}
+                      <tr>
+                          <th style="width: 40%;"><i class="bi bi-person me-1 text-muted"></i>От кого (МОЛ):</th>
+                          <td>{{ invoice.from_user.login if invoice.from_user else '—' }}</td>
+                      </tr>
+                      <tr>
+                          <th><i class="bi bi-building me-1 text-muted"></i>Куда (склад):</th>
+                          <td>{{ invoice.to_knt.name if invoice.to_knt else '—' }}</td>
+                      </tr>
+                    {% elif invoice.type == 'МОЛ-МОЛ' %}
+                      <tr>
+                          <th style="width: 40%;"><i class="bi bi-person me-1 text-muted"></i>От кого:</th>
+                          <td>{{ invoice.from_user.login if invoice.from_user else '—' }}</td>
+                      </tr>
+                      <tr>
+                          <th><i class="bi bi-person me-1 text-muted"></i>Кому:</th>
+                          <td>{{ invoice.to_user.login if invoice.to_user else '—' }}</td>
+                      </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
 
-<div class="card shadow-sm mt-3">
+<!-- Оборудование в накладной -->
+<div class="card mt-3">
   <div class="card-header">
-    <h5 class="mb-0">Оборудование в накладной</h5>
+    <h5 class="mb-0 d-flex align-items-center">
+      <i class="bi bi-box-seam me-2"></i>
+      Оборудование в накладной
+    </h5>
   </div>
   <div class="card-body">
 {% if invoice.invoice_equipment %}
@@ -60,20 +129,38 @@
     <table class="table table-hover align-middle">
       <thead class="table-light">
         <tr>
-          <th>Наименование</th>
-          <th>Серийный №</th>
-          <th>Инвентарный №</th>
-          <th>Стоимость</th>  <!-- ← ДОБАВЛЕНА СТОИМОСТЬ -->
-          <th>Комментарий</th>
+          <th><i class="bi bi-tag me-1"></i>Наименование</th>
+          <th><i class="bi bi-upc-scan me-1"></i>Серийный №</th>
+          <th><i class="bi bi-123 me-1"></i>Инвентарный №</th>
+          <th class="text-end" style="width: 1%; white-space: nowrap;"><i class="bi bi-currency-exchange me-1"></i>Стоимость</th>
+          <th><i class="bi bi-chat-left-text me-1"></i>Комментарий</th>
         </tr>
       </thead>
       <tbody>
         {% for ie in invoice.invoice_equipment %}
           <tr style="cursor: pointer;" onclick="window.location='{{ url_for('info_tmc', tmc_id=ie.equipment.id) }}'">
-            <td>{{ ie.equipment.nome.name if ie.equipment.nome else ie.equipment.buhname }}</td>
-            <td>{{ ie.equipment.sernum or '—' }}</td>
-            <td>{{ ie.equipment.invnum or '—' }}</td>
-            <td>{{ "{:,.2f}".format(ie.equipment.cost) }} ₽</td>  <!-- ← ДОБАВЛЕНО ЗНАЧЕНИЕ -->
+            <td>
+              <strong>{{ ie.equipment.nome.name if ie.equipment.nome else ie.equipment.buhname }}</strong>
+            </td>
+            <td>
+              {% if ie.equipment.sernum %}
+                <code>{{ ie.equipment.sernum }}</code>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if ie.equipment.invnum %}
+                <code>{{ ie.equipment.invnum }}</code>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="text-end" style="white-space: nowrap;">
+              <strong style="color: #198754;">
+                {{ "{:,.2f}".format(ie.equipment.cost).replace(',', ' ').replace('.', ',') }} ₽
+              </strong>
+            </td>
             <td>{{ ie.equipment.comment or '—' }}</td>
           </tr>
         {% endfor %}
@@ -81,8 +168,8 @@
     </table>
   </div>
 {% else %}
-  <div class="empty-state">
-    <i class="bi bi-clipboard-data" style="font-size: 3rem;"></i>
+  <div class="text-center" style="padding: 40px 20px; color: var(--vk-text-light);">
+    <i class="bi bi-clipboard-data" style="font-size: 3rem; opacity: 0.3; margin-bottom: 15px;"></i>
     <h5>Нет оборудования</h5>
     <p class="mb-0">В накладной нет оборудования.</p>
   </div>

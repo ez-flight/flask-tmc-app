@@ -3,50 +3,74 @@
 {% block title %}Список накладных{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h1>Список накладных</h1>
+    <div>
+        <h1>Список накладных</h1>
+        <p class="text-muted mb-0">
+            <i class="bi bi-file-earmark-text me-1"></i>
+            Управление документами о перемещении ТМЦ
+        </p>
+    </div>
     <div class="user-info">
-        <a href="{{ url_for('create_invoice') }}" class="btn btn-success">
+        <a href="{{ url_for('create_invoice') }}" class="btn btn-primary btn-sm">
             <i class="bi bi-plus-circle me-1"></i>Создать накладную
         </a>
     </div>
 </div>
 
 {% if invoices %}
-  <div class="card shadow-sm">
+  <div class="card">
     <div class="card-body">
       <div class="table-responsive">
         <table class="table table-hover align-middle">
           <thead class="table-light">
         <tr>
-          <th>№ накладной</th>
-          <th>Дата</th>
-          <th>Тип</th>
-          <th>Отдел</th>
-          <th>От кого / Откуда</th>  <!-- Обновлён заголовок -->
-          <th>Кому / Куда</th>       <!-- Обновлён заголовок -->
-          <th>PDF</th>
+          <th><i class="bi bi-hash me-1"></i>№ накладной</th>
+          <th><i class="bi bi-calendar-event me-1"></i>Дата</th>
+          <th><i class="bi bi-diagram-2 me-1"></i>Тип</th>
+          <th><i class="bi bi-diagram-3 me-1"></i>Отдел</th>
+          <th><i class="bi bi-person-arrow-up me-1"></i>От кого / Откуда</th>
+          <th><i class="bi bi-person-arrow-down me-1"></i>Кому / Куда</th>
+          <th class="text-center"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</th>
         </tr>
       </thead>
       <tbody>
         {% for inv in invoices %}
         <tr>
           <td>
-            <a href="{{ url_for('invoice_detail', invoice_id=inv.id) }}">
-              {{ inv.invoice_number }}
+            <a href="{{ url_for('invoice_detail', invoice_id=inv.id) }}" 
+               class="text-decoration-none fw-bold"
+               style="color: var(--vk-blue);">
+              <i class="bi bi-file-text me-1"></i>{{ inv.invoice_number }}
             </a>
           </td>
           <td>{{ inv.invoice_date.strftime('%d.%m.%Y') }}</td>
-          <td>{{ inv.type }}</td>
-          <td>{{ inv.department.name if inv.department else '—' }}</td>
+          <td>
+            {% if inv.type == 'Склад-МОЛ' %}
+              <span class="badge bg-info">{{ inv.type }}</span>
+            {% elif inv.type == 'МОЛ-Склад' %}
+              <span class="badge bg-warning text-dark">{{ inv.type }}</span>
+            {% elif inv.type == 'МОЛ-МОЛ' %}
+              <span class="badge bg-primary">{{ inv.type }}</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ inv.type }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if inv.department %}
+              <span class="text-muted">{{ inv.department.name }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
 
           <!-- От кого / Откуда -->
           <td>
             {% if inv.type == 'Склад-МОЛ' %}
-              {{ inv.from_knt.name if inv.from_knt else '—' }}
+              <i class="bi bi-building me-1 text-muted"></i>{{ inv.from_knt.name if inv.from_knt else '—' }}
             {% elif inv.type == 'МОЛ-Склад' %}
-              {{ inv.from_user.login if inv.from_user else '—' }}
+              <i class="bi bi-person me-1 text-muted"></i>{{ inv.from_user.login if inv.from_user else '—' }}
             {% elif inv.type == 'МОЛ-МОЛ' %}
-              {{ inv.from_user.login if inv.from_user else '—' }}
+              <i class="bi bi-person me-1 text-muted"></i>{{ inv.from_user.login if inv.from_user else '—' }}
             {% else %}
               —
             {% endif %}
@@ -55,23 +79,25 @@
           <!-- Кому / Куда -->
           <td>
             {% if inv.type == 'Склад-МОЛ' %}
-              {{ inv.to_user.login if inv.to_user else '—' }}
+              <i class="bi bi-person me-1 text-muted"></i>{{ inv.to_user.login if inv.to_user else '—' }}
             {% elif inv.type == 'МОЛ-Склад' %}
-              {{ inv.to_knt.name if inv.to_knt else '—' }}
+              <i class="bi bi-building me-1 text-muted"></i>{{ inv.to_knt.name if inv.to_knt else '—' }}
             {% elif inv.type == 'МОЛ-МОЛ' %}
-              {{ inv.to_user.login if inv.to_user else '—' }}
+              <i class="bi bi-person me-1 text-muted"></i>{{ inv.to_user.login if inv.to_user else '—' }}
             {% else %}
               —
             {% endif %}
           </td>
 
-          <td>
+          <td class="text-center">
             {% if inv.pdf_path %}
-              <a href="{{ url_for('static', filename=inv.pdf_path.split('/uploads/')[-1]) }}" target="_blank" class="btn btn-sm btn-outline-primary">
+              <a href="{{ url_for('static', filename=inv.pdf_path.split('/uploads/')[-1]) }}" 
+                 target="_blank" 
+                 class="btn btn-sm btn-outline-primary">
                 <i class="bi bi-file-pdf me-1"></i>PDF
               </a>
             {% else %}
-              —
+              <span class="text-muted">—</span>
             {% endif %}
           </td>
         </tr>
@@ -82,12 +108,15 @@
     </div>
   </div>
 {% else %}
-  <div class="card shadow-sm">
+  <div class="card">
     <div class="card-body">
-      <div class="empty-state">
-        <i class="bi bi-file-earmark-text" style="font-size: 3rem;"></i>
+      <div class="text-center" style="padding: 60px 20px; color: var(--vk-text-light);">
+        <i class="bi bi-file-earmark-text" style="font-size: 4rem; opacity: 0.3; margin-bottom: 20px;"></i>
         <h5>Нет накладных</h5>
         <p class="mb-0">Нет созданных накладных.</p>
+        <a href="{{ url_for('create_invoice') }}" class="btn btn-primary mt-3">
+          <i class="bi bi-plus-circle me-1"></i>Создать первую накладную
+        </a>
       </div>
     </div>
   </div>

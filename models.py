@@ -305,10 +305,10 @@ class PostUsers(db.Model):
     userid = db.Column(db.Integer, nullable=False)
     orgid = db.Column(db.Integer, nullable=False)
     active = db.Column(db.Boolean, nullable=False, default=True)
-    name = db.Column(db.String(100), nullable=True) # Поле name может быть NULL, как в базе
+    post = db.Column(db.String(100), nullable=True) # Поле post хранит должность (может быть NULL)
 
     def __repr__(self):
-        return f'<PostUsers {self.name} for User ID {self.userid}>'
+        return f'<PostUsers {self.post} for User ID {self.userid}>'
 
 # --- Конец добавления ---
     def __repr__(self):

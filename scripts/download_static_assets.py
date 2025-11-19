@@ -172,18 +172,26 @@ for font_name in bootstrap_icons_fonts:
 print("\nИсправляю пути к шрифтам в bootstrap-icons.css...")
 bootstrap_icons_css_path = CSS_DIR / "bootstrap-icons.css"
 if bootstrap_icons_css_path.exists():
+    import re
     with open(bootstrap_icons_css_path, 'r', encoding='utf-8') as f:
         css_content = f.read()
     
-    # Заменяем пути к шрифтам на локальные
-    css_content = css_content.replace(
-        "url(./fonts/",
-        "url(../fonts/"
+    # Заменяем пути к шрифтам на локальные (с учетом query параметров)
+    # Заменяем url("./fonts/...") и url('./fonts/...') на url("../fonts/...")
+    # Также обрабатываем случаи без кавычек: url(./fonts/...)
+    original_content = css_content
+    css_content = re.sub(
+        r'url\(["\']?\./fonts/',
+        r'url("../fonts/',
+        css_content
     )
     
-    with open(bootstrap_icons_css_path, 'w', encoding='utf-8') as f:
-        f.write(css_content)
-    print("✓ Пути к шрифтам исправлены")
+    if css_content != original_content:
+        with open(bootstrap_icons_css_path, 'w', encoding='utf-8') as f:
+            f.write(css_content)
+        print("✓ Пути к шрифтам исправлены")
+    else:
+        print("ℹ Пути к шрифтам уже корректны или не требуют исправления")
 
 print("\nГотово! Все файлы загружены в папку static/")
 

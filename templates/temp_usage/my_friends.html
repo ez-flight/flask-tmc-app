@@ -29,7 +29,7 @@
                         <th scope="col">{% if is_mol_view %}Пользователь{% else %}МОЛ{% endif %}</th>
                         <th scope="col">ФИО</th>
                         <th scope="col" class="text-center">Активных ТМЦ</th>
-                        <th scope="col" class="text-center">Всего выдач</th>
+                        <th scope="col" class="text-end">Общая стоимость</th>
                         {% if is_mol_view %}
                         <th scope="col" class="text-end" style="width: 150px;">Действия</th>
                         {% endif %}
@@ -61,8 +61,8 @@
                                 <span class="text-muted">0</span>
                             {% endif %}
                         </td>
-                        <td class="text-center">
-                            <span style="color: var(--vk-text);">{{ friend.total_assignments }}</span>
+                        <td class="text-end">
+                            <strong style="color: #198754; white-space: nowrap; font-size: 0.95em; font-weight: 600;">{{ "{:,.2f}".format(friend.total_cost if friend.total_cost else 0).replace(',', ' ').replace('.', ',') }} ₽</strong>
                         </td>
                         {% if is_mol_view %}
                         <td class="text-end">

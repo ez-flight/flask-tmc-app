@@ -3,17 +3,25 @@
 {% block title %}ТМЦ №{{ tmc.id }}{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h1>Подробная информация о ТМЦ</h1>
+    <div>
+        <h1>Информация о ТМЦ</h1>
+        <p class="text-muted mb-0">
+            <i class="bi bi-hash me-1"></i>ID: {{ tmc.id }}
+            {% if tmc.nome %}
+                <span class="ms-3"><i class="bi bi-tag me-1"></i>{{ tmc.nome.name }}</span>
+            {% endif %}
+        </p>
+    </div>
     <div class="user-info">
         <a href="javascript:history.back()" class="btn btn-secondary btn-sm me-2">
             <i class="bi bi-arrow-left me-1"></i>Назад
         </a>
         {% if tmc.os %}
-            <a href="{{ url_for('edit_tmc', tmc_id=tmc.id) }}" class="btn btn-warning btn-sm">
+            <a href="{{ url_for('edit_tmc', tmc_id=tmc.id) }}" class="btn btn-primary btn-sm">
                 <i class="bi bi-pencil me-1"></i>Редактировать
             </a>
         {% else %}
-            <a href="{{ url_for('edit_component', component_id=tmc.id) }}" class="btn btn-warning btn-sm">
+            <a href="{{ url_for('edit_component', component_id=tmc.id) }}" class="btn btn-primary btn-sm">
                 <i class="bi bi-pencil me-1"></i>Редактировать
             </a>
         {% endif %}
@@ -23,7 +31,10 @@
 {% if tmc.photo %}
 <div class="card shadow-sm mt-3">
     <div class="card-header">
-        <h5 class="mb-0">Фото</h5>
+        <h5 class="mb-0 d-flex align-items-center">
+            <i class="bi bi-image me-2"></i>
+            Фото
+        </h5>
     </div>
     <div class="card-body">
         <!-- Ссылка для открытия модального окна -->
@@ -116,7 +127,10 @@
     {% if components %}
     <div class="card shadow-sm mt-3">
         <div class="card-header">
-            <h5 class="mb-0">Комплектующие</h5>
+            <h5 class="mb-0 d-flex align-items-center">
+                <i class="bi bi-puzzle me-2"></i>
+                Комплектующие
+            </h5>
         </div>
         <div class="card-body">
             <table class="table table-striped">
@@ -163,20 +177,84 @@
     </div>
     {% endif %}
 {% endif %}
-<div class="card">
-    <div class="card-body">
-        <!--<div class="d-flex justify-content-between align-items-center"> -->
-            <h5 class="card-title mb-0">Основные данные</h5>
-            <!-- <a href="{{ url_for('edit_tmc', tmc_id=tmc.id) }}" class="btn btn-outline-primary btn-sm">Изменить</a> -->
-                <table class="table table-borderless">
-                    <tr><th>ID записи:</th><td>{{ tmc.id }}</td></tr>
-                    <tr><th>Наименование:</th><td>{{ tmc.nome.name if tmc.nome else '—' }}</td></tr>
-                    <tr><th>Бух. наименование:</th><td>{{ tmc.buhname or '—' }}</td></tr>
-                    <tr><th>Серийный номер:</th><td>{{ tmc.sernum or '—' }}</td></tr>
-                    <tr><th>Инвентарный номер:</th><td>{{ tmc.invnum or '—' }}</td></tr>
-                    <tr><th>Текущий комментарий:</th><td>{{ tmc.comment or '—' }}</td></tr>
+<!-- Основная информация в двух колонках -->
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title d-flex align-items-center mb-3">
+                    <i class="bi bi-info-circle me-2 text-primary"></i>
+                    Основные данные
+                </h5>
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <th style="width: 40%;"><i class="bi bi-tag me-1 text-muted"></i>Наименование:</th>
+                        <td><strong>{{ tmc.nome.name if tmc.nome else '—' }}</strong></td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-file-text me-1 text-muted"></i>Бух. наименование:</th>
+                        <td>{{ tmc.buhname or '—' }}</td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-upc-scan me-1 text-muted"></i>Серийный номер:</th>
+                        <td>
+                            {% if tmc.sernum %}
+                                <code>{{ tmc.sernum }}</code>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-123 me-1 text-muted"></i>Инвентарный номер:</th>
+                        <td>
+                            {% if tmc.invnum %}
+                                <code>{{ tmc.invnum }}</code>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if tmc.comment %}
+                    <tr>
+                        <th><i class="bi bi-chat-left-text me-1 text-muted"></i>Комментарий:</th>
+                        <td>{{ tmc.comment }}</td>
+                    </tr>
+                    {% endif %}
                 </table>
-        <!-- </div> -->
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title d-flex align-items-center mb-3">
+                    <i class="bi bi-building me-2 text-primary"></i>
+                    Организация и местоположение
+                </h5>
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <th style="width: 40%;"><i class="bi bi-building me-1 text-muted"></i>Организация:</th>
+                        <td>{{ tmc.org.name if tmc.org else '—' }}</td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-geo-alt me-1 text-muted"></i>Место:</th>
+                        <td>{{ tmc.places.name if tmc.places else '—' }}</td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-person me-1 text-muted"></i>Ответственный:</th>
+                        <td>{{ tmc.users.login if tmc.users else '—' }}</td>
+                    </tr>
+                    {% if tmc.department %}
+                    <tr>
+                        <th><i class="bi bi-diagram-3 me-1 text-muted"></i>Подразделение:</th>
+                        <td>{{ tmc.department.name }}</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -184,7 +262,10 @@
 {% if comment_history %}
 <div class="card mt-3">
     <div class="card-header">
-        <h5 class="mb-0">История комментариев</h5>
+        <h5 class="mb-0 d-flex align-items-center">
+            <i class="bi bi-chat-left-text me-2"></i>
+            История комментариев
+        </h5>
     </div>
     <div class="card-body">
         <div class="table-responsive">
@@ -210,58 +291,125 @@
     </div>
 </div>
 {% endif %}
-<div class="card mt-3">
-    <div class="card-body">
-        <h5 class="card-title">Организация и местоположение</h5>
-        <table class="table table-borderless">
-            <tr><th>Организация:</th><td>{{ tmc.org.name if tmc.org else '—' }}</td></tr>
-            <tr><th>Место:</th><td>{{ tmc.places.name if tmc.places else '—' }}</td></tr>
-            <tr><th>Ответственный:</th><td>{{ tmc.users.login if tmc.users else '—' }}</td></tr>
-            <tr><th>Подразделение:</th><td>{{ tmc.department.name if tmc.department else '—' }}</td></tr>
-        </table>
+<!-- Финансы, статус и даты в двух колонках -->
+<div class="row g-3 mt-0">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title d-flex align-items-center mb-3">
+                    <i class="bi bi-currency-exchange me-2 text-primary"></i>
+                    Финансы и статус
+                </h5>
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <th style="width: 50%;"><i class="bi bi-cash-stack me-1 text-muted"></i>Первоначальная стоимость:</th>
+                        <td class="text-end">
+                            <strong style="color: #198754;">
+                                {{ "{:,.2f}".format(tmc.cost).replace(',', ' ').replace('.', ',') }} ₽
+                            </strong>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-cash me-1 text-muted"></i>Текущая стоимость:</th>
+                        <td class="text-end">
+                            <strong style="color: #198754;">
+                                {{ "{:,.2f}".format(tmc.currentcost).replace(',', ' ').replace('.', ',') }} ₽
+                            </strong>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-check-circle me-1 text-muted"></i>Основное средство:</th>
+                        <td>
+                            {% if tmc.os %}
+                                <span class="badge bg-success">Да</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Нет</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-tools me-1 text-muted"></i>В ремонте:</th>
+                        <td>
+                            {% if tmc.repair %}
+                                <span class="badge bg-warning text-dark">Да</span>
+                            {% else %}
+                                <span class="badge bg-success">Нет</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-toggle-on me-1 text-muted"></i>Активен:</th>
+                        <td>
+                            {% if tmc.active %}
+                                <span class="badge bg-success">Да</span>
+                            {% else %}
+                                <span class="badge bg-danger">Нет</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title d-flex align-items-center mb-3">
+                    <i class="bi bi-calendar-event me-2 text-primary"></i>
+                    Даты и документы
+                </h5>
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <th style="width: 50%;"><i class="bi bi-calendar-check me-1 text-muted"></i>Дата постановки на учёт:</th>
+                        <td>
+                            {% if tmc.datepost %}
+                                {{ tmc.datepost.strftime('%d.%m.%Y %H:%M') }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-shield-check me-1 text-muted"></i>Гарантия до:</th>
+                        <td>
+                            {% if tmc.dtendgar %}
+                                {{ tmc.dtendgar.strftime('%d.%m.%Y') }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><i class="bi bi-truck me-1 text-muted"></i>Поставщик:</th>
+                        <td>{{ tmc.knt.name if tmc.knt else 'Не указан' }}</td>
+                    </tr>
+                    {% if tmc.passport_filename %}
+                    <tr>
+                        <th><i class="bi bi-file-earmark-pdf me-1 text-muted"></i>Паспорт:</th>
+                        <td>
+                            <a href="{{ url_for('static', filename='passports/' + tmc.passport_filename) }}" 
+                               target="_blank" 
+                               class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-download me-1"></i>Скачать
+                            </a>
+                        </td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
     </div>
 </div>
-<div class="card mt-3">
-    <div class="card-body">
-        <h5 class="card-title">Финансы и статус</h5>
-        <table class="table table-borderless">
-            <tr><th>Первоначальная стоимость:</th><td>{{ "{:,.2f}".format(tmc.cost) }} руб.</td></tr>
-            <tr><th>Текущая стоимость:</th><td>{{ "{:,.2f}".format(tmc.currentcost) }} руб.</td></tr>
-            <tr><th>Основное средство:</th><td>{% if tmc.os %}Да{% else %}Нет{% endif %}</td></tr>
-            <tr><th>В ремонте:</th><td>{% if tmc.repair %}Да{% else %}Нет{% endif %}</td></tr>
-            <tr><th>Активен:</th><td>{% if tmc.active %}Да{% else %}Нет{% endif %}</td></tr>
-        </table>
-    </div>
-</div>
-<div class="card mt-3">
-    <div class="card-body">
-        <h5 class="card-title">Даты</h5>
-        <table class="table table-borderless">
-            <tr><th>Дата постановки на учёт:</th><td>{{ tmc.datepost.strftime('%d.%m.%Y %H:%M') if tmc.datepost else '—' }}</td></tr>
-            <tr><th>Гарантия до:</th><td>{{ tmc.dtendgar.strftime('%d.%m.%Y') if tmc.dtendgar else '—' }}</td></tr>
-        </table>
-    </div>
-</div>
-<div class="card mt-3">
-    <div class="card-body">
-        <h5 class="card-title">Поставщик</h5>
-        <p>{{ tmc.knt.name if tmc.knt else 'Не указан' }}</p>
-    </div>
-</div>
-{% if tmc.passport_filename %}
-<div class="card mt-3">
-    <div class="card-body">
-        <h5 class="card-title">Паспорт</h5>
-        <a href="{{ url_for('static', filename='passports/' + tmc.passport_filename) }}">Паспорт</a>
-    </div>
-</div>
-{% endif %}
 
 <!-- История перемещений -->
 {% if history %}
 <div class="card mt-3">
     <div class="card-header">
-        <h5 class="mb-0">История перемещений</h5>
+        <h5 class="mb-0 d-flex align-items-center">
+            <i class="bi bi-arrow-left-right me-2"></i>
+            История перемещений
+        </h5>
     </div>
     <div class="card-body">
         <div class="table-responsive">

@@ -349,27 +349,25 @@ def index():
         stats_data['user_labels'] = [row.user_login for row in user_stats] if user_stats else []
         stats_data['user_counts'] = [row.count for row in user_stats] if user_stats else []
         
-        # Динамика добавления ТМЦ по месяцам (последние 12 месяцев)
-        twelve_months_ago = datetime.now() - relativedelta(days=365)
-        
-        # Получаем все ТМЦ за последний год
+        # Динамика добавления ТМЦ по годам (дата постановки на учет)
+        # Получаем все ТМЦ с датой постановки на учет
         all_equipment = Equipment.query.filter(
             Equipment.active == True,
             Equipment.os == True,
-            Equipment.datepost >= twelve_months_ago
+            Equipment.datepost.isnot(None)
         ).all()
         
-        # Группируем по месяцам в Python
-        monthly_dict = {}
+        # Группируем по годам в Python
+        yearly_dict = {}
         for eq in all_equipment:
-            month_key = eq.datepost.strftime('%Y-%m') if eq.datepost else None
-            if month_key:
-                monthly_dict[month_key] = monthly_dict.get(month_key, 0) + 1
+            if eq.datepost:
+                year_key = eq.datepost.year
+                yearly_dict[year_key] = yearly_dict.get(year_key, 0) + 1
         
-        # Сортируем по месяцам
-        sorted_months = sorted(monthly_dict.keys())
-        stats_data['monthly_labels'] = sorted_months if sorted_months else []
-        stats_data['monthly_counts'] = [monthly_dict[month] for month in sorted_months] if sorted_months else []
+        # Сортируем по годам
+        sorted_years = sorted(yearly_dict.keys())
+        stats_data['yearly_labels'] = [str(year) for year in sorted_years] if sorted_years else []
+        stats_data['yearly_counts'] = [yearly_dict[year] for year in sorted_years] if sorted_years else []
         
         # Статусы ТМЦ
         repair_count = Equipment.query.filter_by(active=True, os=True, repair=True).count()
@@ -498,6 +496,16 @@ def add_tmc():
         kntid = request.form.get('kntid')
         kntid = int(kntid) if kntid else None
 
+        # Обработка стоимости
+        cost_str = request.form.get('cost', '').strip()
+        currentcost_str = request.form.get('currentcost', '').strip()
+        try:
+            cost = Decimal(cost_str) if cost_str else Decimal('0.00')
+            currentcost = Decimal(currentcost_str) if currentcost_str else Decimal('0.00')
+        except (ValueError, InvalidOperation):
+            cost = Decimal('0.00')
+            currentcost = Decimal('0.00')
+
         # Обработка статуса ТМЦ
         status = request.form.get('status', 'active')
         if status == 'repair':
@@ -528,8 +536,8 @@ def add_tmc():
             datepost=datetime.utcnow(),
             dtendgar=datetime.utcnow().date(),
             dtendlife=datetime.utcnow().date(),  # ← ДОБАВЛЕНО
-            cost=0,
-            currentcost=0,
+            cost=cost,
+            currentcost=currentcost,
             os=True,
             mode=False,
             repair=repair_status,
@@ -2954,6 +2962,10 @@ def edit_user(user_id):
         user_profile = UsersProfile(usersid=user.id, fio='', jpegphoto='noimage.jpg')
         db.session.add(user_profile)
         db.session.flush()
+    
+    # Загружаем должность пользователя (активную для текущей организации)
+    user_post = PostUsers.query.filter_by(userid=user.id, orgid=user.orgid, active=True).first()
+    current_position = user_post.post if user_post and user_post.post else ''
 
     if request.method == 'POST':
         # Получаем данные из формы
@@ -2969,7 +2981,8 @@ def edit_user(user_id):
             flash('Логин не может быть пустым.', 'danger')
             orgs = Org.query.all()
             return render_template('users/edit_user.html', user=user, user_profile=user_profile, 
-                                 orgs=orgs, is_admin=is_admin, user_login=current_user.login)
+                                 orgs=orgs, is_admin=is_admin, current_role=current_role,
+                                 current_position=current_position, user_login=current_user.login)
 
         # Проверка уникальности логина
         existing_user = Users.query.filter(Users.login == new_login, Users.id != user_id).first()
@@ -2977,7 +2990,8 @@ def edit_user(user_id):
             flash(f'Логин "{new_login}" уже занят другим пользователем.', 'danger')
             orgs = Org.query.all()
             return render_template('users/edit_user.html', user=user, user_profile=user_profile, 
-                                 orgs=orgs, is_admin=is_admin, user_login=current_user.login)
+                                 orgs=orgs, is_admin=is_admin, current_role=current_role,
+                                 current_position=current_position, user_login=current_user.login)
 
         # Обновление основных полей пользователя
         user.login = new_login
@@ -2995,6 +3009,23 @@ def edit_user(user_id):
         if user_profile:
             user_profile.fio = new_fio
 
+        # Обновление должности пользователя
+        new_position = request.form.get('position', '').strip()
+        # Ищем существующую запись должности для текущей организации
+        user_post = PostUsers.query.filter_by(userid=user.id, orgid=new_orgid, active=True).first()
+        if new_position:
+            if user_post:
+                # Обновляем существующую должность
+                user_post.post = new_position
+            else:
+                # Создаем новую запись должности
+                user_post = PostUsers(userid=user.id, orgid=new_orgid, active=True, post=new_position)
+                db.session.add(user_post)
+        else:
+            # Если должность пустая, деактивируем или удаляем запись
+            if user_post:
+                user_post.active = False
+
         # Обработка прав администратора через чекбокс
         new_mode = 1 if request.form.get('is_admin') == 'on' else 0
 
@@ -3010,7 +3041,7 @@ def edit_user(user_id):
             orgs = Org.query.all()
             return render_template('users/edit_user.html', user=user, user_profile=user_profile, 
                                 orgs=orgs, is_admin=is_admin, current_role=current_role,
-                                user_login=current_user.login)
+                                current_position=current_position, user_login=current_user.login)
 
         # Обработка загрузки фото профиля
         new_photo = request.files.get('photo')
@@ -3037,7 +3068,8 @@ def edit_user(user_id):
                 flash('Неверный формат файла фото. Допустимые форматы: png, jpg, jpeg, gif, bmp, webp.', 'danger')
                 orgs = Org.query.all()
                 return render_template('users/edit_user.html', user=user, user_profile=user_profile, 
-                                     orgs=orgs, is_admin=is_admin, user_login=current_user.login)
+                                     orgs=orgs, is_admin=is_admin, current_role=current_role,
+                                     current_position=current_position, user_login=current_user.login)
 
         try:
             db.session.commit()
@@ -3054,7 +3086,8 @@ def edit_user(user_id):
                         user_profile=user_profile,
                         orgs=orgs,
                         is_admin=is_admin,
-                        current_role=current_role,  # ← добавляем эту переменную
+                        current_role=current_role,
+                        current_position=current_position,
                         user_login=current_user.login)
 
 @app.route('/temp_assign', methods=['POST'])
@@ -3269,26 +3302,24 @@ def calculate_stats_data(tmc_query, is_admin=False):
         stats_data['user_labels'] = [row.user_login for row in user_stats] if user_stats else []
         stats_data['user_counts'] = [row.count for row in user_stats] if user_stats else []
     
-    # Динамика добавления ТМЦ по месяцам (последние 12 месяцев)
-    twelve_months_ago = datetime.now() - relativedelta(days=365)
-    
-    # Получаем все ТМЦ за последний год из нашего запроса
+    # Динамика добавления ТМЦ по годам (дата постановки на учет)
+    # Получаем все ТМЦ с датой постановки на учет из нашего запроса
     all_equipment = Equipment.query.filter(
         Equipment.id.in_(tmc_ids),
-        Equipment.datepost >= twelve_months_ago
+        Equipment.datepost.isnot(None)
     ).all()
     
-    # Группируем по месяцам в Python
-    monthly_dict = {}
+    # Группируем по годам в Python
+    yearly_dict = {}
     for eq in all_equipment:
-        month_key = eq.datepost.strftime('%Y-%m') if eq.datepost else None
-        if month_key:
-            monthly_dict[month_key] = monthly_dict.get(month_key, 0) + 1
+        if eq.datepost:
+            year_key = eq.datepost.year
+            yearly_dict[year_key] = yearly_dict.get(year_key, 0) + 1
     
-    # Сортируем по месяцам
-    sorted_months = sorted(monthly_dict.keys())
-    stats_data['monthly_labels'] = sorted_months if sorted_months else []
-    stats_data['monthly_counts'] = [monthly_dict[month] for month in sorted_months] if sorted_months else []
+    # Сортируем по годам
+    sorted_years = sorted(yearly_dict.keys())
+    stats_data['yearly_labels'] = [str(year) for year in sorted_years] if sorted_years else []
+    stats_data['yearly_counts'] = [yearly_dict[year] for year in sorted_years] if sorted_years else []
     
     # Статусы ТМЦ
     repair_count = Equipment.query.filter(Equipment.id.in_(tmc_ids), Equipment.repair == True).count()
@@ -3324,8 +3355,8 @@ def all_stats():
             'department_counts': [],
             'user_labels': [],
             'user_counts': [],
-            'monthly_labels': [],
-            'monthly_counts': [],
+            'yearly_labels': [],
+            'yearly_counts': [],
             'status_labels': ['В эксплуатации', 'В ремонте', 'Потеряно'],
             'status_counts': [0, 0, 0],
             'components_count': 0
@@ -3590,18 +3621,21 @@ def my_friends():
     
     if is_mol or is_admin:
         # Для МОЛ: показываем пользователей, которым МОЛ выдавал ТМЦ
-        # Получаем всех пользователей, которым МОЛ выдавал ТМЦ (включая возвращенные)
+        # Получаем всех пользователей, которым МОЛ выдавал ТМЦ с общей стоимостью
         all_assignments = db.session.query(
             EquipmentTempUsage.user_temp_id,
             func.count(EquipmentTempUsage.id).label('total_assignments'),
-            func.sum(case((EquipmentTempUsage.returned == False, 1), else_=0)).label('active_assignments')
+            func.sum(case((EquipmentTempUsage.returned == False, 1), else_=0)).label('active_assignments'),
+            func.coalesce(func.sum(Equipment.cost), 0).label('total_cost')
+        ).join(
+            Equipment, EquipmentTempUsage.equipment_id == Equipment.id
         ).filter(
             EquipmentTempUsage.mol_userid == current_user.id
         ).group_by(EquipmentTempUsage.user_temp_id).all()
         
         # Получаем информацию о пользователях и их профилях
         friends_data = []
-        for user_id, total_count, active_count in all_assignments:
+        for user_id, total_count, active_count, total_cost in all_assignments:
             user = Users.query.get(user_id)
             if user:
                 # Получаем профиль пользователя
@@ -3615,11 +3649,12 @@ def my_friends():
                     'profile': profile,
                     'photo': user_photo,
                     'total_assignments': total_count or 0,
-                    'active_assignments': active_count or 0
+                    'active_assignments': active_count or 0,
+                    'total_cost': float(total_cost) if total_cost else 0.0
                 })
         
-        # Сортируем по количеству активных выдач (сначала те, у кого больше активных)
-        friends_data.sort(key=lambda x: x['active_assignments'], reverse=True)
+        # Сортируем по общей стоимости полученных ТМЦ (по убыванию)
+        friends_data.sort(key=lambda x: x['total_cost'], reverse=True)
         
         return render_template('temp_usage/my_friends.html', 
                              friends_data=friends_data,
@@ -3628,11 +3663,14 @@ def my_friends():
                              is_mol_view=True)
     else:
         # Для обычных пользователей: показываем только МОЛ с активными выдачами
-        # Получаем всех МОЛ, которые выдавали ТМЦ текущему пользователю (только активные выдачи)
+        # Получаем всех МОЛ, которые выдавали ТМЦ текущему пользователю (только активные выдачи) с общей стоимостью
         all_assignments = db.session.query(
             EquipmentTempUsage.mol_userid,
             func.count(EquipmentTempUsage.id).label('total_assignments'),
-            func.count(EquipmentTempUsage.id).label('active_assignments')
+            func.count(EquipmentTempUsage.id).label('active_assignments'),
+            func.coalesce(func.sum(Equipment.cost), 0).label('total_cost')
+        ).join(
+            Equipment, EquipmentTempUsage.equipment_id == Equipment.id
         ).filter(
             EquipmentTempUsage.user_temp_id == current_user.id,
             EquipmentTempUsage.returned == False
@@ -3640,7 +3678,7 @@ def my_friends():
         
         # Получаем информацию о МОЛ и их профилях
         friends_data = []
-        for mol_id, total_count, active_count in all_assignments:
+        for mol_id, total_count, active_count, total_cost in all_assignments:
             mol_user = Users.query.get(mol_id)
             if mol_user:
                 # Получаем профиль МОЛ
@@ -3654,11 +3692,12 @@ def my_friends():
                     'profile': profile,
                     'photo': user_photo,
                     'total_assignments': total_count or 0,
-                    'active_assignments': active_count or 0
+                    'active_assignments': active_count or 0,
+                    'total_cost': float(total_cost) if total_cost else 0.0
                 })
         
-        # Сортируем по количеству активных выдач (сначала те, у кого больше активных)
-        friends_data.sort(key=lambda x: x['active_assignments'], reverse=True)
+        # Сортируем по общей стоимости полученных ТМЦ (по убыванию)
+        friends_data.sort(key=lambda x: x['total_cost'], reverse=True)
         
         return render_template('temp_usage/my_friends.html', 
                              friends_data=friends_data,
@@ -3939,6 +3978,267 @@ def my_departments():
     return render_template('departments/my_departments.html',
                           department_stats=department_stats,
                           is_admin=is_admin)
+
+# === УПРАВЛЕНИЕ ПОМЕЩЕНИЯМИ ===
+
+@app.route('/my_places')
+@login_required
+def my_places():
+    """Отображение помещений: для МОЛ - только помещения с ТМЦ, для админа - все помещения."""
+    is_admin = current_user.mode == 1
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('places/my_places.html',
+                             places_stats=[],
+                             is_admin=is_admin)
+    
+    if is_admin:
+        # Для админа - все помещения
+        places = Places.query.filter_by(active=True).order_by(Places.name).all()
+    else:
+        # Для МОЛ - только помещения, где у него есть ТМЦ
+        places = db.session.query(Places).join(
+            Equipment, Places.id == Equipment.placesid
+        ).filter(
+            Equipment.usersid == current_user.id,
+            Equipment.active == True,
+            Equipment.os == True,
+            Places.active == True
+        ).distinct().order_by(Places.name).all()
+    
+    # Подсчёт статистики по каждому помещению
+    places_stats = []
+    for place in places:
+        if is_admin:
+            # Для админа - все ТМЦ в помещении
+            tmc_count = Equipment.query.filter_by(
+                placesid=place.id,
+                active=True,
+                os=True
+            ).count()
+            total_cost = db.session.query(
+                func.coalesce(func.sum(Equipment.cost), 0)
+            ).filter_by(
+                placesid=place.id,
+                active=True,
+                os=True
+            ).scalar()
+        else:
+            # Для МОЛ - только его ТМЦ в помещении
+            tmc_count = Equipment.query.filter_by(
+                placesid=place.id,
+                usersid=current_user.id,
+                active=True,
+                os=True
+            ).count()
+            total_cost = db.session.query(
+                func.coalesce(func.sum(Equipment.cost), 0)
+            ).filter_by(
+                placesid=place.id,
+                usersid=current_user.id,
+                active=True,
+                os=True
+            ).scalar()
+        
+        places_stats.append({
+            'place': place,
+            'tmc_count': tmc_count,
+            'total_cost': float(total_cost) if total_cost else 0.0
+        })
+    
+    # Сортировка по убыванию суммы (от большей к меньшей)
+    places_stats.sort(key=lambda x: x['total_cost'], reverse=True)
+    
+    return render_template('places/my_places.html',
+                          places_stats=places_stats,
+                          is_admin=is_admin)
+
+@app.route('/place_equipment/<int:place_id>')
+@login_required
+def place_equipment(place_id):
+    """Страница со списком ТМЦ в конкретном помещении."""
+    is_admin = current_user.mode == 1
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('places/place_equipment.html',
+                             equipment_list=[],
+                             place=None,
+                             is_admin=is_admin,
+                             total_cost=0,
+                             tmc_count=0)
+    
+    place = Places.query.get_or_404(place_id)
+    
+    # Получаем ТМЦ в помещении
+    if is_admin:
+        # Для админа - все ТМЦ в помещении
+        equipment_query = Equipment.query.filter_by(
+            placesid=place_id,
+            active=True,
+            os=True
+        )
+    else:
+        # Для обычного пользователя - только его ТМЦ в помещении
+        equipment_query = Equipment.query.filter_by(
+            placesid=place_id,
+            usersid=current_user.id,
+            active=True,
+            os=True
+        )
+    
+    equipment_list = equipment_query.order_by(Equipment.buhname).all()
+    tmc_count = len(equipment_list)
+    
+    # Подсчитываем общую стоимость
+    total_cost = db.session.query(
+        func.coalesce(func.sum(Equipment.cost), 0)
+    ).filter(
+        Equipment.id.in_([eq.id for eq in equipment_list])
+    ).scalar() or 0
+    
+    return render_template('places/place_equipment.html',
+                          equipment_list=equipment_list,
+                          place=place,
+                          is_admin=is_admin,
+                          total_cost=float(total_cost),
+                          tmc_count=tmc_count)
+
+@app.route('/add_place', methods=['GET', 'POST'])
+@login_required
+def add_place():
+    """Создание нового помещения (только для администраторов)."""
+    is_admin = current_user.mode == 1
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('my_places'))
+    
+    # В тестовом режиме запрещаем создание
+    if TEST_MODE:
+        flash('Создание помещений недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('my_places'))
+    
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        orgid = request.form.get('orgid', type=int)
+        active = request.form.get('active') == 'on'
+        
+        if not name or not orgid:
+            flash('Все поля обязательны для заполнения', 'danger')
+            orgs = Org.query.filter_by(active=True).all()
+            return render_template('places/add_place.html', orgs=orgs)
+        
+        # Проверяем уникальность названия в рамках организации
+        existing_place = Places.query.filter_by(name=name, orgid=orgid).first()
+        if existing_place:
+            flash(f'Помещение "{name}" уже существует в этой организации', 'danger')
+            orgs = Org.query.filter_by(active=True).all()
+            return render_template('places/add_place.html', orgs=orgs)
+        
+        try:
+            new_place = Places(
+                name=name,
+                orgid=orgid,
+                active=active if active else True
+            )
+            db.session.add(new_place)
+            db.session.commit()
+            flash(f'Помещение "{name}" успешно создано', 'success')
+            return redirect(url_for('my_places'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Ошибка при создании помещения: {str(e)}', 'danger')
+    
+    orgs = Org.query.filter_by(active=True).all()
+    return render_template('places/add_place.html', orgs=orgs)
+
+@app.route('/edit_place/<int:place_id>', methods=['GET', 'POST'])
+@login_required
+def edit_place(place_id):
+    """Редактирование помещения (только для администраторов)."""
+    is_admin = current_user.mode == 1
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('my_places'))
+    
+    # В тестовом режиме запрещаем редактирование
+    if TEST_MODE:
+        flash('Редактирование помещений недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('my_places'))
+    
+    place = Places.query.get_or_404(place_id)
+    
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        orgid = request.form.get('orgid', type=int)
+        active = request.form.get('active') == 'on'
+        
+        if not name or not orgid:
+            flash('Все поля обязательны для заполнения', 'danger')
+            orgs = Org.query.filter_by(active=True).all()
+            return render_template('places/edit_place.html', place=place, orgs=orgs)
+        
+        # Проверяем уникальность названия в рамках организации (кроме текущего помещения)
+        existing_place = Places.query.filter(
+            Places.name == name,
+            Places.orgid == orgid,
+            Places.id != place_id
+        ).first()
+        if existing_place:
+            flash(f'Помещение "{name}" уже существует в этой организации', 'danger')
+            orgs = Org.query.filter_by(active=True).all()
+            return render_template('places/edit_place.html', place=place, orgs=orgs)
+        
+        try:
+            place.name = name
+            place.orgid = orgid
+            place.active = active
+            db.session.commit()
+            flash(f'Помещение "{name}" успешно обновлено', 'success')
+            return redirect(url_for('my_places'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Ошибка при обновлении помещения: {str(e)}', 'danger')
+    
+    orgs = Org.query.filter_by(active=True).all()
+    return render_template('places/edit_place.html', place=place, orgs=orgs)
+
+@app.route('/delete_place/<int:place_id>', methods=['POST'])
+@login_required
+def delete_place(place_id):
+    """Удаление помещения (только для администраторов)."""
+    is_admin = current_user.mode == 1
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('my_places'))
+    
+    # В тестовом режиме запрещаем удаление
+    if TEST_MODE:
+        flash('Удаление помещений недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('my_places'))
+    
+    place = Places.query.get_or_404(place_id)
+    
+    # Проверяем, есть ли ТМЦ, привязанные к этому помещению
+    tmc_count = Equipment.query.filter_by(
+        placesid=place_id,
+        active=True
+    ).count()
+    
+    if tmc_count > 0:
+        flash(f'Невозможно удалить помещение "{place.name}": к нему привязано {tmc_count} ТМЦ. Сначала удалите или переместите ТМЦ.', 'danger')
+        return redirect(url_for('my_places'))
+    
+    try:
+        db.session.delete(place)
+        db.session.commit()
+        flash(f'Помещение "{place.name}" успешно удалено', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ошибка при удалении помещения: {str(e)}', 'danger')
+    
+    return redirect(url_for('my_places'))
 
 @app.route('/add_department', methods=['GET', 'POST'])
 @login_required

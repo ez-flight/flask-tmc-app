@@ -15,7 +15,32 @@
 
 <div class="card">
     <div class="card-body">
-        <form method="POST">
+        <form method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="name" class="form-label">Наименование группы ТМЦ <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="name" name="name" value="{{ nome.name }}" required maxlength="200">
+                <small class="form-text text-muted">Название группы ТМЦ</small>
+            </div>
+            
+            <div class="mb-3">
+                <label for="photo" class="form-label">Фото группы</label>
+                {% if nome.photo %}
+                <div class="mb-2">
+                    <img src="{{ url_for('static', filename='uploads/' + nome.photo) }}" 
+                         alt="Текущее фото" 
+                         class="img-fluid rounded" 
+                         style="max-height: 150px; max-width: 150px; object-fit: cover;">
+                    <div class="mt-2">
+                        <small class="text-muted">Текущее фото группы</small>
+                    </div>
+                </div>
+                {% endif %}
+                <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
+                <small class="form-text text-muted">
+                    Загрузите новое фото для группы. Если не выбран файл, текущее фото останется без изменений.
+                </small>
+            </div>
+            
             <div class="mb-3">
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="is_composite" name="is_composite" 

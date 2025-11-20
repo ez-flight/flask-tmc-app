@@ -74,7 +74,15 @@
                              style="max-height: 60px; max-width: 60px; object-fit: cover;">
                     {% endif %}
                 </td>
-                <td>{{ tmc.buhname }}</td>
+                <td>
+                    {% if tmc.buhname and tmc.buhname.strip() %}
+                        <span title="{{ tmc.buhname|replace('"', '&quot;') }}" style="display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            {{ tmc.buhname }}
+                        </span>
+                    {% else %}
+                        <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
                 <td>{{ tmc.sernum or '—' }}</td>
                 <td>{{ tmc.invnum or '—' }}</td>
                 <td>

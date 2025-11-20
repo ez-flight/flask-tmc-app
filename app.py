@@ -3623,15 +3623,18 @@ def my_friends():
         all_assignments = db.session.query(
             EquipmentTempUsage.user_temp_id,
             func.count(EquipmentTempUsage.id).label('total_assignments'),
-            func.sum(case((EquipmentTempUsage.returned == False, 1), else_=0)).label('active_assignments')
+            func.sum(case((EquipmentTempUsage.returned == False, 1), else_=0)).label('active_assignments'),
+            func.coalesce(func.sum(case((EquipmentTempUsage.returned == False, Equipment.cost), else_=0)), 0).label('total_cost')
+        ).join(
+            Equipment, EquipmentTempUsage.equipment_id == Equipment.id
         ).filter(
             EquipmentTempUsage.mol_userid == current_user.id
         ).group_by(EquipmentTempUsage.user_temp_id).all()
         
         # Получаем информацию о пользователях и их профилях
         friends_data = []
-        for user_id, total_count, active_count in all_assignments:
-            user = Users.query.get(user_id)
+        for user_id, total_count, active_count, total_cost in all_assignments:
+            user = db.session.get(Users, user_id)
             if user:
                 # Получаем профиль пользователя
                 profile = UsersProfile.query.filter_by(usersid=user_id).first()
@@ -3644,11 +3647,12 @@ def my_friends():
                     'profile': profile,
                     'photo': user_photo,
                     'total_assignments': total_count or 0,
-                    'active_assignments': active_count or 0
+                    'active_assignments': active_count or 0,
+                    'total_cost': float(total_cost) if total_cost else 0.0
                 })
         
-        # Сортируем по количеству активных выдач (сначала те, у кого больше активных)
-        friends_data.sort(key=lambda x: x['active_assignments'], reverse=True)
+        # Сортируем по общей стоимости (сначала те, у кого больше стоимость)
+        friends_data.sort(key=lambda x: x['total_cost'], reverse=True)
         
         return render_template('temp_usage/my_friends.html', 
                              friends_data=friends_data,
@@ -3661,7 +3665,10 @@ def my_friends():
         all_assignments = db.session.query(
             EquipmentTempUsage.mol_userid,
             func.count(EquipmentTempUsage.id).label('total_assignments'),
-            func.count(EquipmentTempUsage.id).label('active_assignments')
+            func.count(EquipmentTempUsage.id).label('active_assignments'),
+            func.coalesce(func.sum(Equipment.cost), 0).label('total_cost')
+        ).join(
+            Equipment, EquipmentTempUsage.equipment_id == Equipment.id
         ).filter(
             EquipmentTempUsage.user_temp_id == current_user.id,
             EquipmentTempUsage.returned == False
@@ -3669,8 +3676,8 @@ def my_friends():
         
         # Получаем информацию о МОЛ и их профилях
         friends_data = []
-        for mol_id, total_count, active_count in all_assignments:
-            mol_user = Users.query.get(mol_id)
+        for mol_id, total_count, active_count, total_cost in all_assignments:
+            mol_user = db.session.get(Users, mol_id)
             if mol_user:
                 # Получаем профиль МОЛ
                 profile = UsersProfile.query.filter_by(usersid=mol_id).first()
@@ -3683,11 +3690,12 @@ def my_friends():
                     'profile': profile,
                     'photo': user_photo,
                     'total_assignments': total_count or 0,
-                    'active_assignments': active_count or 0
+                    'active_assignments': active_count or 0,
+                    'total_cost': float(total_cost) if total_cost else 0.0
                 })
         
-        # Сортируем по количеству активных выдач (сначала те, у кого больше активных)
-        friends_data.sort(key=lambda x: x['active_assignments'], reverse=True)
+        # Сортируем по общей стоимости (сначала те, у кого больше стоимость)
+        friends_data.sort(key=lambda x: x['total_cost'], reverse=True)
         
         return render_template('temp_usage/my_friends.html', 
                              friends_data=friends_data,

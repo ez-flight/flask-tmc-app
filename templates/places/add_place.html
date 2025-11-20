@@ -18,7 +18,7 @@
         <form method="POST" novalidate>
             <div class="mb-3">
                 <label for="name" class="form-label">
-                    <i class="bi bi-geo-alt me-1"></i>Название помещения <span class="text-danger">*</span>
+                    Название помещения <span class="text-danger">*</span>
                 </label>
                 <input type="text" 
                        class="form-control" 
@@ -28,41 +28,11 @@
                        placeholder="Например: Кабинет 101">
             </div>
             
-            <div class="mb-3">
-                <label for="orgid" class="form-label">
-                    <i class="bi bi-building me-1"></i>Организация <span class="text-danger">*</span>
-                </label>
-                <select class="form-select" 
-                        id="orgid" 
-                        name="orgid" 
-                        required>
-                    <option value="">-- Выберите организацию --</option>
-                    {% for org in orgs %}
-                        <option value="{{ org.id }}">{{ org.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            
-            <div class="mb-3">
-                <div class="form-check form-switch d-flex align-items-start">
-                    <input class="form-check-input me-3 mt-1" 
-                           type="checkbox" 
-                           id="active" 
-                           name="active"
-                           checked>
-                    <label class="form-check-label flex-grow-1" for="active">
-                        <strong>Помещение активно</strong>
-                        <br>
-                        <small class="text-muted">Неактивные помещения не отображаются в списках</small>
-                    </label>
-                </div>
-            </div>
-            
             <div class="d-flex justify-content-between">
                 <a href="{{ url_for('my_places') }}" class="btn btn-secondary">
                     <i class="bi bi-x-circle me-1"></i>Отмена
                 </a>
-                <button type="submit" class="btn btn-primary">
+                <button type="submit" class="btn btn-success">
                     <i class="bi bi-check-circle me-1"></i>Создать помещение
                 </button>
             </div>
@@ -70,4 +40,3 @@
     </div>
 </div>
 {% endblock %}
-

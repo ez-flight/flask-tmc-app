@@ -3,11 +3,10 @@
 {% block content %}
 <div class="page-header">
     <div>
-        <h1>ТМЦ в помещении</h1>
+        <h1>ТМЦ в помещении: "{{ place.name }}"</h1>
         <p class="text-muted mb-0">
-            <i class="bi bi-geo-alt me-1"></i>{{ place.name }}
-            <span class="ms-3"><i class="bi bi-box-seam me-1"></i>ТМЦ: {{ tmc_count }} шт.</span>
-            <span class="ms-3"><i class="bi bi-currency-exchange me-1"></i>Стоимость: {{ "{:,.2f}".format(total_cost).replace(',', ' ').replace('.', ',') }} ₽</span>
+            Всего: {{ tmc_count }} шт. | 
+            Общая стоимость: {{ "{:,.2f}".format(total_cost).replace(',', ' ').replace('.', ',') }} ₽
         </p>
     </div>
     <div class="user-info">
@@ -24,48 +23,70 @@
             <table class="table table-hover align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th><i class="bi bi-tag me-1"></i>Наименование</th>
-                        <th><i class="bi bi-upc-scan me-1"></i>Серийный №</th>
-                        <th><i class="bi bi-123 me-1"></i>Инвентарный №</th>
-                        <th><i class="bi bi-person me-1"></i>Ответственный</th>
-                        <th class="text-end" style="width: 1%; white-space: nowrap;"><i class="bi bi-currency-exchange me-1"></i>Стоимость</th>
-                        <th class="text-center"><i class="bi bi-info-circle me-1"></i>Действия</th>
+                        <th scope="col" style="width: 80px;">Фото</th>
+                        <th scope="col">Наименование</th>
+                        <th scope="col">Серийный номер</th>
+                        <th scope="col">Инвентарный номер</th>
+                        <th scope="col">Комментарий</th>
+                        <th scope="col">Дата постановки</th>
+                        <th scope="col">Стоимость</th>
+                        <th scope="col">Статус</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for tmc in equipment_list %}
-                    <tr>
+                    <tr class="clickable-row" onclick="window.location='{{ url_for('info_tmc', tmc_id=tmc.id) }}'" style="cursor: pointer;">
                         <td>
-                            <strong>{{ tmc.nome.name if tmc.nome else tmc.buhname }}</strong>
+                            {% if tmc.photo %}
+                                <img src="{{ url_for('static', filename='uploads/' + tmc.photo) }}" 
+                                     alt="Фото" 
+                                     class="img-fluid rounded" 
+                                     style="max-height: 60px; max-width: 60px; object-fit: cover;">
+                            {% else %}
+                                <img src="{{ url_for('static', filename='uploads/noimage.jpg') }}" 
+                                     alt="Нет фото" 
+                                     class="img-fluid rounded" 
+                                     style="max-height: 60px; max-width: 60px; object-fit: cover;">
+                            {% endif %}
                         </td>
                         <td>
-                            {% if tmc.sernum %}
-                                <code>{{ tmc.sernum }}</code>
+                            {% if tmc.buhname and tmc.buhname.strip() %}
+                                <span title="{{ tmc.buhname|replace('"', '&quot;') }}" style="display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    {{ tmc.buhname }}
+                                </span>
                             {% else %}
                                 <span class="text-muted">—</span>
                             {% endif %}
                         </td>
+                        <td>{{ tmc.sernum or '—' }}</td>
+                        <td>{{ tmc.invnum or '—' }}</td>
                         <td>
-                            {% if tmc.invnum %}
-                                <code>{{ tmc.invnum }}</code>
+                            {% if tmc.comment and tmc.comment.strip() %}
+                                <span title="{{ tmc.comment|replace('"', '&quot;') }}" style="display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    {{ tmc.comment }}
+                                </span>
                             {% else %}
-                                <span class="text-muted">—</span>
+                                <span class="text-muted" style="font-style: italic;">Нет комментария</span>
                             {% endif %}
                         </td>
-                        <td>
-                            <i class="bi bi-person me-1 text-muted"></i>{{ tmc.users.login if tmc.users else '—' }}
-                        </td>
-                        <td class="text-end" style="white-space: nowrap;">
-                            <strong style="color: #198754;">
-                                {{ "{:,.2f}".format(tmc.cost).replace(',', ' ').replace('.', ',') }} ₽
-                            </strong>
-                        </td>
-                        <td class="text-center">
-                            <a href="{{ url_for('info_tmc', tmc_id=tmc.id) }}" 
-                               class="btn btn-sm btn-outline-primary"
-                               title="Подробная информация">
-                                <i class="bi bi-info-circle"></i>
-                            </a>
+                        <td>{{ tmc.datepost.strftime('%d.%m.%Y') if tmc.datepost else '—' }}</td>
+                        <td>{{ "{:,.2f}".format(tmc.cost) if tmc.cost else '0.00' }} руб.</td>
+                        <td onclick="event.stopPropagation();">
+                            {% if tmc.active %}
+                                {% if tmc.lost %}
+                                    <span class="badge bg-danger">Потерян</span>
+                                {% elif tmc.repair %}
+                                    <span class="badge bg-warning text-dark">В ремонте</span>
+                                {% elif tmc.mode %}
+                                    <span class="badge bg-info">На модернизации</span>
+                                {% elif tmc.disposed %}
+                                    <span class="badge bg-secondary">Списано</span>
+                                {% else %}
+                                    <span class="badge bg-success">В эксплуатации</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="badge bg-secondary">Неактивно</span>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -76,18 +97,13 @@
 </div>
 {% else %}
 <div class="card">
-    <div class="card-body text-center py-5">
-        <i class="bi bi-box-seam" style="font-size: 48px; color: #ccc;"></i>
-        <h5>Нет ТМЦ</h5>
-        <p class="text-muted mb-0">
-            {% if is_admin %}
-                В помещении "{{ place.name }}" нет ТМЦ.
-            {% else %}
-                У вас нет ТМЦ в помещении "{{ place.name }}".
-            {% endif %}
-        </p>
+    <div class="card-body">
+        <div class="empty-state">
+            <i class="bi bi-clipboard-data" style="font-size: 3rem;"></i>
+            <h5>Нет данных</h5>
+            <p class="mb-0">В этом помещении нет ТМЦ.</p>
+        </div>
     </div>
 </div>
 {% endif %}
 {% endblock %}
-

@@ -222,6 +222,18 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% if is_network_device %}
+                    <tr>
+                        <th><i class="bi bi-router me-1 text-muted"></i>IP адрес:</th>
+                        <td>
+                            {% if tmc.ip %}
+                                <code>{{ tmc.ip }}</code>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
                     {% if tmc.comment %}
                     <tr>
                         <th><i class="bi bi-chat-left-text me-1 text-muted"></i>Комментарий:</th>

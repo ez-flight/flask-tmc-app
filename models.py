@@ -153,6 +153,7 @@ class GroupNome(db.Model):
     name = db.Column(db.String(255), nullable=False)
     comment = db.Column(db.Text, nullable=True)  # Добавляем поле comment
     active = db.Column(db.Boolean, nullable=False, default=True)
+    is_network_device = db.Column(db.Boolean, nullable=False, default=False)  # Признак сетевого устройства (у устройств есть IP адрес)
 
     # Новый внешний ключ, связывающий GroupNome с Category
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=True) # Может быть NULL, если не назначена

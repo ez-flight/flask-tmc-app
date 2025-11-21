@@ -69,6 +69,23 @@
                                placeholder="Введите инвентарный номер">
                     </div>
                     
+                    <!-- Поле IP адреса (показывается только для сетевых устройств) -->
+                    <div class="col-md-6" id="ip_field_container" style="display: {% if current_group and current_group.is_network_device %}block{% else %}none{% endif %};">
+                        <label for="ip" class="form-label">
+                            <i class="bi bi-router me-1"></i>IP адрес
+                        </label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="ip" 
+                               name="ip"
+                               value="{{ tmc.ip or '' }}"
+                               placeholder="192.168.1.1"
+                               pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$">
+                        <small class="form-text text-muted">
+                            IP адрес устройства (необязательно)
+                        </small>
+                    </div>
+                    
                     <div class="col-md-12">
                         <label for="comment" class="form-label">
                             <i class="bi bi-chat-left-text me-1"></i>Комментарий
@@ -433,6 +450,11 @@ function loadVendors() {
     const groupId = document.getElementById('groupid').value;
     const vendorSelect = document.getElementById('vendorid');
     const nomeSelect = document.getElementById('nomeid');
+    const ipFieldContainer = document.getElementById('ip_field_container');
+    const ipField = document.getElementById('ip');
+
+    // Сохраняем текущее выбранное значение производителя
+    const currentVendorId = vendorSelect.value;
 
     // Очищаем зависимые списки
     vendorSelect.innerHTML = '<option value="">Загрузка...</option>';
@@ -440,8 +462,25 @@ function loadVendors() {
 
     if (!groupId) {
         vendorSelect.innerHTML = '<option value="">-- Сначала выберите группу --</option>';
+        ipFieldContainer.style.display = 'none';
         return;
     }
+
+    // Проверяем, является ли группа сетевой
+    fetch(`/get_group_info/${groupId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.is_network_device) {
+                ipFieldContainer.style.display = 'block';
+            } else {
+                ipFieldContainer.style.display = 'none';
+                ipField.value = '';
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки информации о группе:', error);
+            ipFieldContainer.style.display = 'none';
+        });
 
     fetch(`/get_vendors_by_group/${groupId}`)
         .then(response => response.json())
@@ -451,8 +490,16 @@ function loadVendors() {
                 const option = document.createElement('option');
                 option.value = vendor.id;
                 option.textContent = vendor.name;
+                if (currentVendorId && vendor.id == currentVendorId) {
+                    option.selected = true;
+                }
                 vendorSelect.appendChild(option);
             });
+            
+            // Если был выбран производитель, загружаем наименования
+            if (currentVendorId) {
+                loadNomenclatures();
+            }
         })
         .catch(error => {
             console.error('Ошибка загрузки производителей:', error);
@@ -464,6 +511,9 @@ function loadNomenclatures() {
     const groupId = document.getElementById('groupid').value;
     const vendorId = document.getElementById('vendorid').value;
     const nomeSelect = document.getElementById('nomeid');
+
+    // Сохраняем текущее выбранное значение наименования
+    const currentNomeId = nomeSelect.value;
 
     nomeSelect.innerHTML = '<option value="">Загрузка...</option>';
 
@@ -480,6 +530,9 @@ function loadNomenclatures() {
                 const option = document.createElement('option');
                 option.value = nome.id;
                 option.textContent = nome.name;
+                if (currentNomeId && nome.id == currentNomeId) {
+                    option.selected = true;
+                }
                 nomeSelect.appendChild(option);
             });
             // Если список пуст, предлагаем добавить новое
@@ -562,5 +615,33 @@ function addNewNomenclature() {
         errorAlert.textContent = error.message || 'Неизвестная ошибка';
     });
 }
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    const groupId = document.getElementById('groupid');
+    const vendorId = document.getElementById('vendorid');
+    const nomeId = document.getElementById('nomeid');
+    
+    // Проверяем, есть ли уже загруженные опции в списках (больше 1, потому что есть дефолтная опция)
+    const hasVendors = vendorId && vendorId.options.length > 1;
+    const hasNomenclatures = nomeId && nomeId.options.length > 1;
+    
+    // Если значения уже загружены сервером, не перезагружаем их
+    // Загружаем только если списки пустые
+    if (groupId && groupId.value) {
+        if (!hasVendors) {
+            // Если нет производителей, загружаем их
+            loadVendors();
+        } else if (vendorId && vendorId.value && !hasNomenclatures) {
+            // Если есть производитель, но нет наименований, загружаем их
+            loadNomenclatures();
+        }
+    }
+    
+    {% if current_group and current_group.is_network_device %}
+    // Если группа является сетевой, показываем поле IP
+    document.getElementById('ip_field_container').style.display = 'block';
+    {% endif %}
+});
 </script>
 {% endblock %}

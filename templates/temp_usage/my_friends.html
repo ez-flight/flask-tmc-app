@@ -37,7 +37,15 @@
                 </thead>
                 <tbody>
                     {% for friend in friends_data %}
-                    <tr>
+                    <tr class="clickable-row" 
+                        data-user-id="{{ friend.user.id }}"
+                        data-user-login="{{ friend.user.login }}"
+                        data-user-fio="{{ friend.profile.fio if friend.profile and friend.profile.fio else '' }}"
+                        data-user-photo="{{ friend.photo }}"
+                        data-active-assignments="{{ friend.active_assignments }}"
+                        data-total-assignments="{{ friend.total_assignments }}"
+                        data-total-cost="{{ friend.total_cost }}"
+                        style="cursor: pointer;">
                         <td>
                             <img src="{{ friend.photo }}" 
                                  alt="{{ friend.user.login }}" 
@@ -65,7 +73,7 @@
                             <strong style="color: #198754; white-space: nowrap; font-size: 0.95em; font-weight: 600;">{{ "{:,.2f}".format(friend.total_cost if friend.total_cost else 0).replace(',', ' ').replace('.', ',') }} ₽</strong>
                         </td>
                         {% if is_mol_view %}
-                        <td class="text-end">
+                        <td class="text-end" onclick="event.stopPropagation();">
                             <a href="{{ url_for('friend_equipment', friend_user_id=friend.user.id) }}" 
                                class="btn btn-sm btn-primary">
                                 <i class="bi bi-box-seam me-1"></i>Имущество
@@ -100,5 +108,114 @@
     </div>
 </div>
 {% endif %}
+
+<!-- Модальное окно с информацией о пользователе -->
+<div class="modal fade" id="userInfoModal" tabindex="-1" aria-labelledby="userInfoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="userInfoModalLabel">
+                    <i class="bi bi-person-circle me-2"></i><span id="modal-header-fio">Пользователь</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="text-center mb-4">
+                    <div class="d-flex justify-content-center mb-3" style="padding-top: 1rem;">
+                        <img id="modal-user-photo" 
+                             src="" 
+                             alt="Фото пользователя" 
+                             class="img-fluid"
+                             style="width: 70%; aspect-ratio: 1; object-fit: cover; border: 3px solid var(--vk-blue); border-radius: 8px;">
+                    </div>
+                    <div class="p-3">
+                        <h4 id="modal-user-login" class="mb-0"></h4>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row g-3">
+                    <div class="col-6">
+                        <div class="text-center p-3 bg-light rounded">
+                            <div class="fs-4 fw-bold text-primary" id="modal-active-assignments">0</div>
+                            <small class="text-muted">Активных ТМЦ</small>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-center p-3 bg-light rounded">
+                            <div class="fs-4 fw-bold text-success" id="modal-total-cost">0 ₽</div>
+                            <small class="text-muted">Общая стоимость</small>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="text-center p-3 bg-light rounded">
+                            <div class="fs-4 fw-bold text-info" id="modal-total-assignments">0</div>
+                            <small class="text-muted">Всего выдач</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                {% if is_mol_view %}
+                <a id="modal-equipment-link" href="#" class="btn btn-primary">
+                    <i class="bi bi-box-seam me-1"></i>Просмотр имущества
+                </a>
+                {% endif %}
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.clickable-row:hover {
+    background-color: rgba(0, 123, 255, 0.1) !important;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const rows = document.querySelectorAll('.clickable-row');
+    const modal = new bootstrap.Modal(document.getElementById('userInfoModal'));
+    
+    rows.forEach(row => {
+        row.addEventListener('click', function(e) {
+            // Игнорируем клики на кнопки и ссылки
+            if (e.target.closest('a, button')) {
+                return;
+            }
+            
+            const userId = this.getAttribute('data-user-id');
+            const userLogin = this.getAttribute('data-user-login');
+            const userFio = this.getAttribute('data-user-fio');
+            const userPhoto = this.getAttribute('data-user-photo');
+            const activeAssignments = this.getAttribute('data-active-assignments');
+            const totalAssignments = this.getAttribute('data-total-assignments');
+            const totalCost = parseFloat(this.getAttribute('data-total-cost')) || 0;
+            
+            // Заполняем модальное окно
+            document.getElementById('modal-user-photo').src = userPhoto;
+            document.getElementById('modal-user-login').textContent = userLogin;
+            const displayFio = userFio || userLogin;
+            document.getElementById('modal-header-fio').textContent = displayFio;
+            document.getElementById('modal-active-assignments').textContent = activeAssignments;
+            document.getElementById('modal-total-assignments').textContent = totalAssignments;
+            document.getElementById('modal-total-cost').textContent = totalCost.toLocaleString('ru-RU', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).replace(',', ' ') + ' ₽';
+            
+            {% if is_mol_view %}
+            document.getElementById('modal-equipment-link').href = 
+                "{{ url_for('friend_equipment', friend_user_id=0) }}".replace('0', userId);
+            {% endif %}
+            
+            // Показываем модальное окно
+            modal.show();
+        });
+    });
+});
+</script>
 
 {% endblock %}

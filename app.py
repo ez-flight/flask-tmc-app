@@ -510,6 +510,12 @@ def add_tmc():
             repair_status = False
             lost_status = False
         
+        # Получаем IP адрес, если группа имеет признак сетевого устройства
+        ip_address = ''
+        nome_obj = Nome.query.get(nomeid)
+        if nome_obj and nome_obj.group and nome_obj.group.is_network_device:
+            ip_address = request.form.get('ip', '').strip()
+        
         # === СОЗДАЁМ ОБЪЕКТ СРАЗУ ===
         new_tmc = Equipment(
             buhname=buhname,
@@ -535,7 +541,7 @@ def add_tmc():
             repair=repair_status,
             lost=lost_status,
             active=True,
-            ip='',
+            ip=ip_address,
             mapx='',
             mapy='',
             mapmoved=0,
@@ -680,6 +686,10 @@ def edit_tmc(tmc_id):
 
          # Исправлено: убрано дублирующее присваивание tmc.nomeid
         tmc.nomeid = int(request.form['nomeid'])
+        
+        # Получаем текущее наименование для проверки признака сетевого устройства
+        current_nome = Nome.query.get(tmc.nomeid)
+        
          # Обработка стоимости
         cost_str = request.form.get('cost', '').strip()
         currentcost_str = request.form.get('currentcost', '').strip()
@@ -723,6 +733,13 @@ def edit_tmc(tmc_id):
         else:  # active
             tmc.repair = False
             tmc.lost = False
+
+        # Обновляем IP адрес, если группа имеет признак сетевого устройства
+        if current_nome and current_nome.group and current_nome.group.is_network_device:
+            tmc.ip = request.form.get('ip', '').strip()
+        elif current_nome and current_nome.group and not current_nome.group.is_network_device:
+            # Если группа не сетевая, очищаем IP
+            tmc.ip = ''
 
         if request.form.get('delete_passport'):
             if tmc.passport_filename:
@@ -842,6 +859,18 @@ def get_nomenclatures_by_group_and_vendor(group_id, vendor_id):
     return {
         'nomenclatures': [{'id': n.id, 'name': n.name} for n in noms]
     }
+
+@app.route('/get_group_info/<int:group_id>')
+def get_group_info(group_id):
+    """Возвращает информацию о группе, включая признак сетевого устройства."""
+    group = GroupNome.query.get(group_id)
+    if group:
+        return jsonify({
+            'id': group.id,
+            'name': group.name,
+            'is_network_device': group.is_network_device if hasattr(group, 'is_network_device') else False
+        })
+    return jsonify({'error': 'Group not found'}), 404
 
 
 @app.route('/add_nomenclature', methods=['POST'])
@@ -1115,6 +1144,10 @@ def edit_nome_group(nome_id):
             
             # Обновляем флаг составного ТМЦ
             nome.is_composite = bool(request.form.get('is_composite'))
+            
+            # Обновляем признак сетевого устройства для группы
+            if nome.group:
+                nome.group.is_network_device = bool(request.form.get('is_network_device'))
             
             # Обновляем комментарий группы
             comment = request.form.get('comment', '').strip()
@@ -1464,6 +1497,11 @@ def info_tmc(tmc_id):
         equipment_id=tmc_id
     ).order_by(EquipmentComments.created_at.desc()).all()
 
+    # Проверяем, является ли группа сетевой
+    is_network_device = False
+    if nome and nome.group:
+        is_network_device = getattr(nome.group, 'is_network_device', False)
+
     return render_template('tmc/info_tmc.html',
                            tmc=tmc,
                            components=components,
@@ -1472,7 +1510,8 @@ def info_tmc(tmc_id):
                            active_usage=active_usage,
                            users_role_2=users_role_2,
                            history=history,
-                           comment_history=comment_history)
+                           comment_history=comment_history,
+                           is_network_device=is_network_device)
 
 @app.route('/add_nome', methods=['GET', 'POST'])
 @login_required
@@ -3975,6 +4014,329 @@ def my_departments():
     
     return render_template('departments/my_departments.html',
                           department_stats=department_stats,
+                          is_admin=is_admin)
+
+@app.route('/my_monitoring')
+@login_required
+def my_monitoring():
+    """Мониторинг сетевых устройств по помещениям."""
+    import subprocess
+    import socket
+    import platform
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    is_admin = current_user.mode == 1
+    
+    # Получаем помещения, где есть ТМЦ с IP адресами
+    if is_admin:
+        # Для админа - все помещения с сетевыми устройствами
+        places_with_network_devices = db.session.query(Places).join(
+            Equipment, Places.id == Equipment.placesid
+        ).join(
+            Nome, Equipment.nomeid == Nome.id
+        ).join(
+            GroupNome, Nome.groupid == GroupNome.id
+        ).filter(
+            Equipment.active == True,
+            Equipment.os == True,
+            Equipment.ip != '',
+            Equipment.ip.isnot(None),
+            GroupNome.is_network_device == True,
+            Places.active == True
+        ).distinct().order_by(Places.name).all()
+    else:
+        # Для МОЛ - только помещения, где у него есть сетевые устройства
+        places_with_network_devices = db.session.query(Places).join(
+            Equipment, Places.id == Equipment.placesid
+        ).join(
+            Nome, Equipment.nomeid == Nome.id
+        ).join(
+            GroupNome, Nome.groupid == GroupNome.id
+        ).filter(
+            Equipment.usersid == current_user.id,
+            Equipment.active == True,
+            Equipment.os == True,
+            Equipment.ip != '',
+            Equipment.ip.isnot(None),
+            GroupNome.is_network_device == True,
+            Places.active == True
+        ).distinct().order_by(Places.name).all()
+    
+    # Собираем данные по помещениям и устройствам
+    places_data = []
+    all_ips = []  # Для параллельной проверки ping
+    
+    for place in places_with_network_devices:
+        if is_admin:
+            equipment_list = db.session.query(Equipment).join(
+                Nome, Equipment.nomeid == Nome.id
+            ).join(
+                GroupNome, Nome.groupid == GroupNome.id
+            ).filter(
+                Equipment.placesid == place.id,
+                Equipment.active == True,
+                Equipment.os == True,
+                Equipment.ip != '',
+                Equipment.ip.isnot(None),
+                GroupNome.is_network_device == True
+            ).all()
+        else:
+            equipment_list = db.session.query(Equipment).join(
+                Nome, Equipment.nomeid == Nome.id
+            ).join(
+                GroupNome, Nome.groupid == GroupNome.id
+            ).filter(
+                Equipment.placesid == place.id,
+                Equipment.usersid == current_user.id,
+                Equipment.active == True,
+                Equipment.os == True,
+                Equipment.ip != '',
+                Equipment.ip.isnot(None),
+                GroupNome.is_network_device == True
+            ).all()
+        
+        devices = []
+        for eq in equipment_list:
+            ip = eq.ip.strip()
+            if ip:
+                devices.append({
+                    'id': eq.id,
+                    'name': eq.buhname,
+                    'ip': ip,
+                    'nome': eq.nome.name if eq.nome else 'Неизвестно',
+                    'status': None  # Будет заполнено после ping
+                })
+                all_ips.append((place.id, eq.id, ip))
+        
+        if devices:
+            places_data.append({
+                'place': place,
+                'devices': devices,
+                'total_devices': len(devices),
+                'online_count': 0,
+                'offline_count': 0
+            })
+    
+    # Функция для проверки ping
+    def check_ping(ip):
+        """Проверяет доступность IP адреса через ping."""
+        try:
+            # Используем ping с таймаутом 1 секунда и 1 попыткой
+            # Для Linux: ping -c 1 -W 1
+            # Для Windows: ping -n 1 -w 1000
+            if platform.system().lower() == 'windows':
+                result = subprocess.run(
+                    ['ping', '-n', '1', '-w', '1000', ip],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=2
+                )
+            else:
+                result = subprocess.run(
+                    ['ping', '-c', '1', '-W', '1', ip],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=2
+                )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            # Если ping недоступен, пробуем через socket (проверка порта)
+            try:
+                # Пробуем подключиться к порту 80 или 443
+                for port in [80, 443, 22]:
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(1)
+                        result = sock.connect_ex((ip, port))
+                        sock.close()
+                        if result == 0:
+                            return True
+                    except:
+                        continue
+                return False
+            except (socket.timeout, socket.error, OSError, Exception):
+                return False
+    
+    # Параллельная проверка всех IP адресов
+    ip_status = {}
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        future_to_ip = {executor.submit(check_ping, ip): (place_id, eq_id, ip) 
+                        for place_id, eq_id, ip in all_ips}
+        
+        for future in as_completed(future_to_ip):
+            place_id, eq_id, ip = future_to_ip[future]
+            try:
+                is_online = future.result()
+                ip_status[(place_id, eq_id)] = is_online
+            except Exception as e:
+                ip_status[(place_id, eq_id)] = False
+    
+    # Обновляем статусы устройств и подсчитываем статистику
+    for place_info in places_data:
+        online = 0
+        offline = 0
+        for device in place_info['devices']:
+            status = ip_status.get((place_info['place'].id, device['id']), False)
+            device['status'] = status
+            if status:
+                online += 1
+            else:
+                offline += 1
+        place_info['online_count'] = online
+        place_info['offline_count'] = offline
+    
+    return render_template('monitoring/my_monitoring.html',
+                          places_data=places_data,
+                          is_admin=is_admin)
+
+@app.route('/monitoring_place_devices/<int:place_id>')
+@login_required
+def monitoring_place_devices(place_id):
+    """Отображение устройств конкретного помещения в табличном виде."""
+    import subprocess
+    import socket
+    import platform
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    is_admin = current_user.mode == 1
+    
+    # Получаем помещение
+    place = Places.query.get_or_404(place_id)
+    
+    # Проверка доступа
+    if not is_admin:
+        # Для МОЛ проверяем, есть ли у него устройства в этом помещении
+        user_equipment = Equipment.query.join(
+            Nome, Equipment.nomeid == Nome.id
+        ).join(
+            GroupNome, Nome.groupid == GroupNome.id
+        ).filter(
+            Equipment.placesid == place_id,
+            Equipment.usersid == current_user.id,
+            Equipment.active == True,
+            Equipment.os == True,
+            Equipment.ip != '',
+            Equipment.ip.isnot(None),
+            GroupNome.is_network_device == True
+        ).first()
+        
+        if not user_equipment:
+            flash('Доступ запрещён', 'danger')
+            return redirect(url_for('my_monitoring'))
+    
+    # Получаем список устройств с IP адресами
+    if is_admin:
+        equipment_list = db.session.query(Equipment).join(
+            Nome, Equipment.nomeid == Nome.id
+        ).join(
+            GroupNome, Nome.groupid == GroupNome.id
+        ).filter(
+            Equipment.placesid == place_id,
+            Equipment.active == True,
+            Equipment.os == True,
+            Equipment.ip != '',
+            Equipment.ip.isnot(None),
+            GroupNome.is_network_device == True
+        ).order_by(Equipment.buhname).all()
+    else:
+        equipment_list = db.session.query(Equipment).join(
+            Nome, Equipment.nomeid == Nome.id
+        ).join(
+            GroupNome, Nome.groupid == GroupNome.id
+        ).filter(
+            Equipment.placesid == place_id,
+            Equipment.usersid == current_user.id,
+            Equipment.active == True,
+            Equipment.os == True,
+            Equipment.ip != '',
+            Equipment.ip.isnot(None),
+            GroupNome.is_network_device == True
+        ).order_by(Equipment.buhname).all()
+    
+    # Подготавливаем данные для таблицы
+    devices_data = []
+    all_ips = []
+    
+    for eq in equipment_list:
+        ip = eq.ip.strip()
+        if ip:
+            devices_data.append({
+                'id': eq.id,
+                'name': eq.buhname,
+                'ip': ip,
+                'nome': eq.nome.name if eq.nome else 'Неизвестно',
+                'sernum': eq.sernum or '—',
+                'invnum': eq.invnum or '—',
+                'status': None  # Будет заполнено после ping
+            })
+            all_ips.append((eq.id, ip))
+    
+    # Функция для проверки ping
+    def check_ping(ip):
+        """Проверяет доступность IP адреса через ping."""
+        try:
+            if platform.system().lower() == 'windows':
+                result = subprocess.run(
+                    ['ping', '-n', '1', '-w', '1000', ip],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=2
+                )
+            else:
+                result = subprocess.run(
+                    ['ping', '-c', '1', '-W', '1', ip],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=2
+                )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            # Если ping недоступен, пробуем через socket
+            try:
+                for port in [80, 443, 22]:
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(1)
+                        result = sock.connect_ex((ip, port))
+                        sock.close()
+                        if result == 0:
+                            return True
+                    except:
+                        continue
+                return False
+            except (socket.timeout, socket.error, OSError, Exception):
+                return False
+    
+    # Параллельная проверка всех IP адресов
+    ip_status = {}
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        future_to_ip = {executor.submit(check_ping, ip): (eq_id, ip) 
+                        for eq_id, ip in all_ips}
+        
+        for future in as_completed(future_to_ip):
+            eq_id, ip = future_to_ip[future]
+            try:
+                is_online = future.result()
+                ip_status[eq_id] = is_online
+            except Exception as e:
+                ip_status[eq_id] = False
+    
+    # Обновляем статусы устройств
+    online_count = 0
+    offline_count = 0
+    for device in devices_data:
+        status = ip_status.get(device['id'], False)
+        device['status'] = status
+        if status:
+            online_count += 1
+        else:
+            offline_count += 1
+    
+    return render_template('monitoring/place_devices.html',
+                          place=place,
+                          devices_data=devices_data,
+                          online_count=online_count,
+                          offline_count=offline_count,
                           is_admin=is_admin)
 
 @app.route('/my_places')

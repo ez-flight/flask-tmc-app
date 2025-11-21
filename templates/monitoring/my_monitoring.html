@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Мой мониторинг{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Мой мониторинг</h1>
+        <p class="text-muted mb-0">
+            <i class="bi bi-router me-1"></i>
+            Мониторинг сетевых устройств по помещениям
+        </p>
+    </div>
+    <div class="user-info">
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>На главную
+        </a>
+    </div>
+</div>
+
+{% if places_data %}
+<div class="row g-3">
+    {% for place_info in places_data %}
+    <div class="col-md-3 col-lg-2">
+        <a href="{{ url_for('monitoring_place_devices', place_id=place_info.place.id) }}" 
+           class="text-decoration-none monitoring-card-link">
+            <div class="card h-100 shadow-sm monitoring-card">
+                <div class="card-body text-center d-flex flex-column justify-content-center">
+                    <div class="mb-3">
+                        <i class="bi bi-building-fill" style="font-size: 3rem; color: var(--vk-blue);"></i>
+                    </div>
+                    <h6 class="card-title mb-3 fw-bold">{{ place_info.place.name }}</h6>
+                    
+                    <div class="monitoring-stats">
+                        <div class="mb-2">
+                            <div class="fs-4 fw-bold text-primary">{{ place_info.total_devices }}</div>
+                            <small class="text-muted">устройств</small>
+                        </div>
+                        
+                        <div class="d-flex justify-content-around mt-3">
+                            <div>
+                                <div class="text-success fw-bold">{{ place_info.online_count }}</div>
+                                <small class="text-success">
+                                    <i class="bi bi-check-circle"></i>
+                                </small>
+                            </div>
+                            <div>
+                                <div class="text-danger fw-bold">{{ place_info.offline_count }}</div>
+                                <small class="text-danger">
+                                    <i class="bi bi-x-circle"></i>
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="progress mt-3" style="height: 6px;">
+                            {% set online_percent = (place_info.online_count / place_info.total_devices * 100) if place_info.total_devices > 0 else 0 %}
+                            <div class="progress-bar bg-success" role="progressbar" 
+                                 style="width: {{ online_percent }}%"
+                                 aria-valuenow="{{ place_info.online_count }}" 
+                                 aria-valuemin="0" 
+                                 aria-valuemax="{{ place_info.total_devices }}">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>
+    У вас нет помещений с сетевыми устройствами (ТМЦ с IP адресами).
+</div>
+{% endif %}
+
+<style>
+.monitoring-card-link {
+    display: block;
+    color: inherit;
+}
+
+.monitoring-card-link:hover {
+    text-decoration: none;
+    color: inherit;
+}
+
+.monitoring-card {
+    transition: all 0.3s ease;
+    border: 2px solid #e0e0e0;
+    cursor: pointer;
+    min-height: 250px;
+}
+
+.monitoring-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.15) !important;
+    border-color: var(--vk-blue);
+}
+
+.monitoring-card .card-body {
+    padding: 1.5rem;
+}
+
+.monitoring-stats {
+    margin-top: auto;
+}
+</style>
+{% endblock %}
+

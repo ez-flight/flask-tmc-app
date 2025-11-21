@@ -44,8 +44,9 @@
     <div class="mb-3">
         <label for="photo" class="form-label">Фотография (необязательно)</label>
         <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
-        {% if tmc.photo %}
+        {% if tmc.photo and tmc.photo.strip() %}
             <div class="mt-2">
+                <small class="text-muted d-block mb-2">Текущее фото компонента:</small>
                 <img src="{{ url_for('static', filename='uploads/' + tmc.photo) }}"
                      alt="Текущее фото"
                      style="max-width: 100px; max-height: 100px; object-fit: contain; border: 1px solid #dee2e6; border-radius: 4px;">
@@ -55,6 +56,14 @@
                         Удалить фото
                     </label>
                 </div>
+            </div>
+        {% elif tmc.nome and tmc.nome.photo and tmc.nome.photo.strip() %}
+            <div class="mt-2">
+                <small class="text-muted d-block mb-2">Текущее фото группы:</small>
+                <img src="{{ url_for('static', filename='uploads/' + tmc.nome.photo) }}"
+                     alt="Фото группы"
+                     style="max-width: 100px; max-height: 100px; object-fit: contain; border: 1px solid #dee2e6; border-radius: 4px;">
+                <small class="form-text d-block mt-1">У компонента нет своего фото, отображается фото группы</small>
             </div>
         {% endif %}
     </div>

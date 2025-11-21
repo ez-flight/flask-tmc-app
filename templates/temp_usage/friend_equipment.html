@@ -71,9 +71,14 @@
                     {% for usage in active_usages %}
                     <tr class="clickable-row" onclick="window.location='{{ url_for('info_tmc', tmc_id=usage.equipment_id) }}'" style="cursor: pointer;">
                         <td>
-                            {% if usage.equipment and usage.equipment.photo %}
+                            {% if usage.equipment and usage.equipment.photo and usage.equipment.photo.strip() %}
                                 <img src="{{ url_for('static', filename='uploads/' + usage.equipment.photo) }}" 
                                      alt="Фото" 
+                                     class="img-fluid rounded" 
+                                     style="max-height: 60px; max-width: 60px; object-fit: cover;">
+                            {% elif usage.equipment and usage.equipment.nome and usage.equipment.nome.photo and usage.equipment.nome.photo.strip() %}
+                                <img src="{{ url_for('static', filename='uploads/' + usage.equipment.nome.photo) }}" 
+                                     alt="Фото группы" 
                                      class="img-fluid rounded" 
                                      style="max-height: 60px; max-width: 60px; object-fit: cover;">
                             {% else %}

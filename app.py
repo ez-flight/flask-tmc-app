@@ -4061,18 +4061,24 @@ def add_place():
     
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
+        comment = request.form.get('comment', '').strip()
         
         if not name:
             flash('Название помещения обязательно для заполнения', 'danger')
             return redirect(url_for('add_place'))
         
         try:
+            # Всегда передаем comment и opgroup явно, даже если пустые значения
+            comment_value = comment.strip() if comment else ''
             new_place = Places(
                 name=name,
                 orgid=current_user.orgid,
-                active=True
+                active=True,
+                comment=comment_value,
+                opgroup=0
             )
             db.session.add(new_place)
+            db.session.flush()  # Принудительно выполняем INSERT для проверки
             db.session.commit()
             flash(f'Помещение "{name}" успешно создано', 'success')
             return redirect(url_for('my_places'))
@@ -4099,6 +4105,7 @@ def edit_place(place_id):
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
         active = request.form.get('active') == 'on'
+        comment = request.form.get('comment', '').strip()
         
         if not name:
             flash('Название помещения обязательно для заполнения', 'danger')
@@ -4107,6 +4114,7 @@ def edit_place(place_id):
         try:
             place.name = name
             place.active = active
+            place.comment = comment if comment else ''
             db.session.commit()
             flash(f'Помещение "{name}" успешно обновлено', 'success')
             return redirect(url_for('my_places'))

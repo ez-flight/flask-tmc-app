@@ -365,14 +365,23 @@
                         <small class="form-text text-muted">
                             Поддерживаются форматы: JPG, PNG, GIF, BMP, WEBP
                         </small>
-                        {% if tmc.photo %}
+                        {% if tmc.photo and tmc.photo.strip() %}
                             <div class="mt-2">
-                                <small class="text-muted d-block mb-2">Текущее фото:</small>
+                                <small class="text-muted d-block mb-2">Текущее фото ТМЦ:</small>
                                 <img src="{{ url_for('static', filename='uploads/' + tmc.photo) }}" 
                                      alt="Текущее фото" 
                                      class="img-thumbnail rounded"
                                      style="max-width: 150px; max-height: 150px; object-fit: cover;">
                                 <small class="form-text d-block mt-1">Загрузите новое изображение, чтобы заменить</small>
+                            </div>
+                        {% elif tmc.nome and tmc.nome.photo and tmc.nome.photo.strip() %}
+                            <div class="mt-2">
+                                <small class="text-muted d-block mb-2">Текущее фото группы:</small>
+                                <img src="{{ url_for('static', filename='uploads/' + tmc.nome.photo) }}" 
+                                     alt="Фото группы" 
+                                     class="img-thumbnail rounded"
+                                     style="max-width: 150px; max-height: 150px; object-fit: cover;">
+                                <small class="form-text d-block mt-1">У ТМЦ нет своего фото, отображается фото группы</small>
                             </div>
                         {% endif %}
                     </div>
@@ -387,178 +396,6 @@
                 <button type="submit" class="btn btn-primary">
                     <i class="bi bi-check-circle me-1"></i>Сохранить изменения
                 </button>
-            </div>
-        </form>
-    </div>
-</div>
-    <div class="mb-3">
-        <label for="sernum" class="form-label">Серийный номер</label>
-        <input type="text" class="form-control" id="sernum" name="sernum" value="{{ tmc.sernum }}">
-    </div>
-    <div class="mb-3">
-        <label for="invnum" class="form-label">Инвентарный номер</label>
-        <input type="text" class="form-control" id="invnum" name="invnum" value="{{ tmc.invnum }}">
-    </div>
-    <!-- Дата начала эксплуатации -->
-    <div class="mb-3">
-        <label for="date_start" class="form-label">Дата начала эксплуатации *</label>
-        <input type="date" class="form-control" id="date_start" name="date_start"
-               value="{{ tmc.datepost.strftime('%Y-%m-%d') if tmc.datepost else '' }}" required>
-        <div class="form-text">Укажите дату постановки ТМЦ на учёт. На её основе будут рассчитаны гарантия (+1 год) и срок службы (+5 лет).</div>
-    </div>
-    <!-- Финансы -->
-    <div class="row mb-3">
-    <div class="col-md-6">
-        <label for="cost" class="form-label">Первоначальная стоимость (руб.)</label>
-        <input type="number" step="0.01" class="form-control" id="cost" name="cost"
-            value="{{ '%.2f'|format(tmc.cost) if tmc.cost is not none else '0.00' }}">
-    </div>
-    <div class="col-md-6">
-        <label for="currentcost" class="form-label">Текущая стоимость (руб.)</label>
-        <input type="number" step="0.01" class="form-control" id="currentcost" name="currentcost"
-            value="{{ '%.2f'|format(tmc.currentcost) if tmc.currentcost is not none else '0.00' }}">
-    </div>
-    </div>
-    <div class="mb-3">
-        <label for="comment" class="form-label">Комментарий</label>
-        <textarea class="form-control" id="comment" name="comment" rows="3">{{ tmc.comment }}</textarea>
-    </div>
-    <div class="mb-3">
-        <label for="status" class="form-label">Статус ТМЦ *</label>
-        <select class="form-select" id="status" name="status" required>
-            <option value="active" {% if not tmc.repair and not tmc.lost %}selected{% endif %}>В эксплуатации</option>
-            <option value="repair" {% if tmc.repair and not tmc.lost %}selected{% endif %}>В ремонте</option>
-            <option value="lost" {% if tmc.lost %}selected{% endif %}>Потерян</option>
-        </select>
-        <div class="form-text">Выберите текущий статус ТМЦ</div>
-    </div>
-    <div class="mb-3">
-        <label for="department_id" class="form-label">Отдел *</label>
-        <select class="form-select" id="department_id" name="department_id" required>
-            <option value="">-- Выберите отдел --</option>
-            {% for dept in departments %}
-                <option value="{{ dept.id }}" {% if tmc and tmc.department_id == dept.id %}selected{% endif %}>
-                    {{ dept.name }} ({{ dept.code }})
-                </option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="mb-3">
-        <label for="passport" class="form-label">Паспорт ТМЦ (PDF)</label>
-        <input type="file" class="form-control" id="passport" name="passport" accept=".pdf">
-        {% if tmc.passport_filename %}
-            <div class="mt-2">
-                Текущий паспорт: 
-                <a href="{{ url_for('static', filename='passports/' + tmc.passport_filename) }}" target="_blank">📄 Открыть</a>
-                <div class="form-check mt-2">
-                    <input class="form-check-input" type="checkbox" id="delete_passport" name="delete_passport" value="1">
-                    <label class="form-check-label" for="delete_passport">
-                        Удалить паспорт
-                    </label>
-                </div>
-            </div>
-        {% endif %}
-    </div>
-    <div class="mb-3">
-        <label for="photo" class="form-label">Фотография (необязательно)</label>
-        <input type="file" class="form-control" id="photo" name="photo" accept="image/*">
-        <div class="form-text">Поддерживаются форматы: JPG, PNG, GIF, BMP, WEBP.</div>
-        {% if tmc.photo %}
-            <div class="mt-2">
-                <img src="{{ url_for('static', filename='uploads/' + tmc.photo) }}" 
-                     alt="Текущее фото" 
-                     style="max-width: 100px; max-height: 100px; object-fit: contain; border: 1px solid #dee2e6; border-radius: 4px;">
-                <div class="form-text">Текущее изображение. Загрузите новое, чтобы заменить.</div>
-            </div>
-        {% endif %}
-    </div>
-    
-    <!-- Организация -->
-    <div class="mb-3">
-        <label for="orgid" class="form-label">Организация *</label>
-        <select class="form-select" id="orgid" name="orgid" required>
-            <option value="">-- Выберите организацию --</option>
-            {% for org in organizations %}
-                {% if org.active %}
-                    <option value="{{ org.id }}" {% if org.id == tmc.orgid %}selected{% endif %}>{{ org.name }}</option>
-                {% endif %}
-            {% endfor %}
-        </select>
-    </div>
-
-    <!-- Место нахождения -->
-    <div class="mb-3">
-        <label for="placesid" class="form-label">Место нахождения *</label>
-        <select class="form-select" id="placesid" name="placesid" required>
-            <option value="">-- Выберите место --</option>
-            {% for place in places %}
-                {% if place.active %}
-                    <option value="{{ place.id }}" {% if place.id == tmc.placesid %}selected{% endif %}>{{ place.name }}</option>
-                {% endif %}
-            {% endfor %}
-        </select>
-    </div>
-
-    <!-- Ответственный пользователь -->
-    <div class="mb-3">
-        <label for="usersid" class="form-label">Ответственный пользователь *</label>
-        <select class="form-select" id="usersid" name="usersid" required>
-            <option value="">-- Выберите пользователя --</option>
-            {% for user in users %}
-                {% if user.active %}
-                    <option value="{{ user.id }}" {% if user.id == tmc.usersid %}selected{% endif %}>{{ user.login }}</option>
-                {% endif %}
-            {% endfor %}
-        </select>
-    </div>
-
-    <!-- Группа ТМЦ -->
-    <div class="mb-3">
-        <label for="groupid" class="form-label">Группа ТМЦ *</label>
-        <select class="form-select" id="groupid" name="groupid" required onchange="loadVendors()">
-            <option value="">-- Выберите группу --</option>
-            {% for group in groups %}
-                {% if group.active %}
-                    <option value="{{ group.id }}" {% if current_group and group.id == current_group.id %}selected{% endif %}>{{ group.name }}</option>
-                {% endif %}
-            {% endfor %}
-        </select>
-    </div>
-
-    <!-- Производитель -->
-    <div class="mb-3">
-        <label for="vendorid" class="form-label">Производитель *</label>
-        <select class="form-select" id="vendorid" name="vendorid" required onchange="loadNomenclatures()">
-            <option value="">-- Сначала выберите группу --</option>
-            {% for vendor in vendors %}
-                <option value="{{ vendor.id }}" {% if current_vendor and vendor.id == current_vendor.id %}selected{% endif %}>{{ vendor.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
-
-    <!-- Наименование (Номенклатура) -->
-    <div class="mb-3">
-        <label for="nomeid" class="form-label">Наименование (Номенклатура) *</label>
-        <div class="input-group">
-            <select class="form-select" id="nomeid" name="nomeid" required>
-                <option value="">-- Сначала выберите производителя --</option>
-                {% for nome in nomenclatures %}
-                    <option value="{{ nome.id }}" {% if current_nome and nome.id == current_nome.id %}selected{% endif %}>{{ nome.name }}</option>
-                {% endfor %}
-            </select>
-            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#addNomeModal">
-                +
-            </button>
-        </div>
-    </div>
-
-            <div class="d-flex gap-2 mt-4">
-                <button type="submit" class="btn btn-success">
-                    <i class="bi bi-check-circle me-1"></i>Сохранить изменения
-                </button>
-                <a href="{{ url_for('index') }}" class="btn btn-secondary">
-                    <i class="bi bi-x-circle me-1"></i>Отмена
-                </a>
             </div>
         </form>
     </div>

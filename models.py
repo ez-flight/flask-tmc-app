@@ -100,6 +100,8 @@ class Places(db.Model):
     orgid = db.Column(db.Integer, nullable=False)                     # ID связанной организации
     name = db.Column(db.String(150), nullable=False)                  # Название места
     active = db.Column(db.Boolean, nullable=False)                    # Активно ли место
+    comment = db.Column(db.Text, nullable=False, default='')           # Комментарий к помещению
+    opgroup = db.Column(db.Integer, nullable=False, default=0)         # Группа операций
 
 class Knt(db.Model):
     """

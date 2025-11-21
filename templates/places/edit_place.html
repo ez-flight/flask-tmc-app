@@ -30,6 +30,17 @@
             </div>
             
             <div class="mb-3">
+                <label for="comment" class="form-label">
+                    Комментарий
+                </label>
+                <textarea class="form-control" 
+                          id="comment" 
+                          name="comment" 
+                          rows="3"
+                          placeholder="Дополнительная информация о помещении (необязательно)">{{ place.comment if place.comment else '' }}</textarea>
+            </div>
+            
+            <div class="mb-3">
                 <div class="form-check">
                     <input class="form-check-input" 
                            type="checkbox" 

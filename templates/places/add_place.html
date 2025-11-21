@@ -28,6 +28,17 @@
                        placeholder="Например: Кабинет 101">
             </div>
             
+            <div class="mb-3">
+                <label for="comment" class="form-label">
+                    Комментарий
+                </label>
+                <textarea class="form-control" 
+                          id="comment" 
+                          name="comment" 
+                          rows="3"
+                          placeholder="Дополнительная информация о помещении (необязательно)"></textarea>
+            </div>
+            
             <div class="d-flex justify-content-between">
                 <a href="{{ url_for('my_places') }}" class="btn btn-secondary">
                     <i class="bi bi-x-circle me-1"></i>Отмена

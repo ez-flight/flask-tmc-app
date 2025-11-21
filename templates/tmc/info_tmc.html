@@ -28,7 +28,14 @@
     </div>
 </div>
 
-{% if tmc.photo %}
+{% set photo_to_show = None %}
+{% if tmc.photo and tmc.photo.strip() %}
+    {% set photo_to_show = tmc.photo %}
+{% elif tmc.nome and tmc.nome.photo and tmc.nome.photo.strip() %}
+    {% set photo_to_show = tmc.nome.photo %}
+{% endif %}
+
+{% if photo_to_show %}
 <div class="card shadow-sm mt-3">
     <div class="card-header">
         <h5 class="mb-0 d-flex align-items-center">
@@ -39,7 +46,7 @@
     <div class="card-body">
         <!-- Ссылка для открытия модального окна -->
         <a href="#" data-bs-toggle="modal" data-bs-target="#photoModal">
-            <img src="{{ url_for('static', filename='uploads/' + tmc.photo) }}" 
+            <img src="{{ url_for('static', filename='uploads/' + photo_to_show) }}" 
                  alt="Фото ТМЦ" 
                  class="img-thumbnail" 
                  style="max-width: 300px; max-height: 300px;">
@@ -113,7 +120,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
             </div>
             <div class="modal-body">
-                <img src="{{ url_for('static', filename='uploads/' + tmc.photo) }}" 
+                <img src="{{ url_for('static', filename='uploads/' + photo_to_show) }}" 
                      class="img-fluid" 
                      alt="Фото ТМЦ">
             </div>

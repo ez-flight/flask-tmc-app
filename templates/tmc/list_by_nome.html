@@ -62,9 +62,14 @@
             {% for tmc in tmc_list %}
             <tr class="clickable-row" onclick="window.location='{{ url_for('info_tmc', tmc_id=tmc.id) }}'" style="cursor: pointer;">
                 <td>
-                    {% if tmc.photo %}
+                    {% if tmc.photo and tmc.photo.strip() %}
                         <img src="{{ url_for('static', filename='uploads/' + tmc.photo) }}" 
                              alt="Фото" 
+                             class="img-fluid rounded" 
+                             style="max-height: 60px; max-width: 60px; object-fit: cover;">
+                    {% elif tmc.nome and tmc.nome.photo and tmc.nome.photo.strip() %}
+                        <img src="{{ url_for('static', filename='uploads/' + tmc.nome.photo) }}" 
+                             alt="Фото группы" 
                              class="img-fluid rounded" 
                              style="max-height: 60px; max-width: 60px; object-fit: cover;">
                     {% else %}

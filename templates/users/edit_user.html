@@ -63,8 +63,8 @@
                                name="fio" 
                                value="{{ user_profile.fio if user_profile else '' }}"
                                placeholder="Фамилия Имя Отчество">
-                    </div>
-                    
+    </div>
+
                     <div class="col-md-6">
                         <label for="position" class="form-label">
                             <i class="bi bi-briefcase me-1"></i>Должность
@@ -76,21 +76,21 @@
                                value="{{ current_position if current_position else '' }}" 
                                placeholder="Например: Инженер-программист">
                         <small class="form-text text-muted">Должность пользователя в организации</small>
-                    </div>
-                    
+    </div>
+    
                     <div class="col-md-6">
                         <label for="orgid" class="form-label">
                             <i class="bi bi-building me-1"></i>Организация
                         </label>
-                        {% if orgs %}
-                        <select class="form-select" id="orgid" name="orgid">
-                            {% for org in orgs %}
+        {% if orgs %}
+        <select class="form-select" id="orgid" name="orgid">
+            {% for org in orgs %}
                             <option value="{{ org.id }}" {% if user.orgid == org.id %}selected{% endif %}>
                                 {{ org.name }} (ID: {{ org.id }})
                             </option>
-                            {% endfor %}
-                        </select>
-                        {% else %}
+            {% endfor %}
+        </select>
+        {% else %}
                         <input type="number" 
                                class="form-control" 
                                id="orgid" 
@@ -98,8 +98,8 @@
                                value="{{ user.orgid }}" 
                                min="1" 
                                required>
-                        {% endif %}
-                    </div>
+        {% endif %}
+    </div>
                 </div>
             </div>
             
@@ -144,30 +144,30 @@
                                     <small class="text-muted">Полный доступ к системе</small>
                                 </label>
                             </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="mb-3">
+  </div>
+  </div>
+</div>
+
+<div class="mb-3">
                     <label for="role" class="form-label">
                         <i class="bi bi-person-gear me-1"></i>Роль в системе
                     </label>
-                    <select class="form-select" id="role" name="role">
-                        <option value="0" {% if current_role == 0 %}selected{% endif %}>0 - Обычный пользователь</option>
-                        <option value="1" {% if current_role == 1 %}selected{% endif %}>1 - МОЛ (материально-ответственное лицо)</option>
-                        <option value="2" {% if current_role == 2 %}selected{% endif %}>2 - Пользователь (получил ТМЦ во временное пользование)</option>
-                        <option value="3" {% if current_role == 3 %}selected{% endif %}>3 - Инженер</option>
-                        <option value="4" {% if current_role == 4 %}selected{% endif %}>4 - Менеджер по закупкам</option>
-                        <option value="5" {% if current_role == 5 %}selected{% endif %}>5 - Руководитель отдела</option>
-                        <option value="6" {% if current_role == 6 %}selected{% endif %}>6 - Сотрудник склада</option>
-                        <option value="7" {% if current_role == 7 %}selected{% endif %}>7 - IT-специалист</option>
-                        <option value="8" {% if current_role == 8 %}selected{% endif %}>8 - Аудитор</option>
-                        <option value="9" {% if current_role == 9 %}selected{% endif %}>9 - Заместитель директора</option>
-                        <option value="10" {% if current_role == 10 %}selected{% endif %}>10 - Директор</option>
-                    </select>
+  <select class="form-select" id="role" name="role">
+    <option value="0" {% if current_role == 0 %}selected{% endif %}>0 - Обычный пользователь</option>
+    <option value="1" {% if current_role == 1 %}selected{% endif %}>1 - МОЛ (материально-ответственное лицо)</option>
+    <option value="2" {% if current_role == 2 %}selected{% endif %}>2 - Пользователь (получил ТМЦ во временное пользование)</option>
+    <option value="3" {% if current_role == 3 %}selected{% endif %}>3 - Инженер</option>
+    <option value="4" {% if current_role == 4 %}selected{% endif %}>4 - Менеджер по закупкам</option>
+    <option value="5" {% if current_role == 5 %}selected{% endif %}>5 - Руководитель отдела</option>
+    <option value="6" {% if current_role == 6 %}selected{% endif %}>6 - Сотрудник склада</option>
+    <option value="7" {% if current_role == 7 %}selected{% endif %}>7 - IT-специалист</option>
+    <option value="8" {% if current_role == 8 %}selected{% endif %}>8 - Аудитор</option>
+    <option value="9" {% if current_role == 9 %}selected{% endif %}>9 - Заместитель директора</option>
+    <option value="10" {% if current_role == 10 %}selected{% endif %}>10 - Директор</option>
+  </select>
                     <small class="form-text text-muted">Определяет права и возможности пользователя в системе</small>
                 </div>
-            </div>
+</div>
             
             <hr class="my-4">
             
@@ -177,8 +177,8 @@
                     <i class="bi bi-key me-2 text-primary"></i>
                     Безопасность
                 </h5>
-                
-                <div class="mb-3">
+
+    <div class="mb-3">
                     <label for="password" class="form-label">
                         <i class="bi bi-lock me-1"></i>Новый пароль
                     </label>
@@ -192,8 +192,8 @@
                         Оставьте поле пустым, если не хотите менять пароль
                     </small>
                 </div>
-            </div>
-            
+    </div>
+
             <hr class="my-4">
             
             <!-- Секция: Фото профиля -->
@@ -202,29 +202,29 @@
                     <i class="bi bi-image me-2 text-primary"></i>
                     Фото профиля
                 </h5>
-                
-                {% if user_profile and user_profile.jpegphoto %}
-                <div class="mb-3">
+
+    {% if user_profile and user_profile.jpegphoto %}
+    <div class="mb-3">
                     <label class="form-label">Текущее фото</label>
                     <div class="d-flex align-items-center gap-3">
-                        {% if user_profile.jpegphoto != 'noimage.jpg' %}
+        {% if user_profile.jpegphoto != 'noimage.jpg' %}
                             <img src="{{ url_for('static', filename='uploads/' + user_profile.jpegphoto) }}" 
                                  alt="Текущее фото {{ user.login }}" 
                                  class="img-thumbnail rounded"
                                  style="width: 120px; height: 120px; object-fit: cover;">
-                        {% else %}
+        {% else %}
                             <img src="{{ url_for('static', filename='uploads/noimage.jpg') }}" 
                                  alt="Нет фото" 
                                  class="img-thumbnail rounded"
                                  style="width: 120px; height: 120px; object-fit: cover;">
-                        {% endif %}
+        {% endif %}
                         <div class="flex-grow-1">
                             <small class="text-muted d-block">Текущее изображение профиля</small>
                             <small class="text-muted">Загрузите новое изображение, чтобы заменить</small>
                         </div>
                     </div>
-                </div>
-                {% endif %}
+    </div>
+    {% endif %}
                 
                 <div class="mb-3">
                     <label for="photo" class="form-label">

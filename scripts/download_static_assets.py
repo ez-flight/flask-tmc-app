@@ -187,9 +187,9 @@ if bootstrap_icons_css_path.exists():
     )
     
     if css_content != original_content:
-        with open(bootstrap_icons_css_path, 'w', encoding='utf-8') as f:
-            f.write(css_content)
-        print("✓ Пути к шрифтам исправлены")
+    with open(bootstrap_icons_css_path, 'w', encoding='utf-8') as f:
+        f.write(css_content)
+    print("✓ Пути к шрифтам исправлены")
     else:
         print("ℹ Пути к шрифтам уже корректны или не требуют исправления")
 

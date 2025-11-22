@@ -1,0 +1,33 @@
+Windows HDD Collector - Отдельный проект
+
+Структура проекта:
+- hdd_collector.py          - Основной скрипт
+- requirements.txt          - Зависимости Python
+- install.bat              - Скрипт установки (автоопределение локальных пакетов)
+- install_local.bat        - Скрипт установки ТОЛЬКО из локальных файлов
+- download_packages.py     - Скрипт для скачивания пакетов
+- README.md                - Полная документация
+- QUICKSTART.md            - Быстрый старт
+- config.example.json      - Пример конфигурации
+- setup.py                 - Установочный скрипт для pip
+- .gitignore               - Игнорируемые файлы для Git
+- packages/                - Папка для локальных пакетов (.whl, .tar.gz)
+
+Установка с интернетом:
+1. Запустите: install.bat
+   Или: pip install -r requirements.txt
+
+Установка БЕЗ интернета (из локальных файлов):
+1. На ПК с интернетом скачайте пакеты:
+   python download_packages.py
+   
+2. Скопируйте папку packages/ на целевой ПК
+
+3. Запустите: install_local.bat
+   Или: install.bat (автоматически обнаружит локальные пакеты)
+
+Использование:
+python hdd_collector.py --host <IP_СЕРВЕРА> --port 5000
+python hdd_collector.py --config config.json
+
+API Endpoint на сервере: POST /api/hdd_collect

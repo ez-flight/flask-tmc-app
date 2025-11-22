@@ -1,0 +1,424 @@
+{% extends "base.html" %}
+{% block title %}Схема размещения: {{ place.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Схема размещения ТМЦ</h1>
+        <p class="text-muted mb-0">
+            <i class="bi bi-geo-alt me-1"></i>{{ place.name }}
+        </p>
+    </div>
+    <div class="user-info">
+        <a href="{{ url_for('place_equipment', place_id=place.id) }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Назад к списку
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Левая панель: Список ТМЦ -->
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>ТМЦ в помещении</h5>
+            </div>
+            <div class="card-body" style="max-height: 70vh; overflow-y: auto;">
+                {% if equipment_data %}
+                <div class="list-group" id="equipment-list">
+                    {% for eq in equipment_data %}
+                    <div class="list-group-item equipment-item {% if eq.x is not none and eq.y is not none %}positioned{% endif %}" 
+                         data-equipment-id="{{ eq.id }}"
+                         data-x="{{ eq.x if eq.x is not none else '' }}"
+                         data-y="{{ eq.y if eq.y is not none else '' }}"
+                         style="cursor: {% if can_edit %}pointer{% else %}default{% endif %};">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">{{ eq.name }}</h6>
+                                <small class="text-muted">
+                                    {% if eq.invnum %}<div>Инв. №: {{ eq.invnum }}</div>{% endif %}
+                                    {% if eq.rack %}<div>Стеллаж: {{ eq.rack }}</div>{% endif %}
+                                    {% if eq.cell %}<div>Ячейка: {{ eq.cell }}</div>{% endif %}
+                                    {% if eq.x is none or eq.y is none %}
+                                        <span class="badge bg-secondary">Не размещено</span>
+                                    {% else %}
+                                        <span class="badge bg-success">Размещено</span>
+                                    {% endif %}
+                                </small>
+                            </div>
+                            <div class="ms-2">
+                                {% if eq.status == 'repair' %}
+                                    <span class="badge bg-warning text-dark">Ремонт</span>
+                                {% elif eq.status == 'lost' %}
+                                    <span class="badge bg-danger">Потерян</span>
+                                {% else %}
+                                    <span class="badge bg-success">Активен</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted text-center">Нет ТМЦ в помещении</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if can_edit %}
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6><i class="bi bi-info-circle me-2"></i>Инструкция</h6>
+                <small class="text-muted">
+                    <ul class="mb-0 ps-3">
+                        <li>Выберите ТМЦ из списка</li>
+                        <li>Кликните на схеме для размещения</li>
+                        <li>Перетащите для перемещения</li>
+                        <li>Двойной клик для удаления позиции</li>
+                    </ul>
+                </small>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Правая панель: Схема -->
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-diagram-3 me-2"></i>Схема помещения
+                    {% if not map_image_url %}
+                    <small class="text-muted ms-2">
+                        <i class="bi bi-info-circle"></i> Загрузите схему в настройках помещения
+                    </small>
+                    {% endif %}
+                </h5>
+                {% if can_edit %}
+                <div>
+                    {% if is_admin %}
+                    <a href="{{ url_for('edit_place', place_id=place.id) }}" class="btn btn-sm btn-outline-primary me-2">
+                        <i class="bi bi-upload me-1"></i>Загрузить схему
+                    </a>
+                    {% endif %}
+                    <button class="btn btn-sm btn-outline-secondary" onclick="clearAllPositions()">
+                        <i class="bi bi-x-circle me-1"></i>Очистить все
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-body p-0">
+                <div id="map-container" style="position: relative; width: 100%; min-height: 70vh; background: #f8f9fa; border: 1px solid #dee2e6; overflow: auto;">
+                    <svg id="place-map" width="100%" height="100%" style="min-height: 70vh;">
+                        <defs>
+                            <!-- Сетка для удобства размещения (если нет фонового изображения) -->
+                            <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+                                <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+                            </pattern>
+                        </defs>
+                        
+                        {% if map_image_url %}
+                        <!-- Фоновое изображение схемы помещения -->
+                        <image id="place-background" 
+                               href="{{ map_image_url }}" 
+                               width="100%" 
+                               height="100%" 
+                               preserveAspectRatio="xMidYMid meet"
+                               style="opacity: 0.9;"/>
+                        {% else %}
+                        <!-- Сетка, если нет фонового изображения -->
+                        <rect width="100%" height="100%" fill="url(#grid)"/>
+                        {% endif %}
+                        
+                        <!-- Здесь будут отображаться ТМЦ -->
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.equipment-item {
+    transition: all 0.2s;
+}
+.equipment-item:hover {
+    background-color: #f8f9fa;
+    transform: translateX(2px);
+}
+.equipment-item.selected {
+    background-color: #0d6efd;
+    color: white;
+}
+.equipment-item.selected .text-muted {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+.equipment-item.positioned {
+    border-left: 3px solid #198754;
+}
+
+.equipment-marker {
+    cursor: {% if can_edit %}move{% else %}pointer{% endif %};
+    transition: all 0.2s;
+}
+.equipment-marker:hover {
+    filter: brightness(1.2);
+    transform: scale(1.1);
+}
+.equipment-marker.selected {
+    filter: brightness(1.3);
+    stroke-width: 3;
+}
+
+.equipment-label {
+    pointer-events: none;
+    font-size: 10px;
+    font-weight: bold;
+    text-anchor: middle;
+    fill: white;
+    stroke: #000;
+    stroke-width: 0.5;
+}
+</style>
+
+<script>
+const equipmentData = {{ equipment_data | tojson }};
+const canEdit = {{ can_edit | tojson }};
+let selectedEquipmentId = null;
+let draggedElement = null;
+let dragOffset = { x: 0, y: 0 };
+
+const svg = document.getElementById('place-map');
+const container = document.getElementById('map-container');
+const svgNS = "http://www.w3.org/2000/svg";
+
+// Получаем размеры контейнера
+function updateSVGSize() {
+    const rect = container.getBoundingClientRect();
+    svg.setAttribute('width', rect.width);
+    svg.setAttribute('height', Math.max(rect.height, 500));
+}
+updateSVGSize();
+window.addEventListener('resize', updateSVGSize);
+
+// Создаем маркеры для ТМЦ
+function createEquipmentMarkers() {
+    // Очищаем существующие маркеры (кроме сетки)
+    const existingMarkers = svg.querySelectorAll('.equipment-marker, .equipment-label');
+    existingMarkers.forEach(m => m.remove());
+    
+    equipmentData.forEach(eq => {
+        if (eq.x !== null && eq.y !== null) {
+            const x = parseFloat(eq.x);
+            const y = parseFloat(eq.y);
+            
+            // Создаем группу для маркера
+            const group = document.createElementNS(svgNS, 'g');
+            group.setAttribute('class', 'equipment-marker');
+            group.setAttribute('data-equipment-id', eq.id);
+            group.setAttribute('transform', `translate(${x}, ${y})`);
+            
+            // Круг для маркера
+            const circle = document.createElementNS(svgNS, 'circle');
+            circle.setAttribute('r', '15');
+            circle.setAttribute('fill', getStatusColor(eq.status));
+            circle.setAttribute('stroke', '#000');
+            circle.setAttribute('stroke-width', '2');
+            
+            // Текст с номером (первые буквы или ID)
+            const text = document.createElementNS(svgNS, 'text');
+            text.setAttribute('class', 'equipment-label');
+            text.setAttribute('y', '5');
+            text.textContent = eq.invnum ? eq.invnum.substring(0, 3) : eq.id;
+            
+            group.appendChild(circle);
+            group.appendChild(text);
+            
+            // Подсказка при наведении
+            const title = document.createElementNS(svgNS, 'title');
+            title.textContent = `${eq.name}\nИнв. №: ${eq.invnum || '—'}\nСтоимость: ${eq.cost.toFixed(2)} ₽`;
+            group.appendChild(title);
+            
+            // События для редактирования
+            if (canEdit) {
+                group.addEventListener('mousedown', startDrag);
+                group.addEventListener('dblclick', removePosition);
+            }
+            
+            group.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectEquipment(eq.id);
+            });
+            
+            svg.appendChild(group);
+        }
+    });
+}
+
+function getStatusColor(status) {
+    switch(status) {
+        case 'repair': return '#ffc107';
+        case 'lost': return '#dc3545';
+        default: return '#198754';
+    }
+}
+
+function selectEquipment(id) {
+    selectedEquipmentId = id;
+    
+    // Обновляем выделение в списке
+    document.querySelectorAll('.equipment-item').forEach(item => {
+        item.classList.remove('selected');
+        if (parseInt(item.dataset.equipmentId) === id) {
+            item.classList.add('selected');
+        }
+    });
+    
+    // Обновляем выделение на схеме
+    document.querySelectorAll('.equipment-marker').forEach(marker => {
+        marker.classList.remove('selected');
+        if (parseInt(marker.dataset.equipmentId) === id) {
+            marker.classList.add('selected');
+        }
+    });
+}
+
+// Размещение ТМЦ на схеме
+if (canEdit) {
+    svg.addEventListener('click', (e) => {
+        if (selectedEquipmentId && !draggedElement) {
+            const rect = svg.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            placeEquipment(selectedEquipmentId, x, y);
+        }
+    });
+    
+    // Выбор ТМЦ из списка
+    document.querySelectorAll('.equipment-item').forEach(item => {
+        item.addEventListener('click', function() {
+            if (canEdit) {
+                selectEquipment(parseInt(this.dataset.equipmentId));
+            }
+        });
+    });
+}
+
+function placeEquipment(equipmentId, x, y) {
+    // Обновляем данные
+    const eq = equipmentData.find(e => e.id === equipmentId);
+    if (eq) {
+        eq.x = x;
+        eq.y = y;
+        
+        // Сохраняем на сервере
+        fetch('{{ url_for("save_equipment_position") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                equipment_id: equipmentId,
+                x: x,
+                y: y
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Обновляем маркеры
+                createEquipmentMarkers();
+                
+                // Обновляем список
+                const listItem = document.querySelector(`[data-equipment-id="${equipmentId}"]`);
+                if (listItem) {
+                    listItem.classList.add('positioned');
+                    const badge = listItem.querySelector('.badge');
+                    if (badge) {
+                        badge.textContent = 'Размещено';
+                        badge.className = 'badge bg-success';
+                    }
+                }
+            } else {
+                alert('Ошибка при сохранении: ' + (data.error || 'Неизвестная ошибка'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Ошибка при сохранении позиции');
+        });
+    }
+}
+
+function removePosition(e) {
+    e.stopPropagation();
+    const equipmentId = parseInt(e.currentTarget.dataset.equipmentId);
+    
+    if (confirm('Удалить позицию этого ТМЦ на схеме?')) {
+        placeEquipment(equipmentId, null, null);
+    }
+}
+
+function startDrag(e) {
+    e.stopPropagation();
+    draggedElement = e.currentTarget;
+    const transform = draggedElement.getAttribute('transform');
+    const match = transform.match(/translate\(([\d.]+),\s*([\d.]+)\)/);
+    
+    if (match) {
+        const x = parseFloat(match[1]);
+        const y = parseFloat(match[2]);
+        const rect = svg.getBoundingClientRect();
+        
+        dragOffset.x = e.clientX - rect.left - x;
+        dragOffset.y = e.clientY - rect.top - y;
+        
+        document.addEventListener('mousemove', drag);
+        document.addEventListener('mouseup', endDrag);
+    }
+}
+
+function drag(e) {
+    if (draggedElement) {
+        const rect = svg.getBoundingClientRect();
+        const x = e.clientX - rect.left - dragOffset.x;
+        const y = e.clientY - rect.top - dragOffset.y;
+        
+        draggedElement.setAttribute('transform', `translate(${x}, ${y})`);
+    }
+}
+
+function endDrag(e) {
+    if (draggedElement) {
+        const transform = draggedElement.getAttribute('transform');
+        const match = transform.match(/translate\(([\d.]+),\s*([\d.]+)\)/);
+        
+        if (match) {
+            const x = parseFloat(match[1]);
+            const y = parseFloat(match[2]);
+            const equipmentId = parseInt(draggedElement.dataset.equipmentId);
+            
+            placeEquipment(equipmentId, x, y);
+        }
+        
+        draggedElement = null;
+        document.removeEventListener('mousemove', drag);
+        document.removeEventListener('mouseup', endDrag);
+    }
+}
+
+function clearAllPositions() {
+    if (confirm('Очистить все позиции на схеме? Это действие нельзя отменить.')) {
+        equipmentData.forEach(eq => {
+            if (eq.x !== null && eq.y !== null) {
+                placeEquipment(eq.id, null, null);
+            }
+        });
+    }
+}
+
+// Инициализация
+createEquipmentMarkers();
+</script>
+{% endblock %}
+

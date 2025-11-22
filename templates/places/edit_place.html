@@ -15,7 +15,7 @@
 
 <div class="card">
     <div class="card-body">
-        <form method="POST" novalidate>
+        <form method="POST" enctype="multipart/form-data" novalidate>
             <div class="mb-3">
                 <label for="name" class="form-label">
                     Название помещения <span class="text-danger">*</span>
@@ -38,6 +38,34 @@
                           name="comment" 
                           rows="3"
                           placeholder="Дополнительная информация о помещении (необязательно)">{{ place.comment if place.comment else '' }}</textarea>
+            </div>
+            
+            <div class="mb-3">
+                <label for="map_image" class="form-label">
+                    <i class="bi bi-diagram-3 me-1"></i>Схема помещения
+                </label>
+                {% if place.map_image and place.map_image.strip() %}
+                <div class="mb-2">
+                    <label class="form-label">Текущая схема:</label>
+                    <div class="border rounded p-2" style="max-width: 400px;">
+                        <img src="{{ url_for('static', filename='uploads/place_maps/' + place.map_image) }}" 
+                             alt="Схема помещения" 
+                             class="img-fluid rounded"
+                             style="max-height: 200px;">
+                    </div>
+                    <small class="text-muted d-block mt-1">Загрузите новое изображение, чтобы заменить</small>
+                </div>
+                {% endif %}
+                <input type="file" 
+                       class="form-control" 
+                       id="map_image" 
+                       name="map_image" 
+                       accept=".png,.jpg,.jpeg,.svg">
+                <small class="form-text text-muted">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Поддерживаемые форматы: PNG, JPG, JPEG, SVG. Максимальный размер: 16 МБ.
+                    <br>Рекомендуется использовать SVG для векторных схем или PNG/JPG для растровых планов.
+                </small>
             </div>
             
             <div class="mb-3">

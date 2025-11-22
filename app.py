@@ -172,8 +172,9 @@ def load_user(user_id):
 # === НАСТРОЙКИ ЗАГРУЗКИ ФАЙЛОВ ===
 
 UPLOAD_FOLDER = os.path.join('static', 'uploads')
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg'}  # SVG для схем помещений
 ALLOWED_DOCUMENT_EXTENSIONS = {'pdf'}
+ALLOWED_MAP_EXTENSIONS = {'png', 'jpg', 'jpeg', 'svg'}  # Форматы для схем помещений
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 МБ максимум
@@ -187,6 +188,10 @@ def allowed_image(filename):
 
 def allowed_document(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() == 'pdf'
+
+def allowed_map_image(filename):
+    """Проверяет, разрешен ли формат файла для схемы помещения."""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_MAP_EXTENSIONS
 
 
 # === ОДНОКРАТНОЕ СОЗДАНИЕ ТАБЛИЦ ===
@@ -268,7 +273,12 @@ def index():
     # В тестовом режиме не делаем запросы к БД
     if TEST_MODE:
         news_list = []
-        return render_template('tmc/index.html', news_list=news_list)
+        stats_data = {}
+        return render_template('tmc/index.html', 
+                             news_list=news_list,
+                             stats_data=stats_data,
+                             is_admin=is_admin,
+                             user_login=current_user.login)
     
     # Реальный режим: запрос ТМЦ для пользователя или всех (если админ)
     if is_admin:
@@ -378,9 +388,22 @@ def index():
         stats_data['status_labels'] = ['Активные', 'В ремонте']
         stats_data['status_counts'] = [active_count, repair_count]
         
-        # Общее количество комплектующих
-        components_count = Equipment.query.filter_by(active=True, os=False).count()
-        stats_data['components_count'] = components_count
+        # Статистика по категориям компьютерной периферии (группировка по группам)
+        # Получаем статистику по группам периферии (os=False)
+        peripheral_stats = db.session.query(
+            GroupNome.name.label('group_name'),
+            func.count(Equipment.id).label('count')
+        ).join(Nome, GroupNome.id == Nome.groupid)\
+         .join(Equipment, Nome.id == Equipment.nomeid)\
+         .filter(Equipment.active == True, Equipment.os == False)\
+         .group_by(GroupNome.id, GroupNome.name)\
+         .order_by(func.count(Equipment.id).desc())\
+         .all()
+        
+        stats_data['peripheral_stats'] = [
+            {'name': row.group_name, 'count': row.count} 
+            for row in peripheral_stats
+        ] if peripheral_stats else []
 
     # Фото пользователя (только в реальном режиме)
     if not TEST_MODE:
@@ -414,8 +437,24 @@ def index():
     else:
         news_list = []
 
-    return render_template('tmc/index.html',
-                           news_list=news_list)
+    # Подготавливаем переменные для шаблона
+    template_vars = {
+        'news_list': news_list,
+        'is_admin': is_admin,
+        'user_login': current_user.login
+    }
+    
+    # Добавляем stats_data только если он был создан (для админа)
+    if 'stats_data' in locals():
+        template_vars['stats_data'] = stats_data
+    else:
+        template_vars['stats_data'] = {}
+    
+    # Добавляем user_photo если он был создан
+    if 'user_photo' in locals():
+        template_vars['user_photo'] = user_photo
+    
+    return render_template('tmc/index.html', **template_vars)
 
 
 @app.route('/add', methods=['GET', 'POST'])
@@ -1403,11 +1442,11 @@ def bulk_create_tmc(nome_id):
 def info_tmc(tmc_id):
     tmc = Equipment.query.get_or_404(tmc_id)
     
-    # Проверяем, является ли ТМЦ составным (может иметь комплектующие)
+    # Проверяем, является ли ТМЦ составным (может иметь компьютерную периферию)
     nome = tmc.nome
     is_composite = nome.is_composite if nome else False
     
-    # Получаем комплектующие только если ТМЦ составное
+    # Получаем компьютерную периферию только если ТМЦ составное
     components = []
     if is_composite:
         components = AppComponents.query.filter_by(id_main_asset=tmc.id).all()
@@ -2357,15 +2396,15 @@ def manage_categories():
                            unassigned_groups=unassigned_groups,
                            assigned_groups=assigned_groups)
 
-@app.route('/all_components')
+@app.route('/peripherals')
 @login_required
-def all_components():
+def peripherals():
     # Только для администраторов
     is_admin = current_user.mode == 1
     
     # В тестовом режиме возвращаем пустые данные
     if TEST_MODE:
-        return render_template('components/all_components.html',
+        return render_template('components/all_peripherals.html',
                              components=[],
                              is_admin=is_admin)
     
@@ -2376,10 +2415,11 @@ def all_components():
     # Фильтруем только НЕ основные средства
     base_query = Equipment.query.filter_by(active=True, os=False)
 
-    # Применяем фильтры (по пользователю, отделу, категории — по аналогии с all_tmc)
+    # Применяем фильтры (по пользователю, отделу, категории, группе — по аналогии с all_tmc)
     filter_user_id = request.args.get('user_id', type=int)
     filter_department_id = request.args.get('department_id', type=int)
     filter_category_id = request.args.get('category_id', type=int)
+    filter_group_id = request.args.get('group_id', type=int)
 
     if filter_user_id:
         base_query = base_query.filter_by(usersid=filter_user_id)
@@ -2394,27 +2434,77 @@ def all_components():
     tmc_count = len(equipment_list)
     total_cost = sum(eq.cost for eq in equipment_list if eq.cost is not None)
 
-    grouped_query = db.session.query(
-        Equipment.nomeid,
-        func.coalesce(Nome.name, '⚠️ Неизвестное наименование').label('nome_name'),
-        func.count(Equipment.id).label('quantity'),
-        func.coalesce(Nome.photo, '').label('nome_photo')
-    ).join(Nome, Equipment.nomeid == Nome.id)\
-     .join(GroupNome, Nome.groupid == GroupNome.id) \
-     .filter(Equipment.active == True, Equipment.os == False)
+    # Логика отображения:
+    # 1. Если выбрана группа - показываем наименования в этой группе
+    # 2. Если ничего не выбрано - группируем по группам с суммированием всех наименований в группе
+    if filter_group_id:
+        # Показываем наименования в выбранной группе
+        grouped_query = db.session.query(
+            Equipment.nomeid,
+            func.coalesce(Nome.name, '⚠️ Неизвестное наименование').label('nome_name'),
+            func.count(Equipment.id).label('quantity'),
+            func.coalesce(Nome.photo, '').label('nome_photo')
+        ).join(Nome, Equipment.nomeid == Nome.id)\
+         .join(GroupNome, Nome.groupid == GroupNome.id)\
+         .filter(Equipment.active == True, Equipment.os == False)\
+         .filter(GroupNome.id == filter_group_id)
+        
+        if filter_user_id:
+            grouped_query = grouped_query.filter(Equipment.usersid == filter_user_id)
+        if filter_department_id:
+            grouped_query = grouped_query.filter(Equipment.department_id == filter_department_id)
+        if filter_category_id:
+            grouped_query = grouped_query.filter(GroupNome.category_id == filter_category_id)
+        
+        grouped_tmc = grouped_query.group_by(Equipment.nomeid, Nome.name, Nome.photo)\
+                                   .order_by(Nome.name)\
+                                   .all()
+        
+        # Преобразуем результат для совместимости с шаблоном
+        grouped_tmc = [
+            type('obj', (object,), {
+                'nomeid': row.nomeid,
+                'nome_name': row.nome_name,
+                'quantity': row.quantity,
+                'nome_photo': row.nome_photo,
+                'is_group': False
+            }) for row in grouped_tmc
+        ]
+    else:
+        # Группировка по группам (GroupNome) с суммированием всех наименований в группе
+        grouped_query = db.session.query(
+            GroupNome.id.label('group_id'),
+            GroupNome.name.label('group_name'),
+            func.count(Equipment.id).label('quantity'),
+            func.coalesce(func.sum(Equipment.cost), 0).label('total_cost')
+        ).join(Nome, GroupNome.id == Nome.groupid)\
+         .join(Equipment, Nome.id == Equipment.nomeid)\
+         .filter(Equipment.active == True, Equipment.os == False)
 
-    if filter_user_id:
-        grouped_query = grouped_query.filter(Equipment.usersid == filter_user_id)
-    if filter_department_id:
-        grouped_query = grouped_query.filter(Equipment.department_id == filter_department_id)
-    if filter_category_id:
-        grouped_query = grouped_query.filter(GroupNome.category_id == filter_category_id)
+        if filter_user_id:
+            grouped_query = grouped_query.filter(Equipment.usersid == filter_user_id)
+        if filter_department_id:
+            grouped_query = grouped_query.filter(Equipment.department_id == filter_department_id)
+        if filter_category_id:
+            grouped_query = grouped_query.filter(GroupNome.category_id == filter_category_id)
 
-    grouped_tmc = grouped_query.group_by(Equipment.nomeid, Nome.name, Nome.photo)\
-                               .order_by(GroupNome.name, Nome.name) \
-                               .all()
+        grouped_tmc = grouped_query.group_by(GroupNome.id, GroupNome.name)\
+                                   .order_by(func.count(Equipment.id).desc())\
+                                   .all()
+        
+        # Преобразуем результат для совместимости с шаблоном
+        grouped_tmc = [
+            type('obj', (object,), {
+                'nomeid': row.group_id,  # Используем group_id как идентификатор
+                'nome_name': row.group_name,
+                'quantity': row.quantity,
+                'nome_photo': '',
+                'total_cost': row.total_cost,
+                'is_group': True  # Флаг, что это группа
+            }) for row in grouped_tmc
+        ]
 
-    # Списки для фильтров (только те, у кого есть комплектующие)
+    # Списки для фильтров (только те, у кого есть компьютерная периферия)
     active_users_ids = db.session.query(Equipment.usersid)\
         .filter(Equipment.active == True, Equipment.os == False)\
         .distinct().subquery()
@@ -2434,7 +2524,13 @@ def all_components():
         .distinct().subquery()
     all_categories = Category.query.filter(Category.id.in_(active_categories_ids), Category.active == True).all()
 
-    return render_template('components/all_components.html',
+    # Получаем название выбранной группы
+    selected_group_name = None
+    if filter_group_id:
+        selected_group = GroupNome.query.get(filter_group_id)
+        selected_group_name = selected_group.name if selected_group else None
+    
+    return render_template('components/all_peripherals.html',
                            grouped_tmc=grouped_tmc,
                            all_users=all_users,
                            all_departments=all_departments,
@@ -2442,19 +2538,21 @@ def all_components():
                            filter_user_id=filter_user_id,
                            filter_department_id=filter_department_id,
                            filter_category_id=filter_category_id,
+                           filter_group_id=filter_group_id,
+                           selected_group_name=selected_group_name,
                            tmc_count=tmc_count,
                            total_cost=total_cost,
                            user_login=current_user.login,
                            is_admin=is_admin)
 
-@app.route('/add_component', methods=['GET', 'POST'])
+@app.route('/add_peripheral', methods=['GET', 'POST'])
 @login_required
-def add_component():
-    """Добавление нового комплектующего (не ОС)."""
+def add_peripheral():
+    """Добавление нового элемента компьютерной периферии (не ОС)."""
     # В тестовом режиме запрещаем добавление
     if TEST_MODE:
-        flash('Добавление комплектующих недоступно в тестовом режиме', 'warning')
-        return redirect(url_for('all_components'))
+        flash('Добавление компьютерной периферии недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('peripherals'))
     
     if request.method == 'POST':
         # Получаем данные формы
@@ -2487,10 +2585,10 @@ def add_component():
                     placesid = main_asset.placesid
                     department_id = main_asset.department_id
                 else:
-                    msg = ('К выбранному ТМЦ нельзя прикреплять комплектующие. '
+                    msg = ('К выбранному ТМЦ нельзя прикреплять компьютерную периферию. '
                            'ТМЦ должно быть помечено как составное.')
                     flash(msg, 'warning')
-                    return redirect(url_for('add_component'))
+                    return redirect(url_for('add_peripheral'))
 
         # Обработка фото (опционально)
         photo_filename = ''
@@ -2505,7 +2603,7 @@ def add_component():
                 os.makedirs(group_label_dir, exist_ok=True)
                 file.save(os.path.join(app.config['UPLOAD_FOLDER'], photo_filename))
 
-        # Создаём комплектующее как Equipment с os=False
+        # Создаём элемент компьютерной периферии как Equipment с os=False
         new_component = Equipment(
             buhname=buhname,
             sernum=sernum,
@@ -2517,7 +2615,7 @@ def add_component():
             nomeid=nomeid,
             department_id=department_id,
             photo=photo_filename,
-            passport_filename='',  # паспорт не нужен для комплектующих
+            passport_filename='',  # паспорт не нужен для компьютерной периферии
             kntid=None,
             datepost=datetime.utcnow(),
             date_start=date.today(),
@@ -2544,7 +2642,7 @@ def add_component():
 
             # Если указано основное средство — создаём связь в app_components
             if main_asset_id:
-                # Проверяем, не привязано ли уже комплектующее этого типа
+                # Проверяем, не привязан ли уже элемент этого типа
                 # к данному ТМЦ
                 existing_component = AppComponents.query.filter_by(
                     id_main_asset=main_asset_id,
@@ -2556,11 +2654,11 @@ def add_component():
                     nome_component = Nome.query.get(nomeid)
                     nome_name = (nome_component.name
                                  if nome_component else f"ID {nomeid}")
-                    msg = (f'К данному ТМЦ уже привязано комплектующее типа '
+                    msg = (f'К данному ТМЦ уже привязан элемент компьютерной периферии типа '
                            f'"{nome_name}". К одному ТМЦ можно привязать '
-                           f'только одно комплектующее каждого типа.')
+                           f'только один элемент каждого типа.')
                     flash(msg, 'warning')
-                    return redirect(url_for('add_component'))
+                    return redirect(url_for('add_peripheral'))
                 link = AppComponents(
                     id_main_asset=main_asset_id,
                     id_nome_component=nomeid,
@@ -2570,13 +2668,13 @@ def add_component():
                 db.session.add(link)
 
             db.session.commit()
-            flash('Комплектующее успешно добавлено!', 'success')
-            return redirect(url_for('all_components'))  # или index
+            flash('Элемент компьютерной периферии успешно добавлен!', 'success')
+            return redirect(url_for('peripherals'))  # или index
 
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка при добавлении: {str(e)}', 'danger')
-            return redirect(url_for('add_component'))
+            return redirect(url_for('add_peripheral'))
 
     # GET: подготовка данных
     organizations = Org.query.all()
@@ -2588,7 +2686,7 @@ def add_component():
         .all()
     departments = Department.query.filter_by(active=True).all()
 
-    # Только те группы, где nome.is_component = 1 ИЛИ где group_nome.category относится к "Комплектующим"
+    # Только те группы, где nome.is_component = 1 ИЛИ где group_nome.category относится к "Компьютерной периферии"
     # Но проще: фильтруем Nome по is_component=1
     component_groups = db.session.query(GroupNome)\
         .join(Nome, GroupNome.id == Nome.groupid)\
@@ -2606,9 +2704,9 @@ def add_component():
         Equipment.nomeid.in_(composite_nome_ids)
     ).all()
 
-    # Получаем информацию о том, какие типы комплектующих уже привязаны
+    # Получаем информацию о том, какие типы компьютерной периферии уже привязаны
     # к каким ТМЦ. Словарь: {nome_id: [asset_ids]} - какие ТМЦ уже имеют
-    # комплектующее данного типа
+    # элемент данного типа
     blocked_assets_by_nome = {}
     existing_links = AppComponents.query.all()
     for link in existing_links:
@@ -2616,7 +2714,7 @@ def add_component():
             blocked_assets_by_nome[link.id_nome_component] = []
         blocked_assets_by_nome[link.id_nome_component].append(link.id_main_asset)
 
-    return render_template('components/add_component.html',
+    return render_template('components/add_peripheral.html',
                         organizations=organizations,
                         places=places,
                         users=users,
@@ -2628,20 +2726,22 @@ def add_component():
                         vendors=[],
                         nomenclatures=[])
 
-@app.route('/edit_component/<int:component_id>', methods=['GET', 'POST'])
+@app.route('/edit_peripheral/<int:component_id>', methods=['GET', 'POST'])
 @login_required
-def edit_component(component_id):
-    """Редактирование комплектующего (os=False)."""
+def edit_peripheral(component_id):
+    """Редактирование элемента компьютерной периферии (os=False)."""
+    is_admin = current_user.mode == 1
+    
     # В тестовом режиме запрещаем редактирование
     if TEST_MODE:
-        flash('Редактирование комплектующих недоступно в тестовом режиме', 'warning')
-        return redirect(url_for('all_components'))
+        flash('Редактирование компьютерной периферии недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('peripherals'))
     
     component = Equipment.query.get_or_404(component_id)
 
-    # Проверяем, что это комплектующее (os=False)
+    # Проверяем, что это элемент компьютерной периферии (os=False)
     if component.os:
-        flash('Редактирование доступно только для комплектующих (не основных средств).', 'danger')
+        flash('Редактирование доступно только для компьютерной периферии (не основных средств).', 'danger')
         return redirect(url_for('index'))
 
     if request.method == 'POST':
@@ -2703,13 +2803,13 @@ def edit_component(component_id):
                     component.placesid = main_asset.placesid
                     component.department_id = main_asset.department_id
                 else:
-                    msg = ('К выбранному ТМЦ нельзя прикреплять комплектующие. '
+                    msg = ('К выбранному ТМЦ нельзя прикреплять компьютерную периферию. '
                            'ТМЦ должно быть помечено как составное.')
                     flash(msg, 'warning')
-                    return redirect(url_for('edit_component',
+                    return redirect(url_for('edit_peripheral',
                                            component_id=component_id))
 
-        # Ищем существующую связь для этого конкретного комплектующего
+        # Ищем существующую связь для этого конкретного элемента
         # (через его свойства). Это не идеально, но в текущей схеме, где нет
         # прямой ссылки на equipment.id в app_components, приходится искать
         # по совпадению nomeid, sernum, comment.
@@ -2724,7 +2824,7 @@ def edit_component(component_id):
             if existing_link:
                 # Если связь уже есть, обновляем id_main_asset
                 if existing_link.id_main_asset != selected_main_asset_id:
-                    # Проверяем, не привязано ли уже комплектующее этого типа
+                    # Проверяем, не привязан ли уже элемент этого типа
                     # к новому ТМЦ. Исключаем текущую связь из проверки
                     existing_component = AppComponents.query.filter(
                         AppComponents.id_main_asset == selected_main_asset_id,
@@ -2735,18 +2835,18 @@ def edit_component(component_id):
                     if existing_component:
                         nome_name = (component.nome.name
                                       if component.nome else "неизвестно")
-                        msg = (f'К выбранному ТМЦ уже привязано комплектующее '
+                        msg = (f'К выбранному ТМЦ уже привязан элемент компьютерной периферии '
                                f'типа "{nome_name}". К одному ТМЦ можно привязать '
-                               f'только одно комплектующее каждого типа.')
+                               f'только один элемент каждого типа.')
                         flash(msg, 'warning')
-                        return redirect(url_for('edit_component',
+                        return redirect(url_for('edit_peripheral',
                                                component_id=component_id))
 
                     existing_link.id_main_asset = selected_main_asset_id
                     flash('Привязка к основному средству обновлена.', 'info')
                 # Если связь указывает на тот же ТМЦ - ничего не делаем
             else:
-                # Связи не было, проверяем, не привязано ли уже комплектующее
+                # Связи не было, проверяем, не привязан ли уже элемент
                 # этого типа к данному ТМЦ
                 existing_component = AppComponents.query.filter_by(
                     id_main_asset=selected_main_asset_id,
@@ -2756,11 +2856,11 @@ def edit_component(component_id):
                 if existing_component:
                     nome_name = (component.nome.name
                                   if component.nome else "неизвестно")
-                    msg = (f'К выбранному ТМЦ уже привязано комплектующее '
+                    msg = (f'К выбранному ТМЦ уже привязан элемент компьютерной периферии '
                            f'типа "{nome_name}". К одному ТМЦ можно привязать '
-                           f'только одно комплектующее каждого типа.')
+                           f'только один элемент каждого типа.')
                     flash(msg, 'warning')
-                    return redirect(url_for('edit_component',
+                    return redirect(url_for('edit_peripheral',
                                            component_id=component_id))
 
                 # Создаём новую связь
@@ -2771,7 +2871,7 @@ def edit_component(component_id):
                     comment_component=component.comment,
                 )
                 db.session.add(new_link)
-                flash('Комплектующее привязано к основному средству.', 'success')
+                flash('Элемент компьютерной периферии привязан к основному средству.', 'success')
         else:
             # Пользователь не выбрал основное средство (или выбрал "не привязывать")
             if existing_link:
@@ -2783,9 +2883,9 @@ def edit_component(component_id):
 
         try:
             db.session.commit()
-            flash('Комплектующее успешно обновлено!', 'success')
-            # Возврат на страницу, откуда пришли, или на список комплектующих
-            return redirect(url_for('all_components'))
+            flash('Элемент компьютерной периферии успешно обновлен!', 'success')
+            # Возврат на страницу, откуда пришли, или на список периферии
+            return redirect(url_for('peripherals'))
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка при обновлении: {str(e)}', 'danger')
@@ -2800,7 +2900,7 @@ def edit_component(component_id):
         .all()
     departments = Department.query.filter_by(active=True).all()
 
-    # Для определения текущего типа и производителя комплектующего
+    # Для определения текущего типа и производителя периферии
     current_nome = Nome.query.get(component.nomeid)
     current_group = GroupNome.query.get(current_nome.groupid) if current_nome else None
     current_vendor = Vendor.query.get(current_nome.vendorid) if current_nome else None
@@ -2826,9 +2926,9 @@ def edit_component(component_id):
         Equipment.os == True,
         Equipment.nomeid.in_(composite_nome_ids)
     ).all()
-    # Получаем информацию о том, какие типы комплектующих уже привязаны
+    # Получаем информацию о том, какие типы компьютерной периферии уже привязаны
     # к каким ТМЦ. Словарь: {nome_id: [asset_ids]} - какие ТМЦ уже имеют
-    # комплектующее данного типа
+    # элемент данного типа
     blocked_assets_by_nome = {}
     existing_links = AppComponents.query.all()
     for link in existing_links:
@@ -2837,7 +2937,7 @@ def edit_component(component_id):
         blocked_assets_by_nome[link.id_nome_component].append(
             link.id_main_asset)
 
-    # Проверяем, к какому основному средству привязано это комплектующее
+    # Проверяем, к какому основному средству привязан этот элемент
     # (если привязано). Ищем связь в app_components по свойствам компонента
     linked_main_asset = None
     potential_link = AppComponents.query.filter_by(
@@ -2854,25 +2954,574 @@ def edit_component(component_id):
 
     # --- КОНЕЦ НОВОГО ---
 
-    return render_template('components/edit_component.html',
-                           tmc=component,  # используем переменную tmc для совместимости с шаблоном
-                           organizations=organizations,
-                           places=places,
-                           users=users,
-                           groups=groups,
-                           departments=departments,
-                           current_group=current_group,
-                           current_vendor=current_vendor,
-                           current_nome=current_nome,
-                           vendors=vendors,
-                           nomenclatures=nomenclatures,
-                           # --- ПЕРЕДАЁМ НОВЫЕ ПЕРЕМЕННЫЕ ---
-                           main_assets=main_assets,
-                           blocked_assets_by_nome=blocked_assets_by_nome,
-                           linked_main_asset_id=linked_main_asset.id if linked_main_asset else None,
-                           current_component_nome_id=component.nomeid
-                           # --- КОНЕЦ ПЕРЕДАЧИ ---
-                           )
+    return render_template('components/edit_peripheral.html',
+                         tmc=component,
+                         component=component,
+                         organizations=organizations,
+                         places=places,
+                         users=users,
+                         groups=groups,
+                         vendors=vendors,
+                         nomenclatures=nomenclatures,
+                         main_assets=main_assets,
+                         blocked_assets_by_nome=blocked_assets_by_nome,
+                         linked_main_asset=linked_main_asset,
+                         departments=departments,
+                         current_group=current_group,
+                         current_vendor=current_vendor,
+                         current_nome=current_nome,
+                         is_admin=is_admin)
+
+# === КОМПЛЕКТУЮЩИЕ ПК (АППАРАТНОЕ ОБЕСПЕЧЕНИЕ) ===
+
+@app.route('/pc_components')
+@login_required
+def pc_components():
+    """Главная страница учета комплектующих ПК (обзорная)."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('pc_components/index.html',
+                             graphics_cards_count=0,
+                             hard_drives_count=0,
+                             is_admin=is_admin)
+    
+    from models import PCGraphicsCard, PCHardDrive, PCComponentLink
+    
+    # Подсчитываем статистику
+    graphics_cards_count = PCGraphicsCard.query.filter_by(active=True).count()
+    hard_drives_count = PCHardDrive.query.filter_by(active=True).count()
+    
+    # Подсчитываем привязанные комплектующие (те, у которых есть связь с ПК)
+    linked_graphics_cards_count = PCComponentLink.query.filter(
+        PCComponentLink.graphics_card_id.isnot(None),
+        PCComponentLink.active == True
+    ).count()
+    linked_hard_drives_count = PCComponentLink.query.filter(
+        PCComponentLink.hard_drive_id.isnot(None),
+        PCComponentLink.active == True
+    ).count()
+    
+    return render_template('pc_components/index.html',
+                         graphics_cards_count=graphics_cards_count,
+                         hard_drives_count=hard_drives_count,
+                         linked_graphics_cards_count=linked_graphics_cards_count,
+                         linked_hard_drives_count=linked_hard_drives_count,
+                         is_admin=is_admin,
+                         user_login=current_user.login)
+
+@app.route('/pc_components/graphics_cards')
+@login_required
+def graphics_cards_list():
+    """Страница списка видеокарт."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('pc_components/graphics_cards_list.html',
+                             graphics_cards=[],
+                             is_admin=is_admin)
+    
+    from models import PCGraphicsCard
+    
+    # Получаем видеокарты
+    graphics_cards = PCGraphicsCard.query.filter_by(active=True).order_by(PCGraphicsCard.created_at.desc()).all()
+    
+    return render_template('pc_components/graphics_cards_list.html',
+                         graphics_cards=graphics_cards,
+                         is_admin=is_admin,
+                         user_login=current_user.login)
+
+@app.route('/pc_components/hard_drives')
+@login_required
+def hard_drives_list():
+    """Страница списка жестких дисков."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('pc_components/hard_drives_list.html',
+                             hard_drives=[],
+                             total_drives=0,
+                             drives_need_replacement=0,
+                             drives_warning=0,
+                             drives_failed=0,
+                             drives_high_hours=0,
+                             is_admin=is_admin)
+    
+    from models import PCHardDrive
+    
+    # Получаем жесткие диски с сортировкой:
+    # 1. По максимальному объему в группе модели (по убыванию)
+    # 2. По модели (для группировки)
+    # 3. По объему внутри группы (по убыванию)
+    subquery = (
+        db.session.query(
+            PCHardDrive.model,
+            func.max(PCHardDrive.capacity_gb).label('max_capacity')
+        )
+        .filter(PCHardDrive.active == True)
+        .group_by(PCHardDrive.model)
+        .subquery()
+    )
+    
+    hard_drives = (
+        PCHardDrive.query
+        .filter_by(active=True)
+        .join(subquery, PCHardDrive.model == subquery.c.model)
+        .order_by(
+            subquery.c.max_capacity.desc(),  # Сначала группы по максимальному объему
+            PCHardDrive.model.asc(),         # Затем по модели для группировки
+            PCHardDrive.capacity_gb.desc()   # Внутри группы по объему по убыванию
+        )
+        .all()
+    )
+    
+    # Статистика по дискам, требующим замены
+    # Диски со статусом "Тревога" или "Неработает"
+    drives_need_replacement = PCHardDrive.query.filter(
+        PCHardDrive.active == True,
+        PCHardDrive.health_status.in_(['Тревога', 'Неработает'])
+    ).count()
+    
+    # Диски со статусом "Тревога"
+    drives_warning = PCHardDrive.query.filter(
+        PCHardDrive.active == True,
+        PCHardDrive.health_status == 'Тревога'
+    ).count()
+    
+    # Диски со статусом "Неработает"
+    drives_failed = PCHardDrive.query.filter(
+        PCHardDrive.active == True,
+        PCHardDrive.health_status == 'Неработает'
+    ).count()
+    
+    # Диски с большой наработкой (более 50000 часов)
+    drives_high_hours = PCHardDrive.query.filter(
+        PCHardDrive.active == True,
+        PCHardDrive.power_on_hours.isnot(None),
+        PCHardDrive.power_on_hours > 50000
+    ).count()
+    
+    # Общее количество активных дисков
+    total_drives = len(hard_drives)
+    
+    return render_template('pc_components/hard_drives_list.html',
+                         hard_drives=hard_drives,
+                         total_drives=total_drives,
+                         drives_need_replacement=drives_need_replacement,
+                         drives_warning=drives_warning,
+                         drives_failed=drives_failed,
+                         drives_high_hours=drives_high_hours,
+                         is_admin=is_admin,
+                         user_login=current_user.login)
+
+@app.route('/pc_components/add_graphics_card', methods=['GET', 'POST'])
+@login_required
+def add_graphics_card():
+    """Добавление видеокарты."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('graphics_cards_list'))
+    
+    if TEST_MODE:
+        flash('Добавление комплектующих ПК недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('graphics_cards_list'))
+    
+    from models import PCGraphicsCard, Vendor
+    
+    if request.method == 'POST':
+        vendor_id = request.form.get('vendor_id', type=int)
+        model = request.form.get('model', '').strip()
+        memory_size = request.form.get('memory_size', type=int)
+        memory_type = request.form.get('memory_type', '').strip()
+        serial_number = request.form.get('serial_number', '').strip()
+        purchase_date_str = request.form.get('purchase_date', '')
+        purchase_cost_str = request.form.get('purchase_cost', '')
+        comment = request.form.get('comment', '').strip()
+        
+        if not vendor_id or not model:
+            flash('Производитель и модель обязательны для заполнения', 'danger')
+            return redirect(url_for('add_graphics_card'))
+        
+        try:
+            purchase_date = datetime.strptime(purchase_date_str, '%Y-%m-%d').date() if purchase_date_str else None
+            purchase_cost = Decimal(purchase_cost_str) if purchase_cost_str else None
+        except (ValueError, InvalidOperation):
+            flash('Неверный формат даты или стоимости', 'danger')
+            return redirect(url_for('add_graphics_card'))
+        
+        graphics_card = PCGraphicsCard(
+            vendor_id=vendor_id,
+            model=model,
+            memory_size=memory_size,
+            memory_type=memory_type,
+            serial_number=serial_number,
+            purchase_date=purchase_date,
+            purchase_cost=purchase_cost,
+            comment=comment
+        )
+        
+        db.session.add(graphics_card)
+        db.session.commit()
+        
+        vendor = Vendor.query.get(vendor_id)
+        vendor_name = vendor.name if vendor else 'Unknown'
+        flash(f'Видеокарта {vendor_name} {model} успешно добавлена', 'success')
+        return redirect(url_for('graphics_cards_list'))
+    
+    vendors = Vendor.query.filter_by(active=True).order_by(Vendor.name).all()
+    return render_template('pc_components/add_graphics_card.html',
+                         vendors=vendors,
+                         is_admin=is_admin)
+
+@app.route('/pc_components/add_hard_drive', methods=['GET', 'POST'])
+@login_required
+def add_hard_drive():
+    """Добавление жесткого диска."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('hard_drives_list'))
+    
+    if TEST_MODE:
+        flash('Добавление комплектующих ПК недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('hard_drives_list'))
+    
+    from models import PCHardDrive, Vendor
+    
+    if request.method == 'POST':
+        # Обязательные поля
+        drive_type = request.form.get('drive_type', '').strip()
+        vendor_id = request.form.get('vendor_id', type=int)
+        model = request.form.get('model', '').strip()
+        capacity_gb = request.form.get('capacity_gb', type=int)
+        serial_number = request.form.get('serial_number', '').strip()
+        
+        # Необязательные поля
+        health_check_date_str = request.form.get('health_check_date', '')
+        power_on_count = request.form.get('power_on_count', type=int)
+        power_on_hours = request.form.get('power_on_hours', type=int)
+        health_status = request.form.get('health_status', '').strip()
+        comment = request.form.get('comment', '').strip()
+        
+        # Дополнительные поля
+        interface = request.form.get('interface', '').strip()
+        purchase_date_str = request.form.get('purchase_date', '')
+        purchase_cost_str = request.form.get('purchase_cost', '')
+        
+        # Валидация обязательных полей
+        if not drive_type or not vendor_id or not model or not capacity_gb or not serial_number:
+            flash('Все обязательные поля должны быть заполнены: Тип, Марка, Модель, Объем, Серийный номер', 'danger')
+            return redirect(url_for('add_hard_drive'))
+        
+        try:
+            health_check_date = datetime.strptime(health_check_date_str, '%Y-%m-%d').date() if health_check_date_str else None
+            purchase_date = datetime.strptime(purchase_date_str, '%Y-%m-%d').date() if purchase_date_str else None
+            purchase_cost = Decimal(purchase_cost_str) if purchase_cost_str else None
+        except (ValueError, InvalidOperation):
+            flash('Неверный формат даты или стоимости', 'danger')
+            return redirect(url_for('add_hard_drive'))
+        
+        hard_drive = PCHardDrive(
+            drive_type=drive_type,
+            vendor_id=vendor_id,
+            model=model,
+            capacity_gb=capacity_gb,
+            serial_number=serial_number,
+            health_check_date=health_check_date,
+            power_on_count=power_on_count,
+            power_on_hours=power_on_hours,
+            health_status=health_status,
+            comment=comment,
+            interface=interface,
+            purchase_date=purchase_date,
+            purchase_cost=purchase_cost
+        )
+        
+        db.session.add(hard_drive)
+        db.session.commit()
+        
+        vendor = Vendor.query.get(vendor_id)
+        vendor_name = vendor.name if vendor else 'Unknown'
+        flash(f'Жесткий диск {vendor_name} {model} успешно добавлен', 'success')
+        return redirect(url_for('hard_drives_list'))
+    
+    vendors = Vendor.query.filter_by(active=True).order_by(Vendor.name).all()
+    return render_template('pc_components/add_hard_drive.html',
+                         vendors=vendors,
+                         is_admin=is_admin)
+
+@app.route('/pc_components/edit_graphics_card/<int:card_id>', methods=['GET', 'POST'])
+@login_required
+def edit_graphics_card(card_id):
+    """Редактирование видеокарты."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('graphics_cards_list'))
+    
+    if TEST_MODE:
+        flash('Редактирование комплектующих ПК недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('graphics_cards_list'))
+    
+    from models import PCGraphicsCard, Vendor
+    
+    graphics_card = PCGraphicsCard.query.get_or_404(card_id)
+    
+    if request.method == 'POST':
+        vendor_id = request.form.get('vendor_id', type=int)
+        model = request.form.get('model', '').strip()
+        memory_size = request.form.get('memory_size', type=int)
+        memory_type = request.form.get('memory_type', '').strip()
+        serial_number = request.form.get('serial_number', '').strip()
+        purchase_date_str = request.form.get('purchase_date', '')
+        purchase_cost_str = request.form.get('purchase_cost', '')
+        comment = request.form.get('comment', '').strip()
+        active = request.form.get('active') == 'on'
+        
+        if not vendor_id or not model:
+            flash('Производитель и модель обязательны для заполнения', 'danger')
+            return redirect(url_for('edit_graphics_card', card_id=card_id))
+        
+        try:
+            purchase_date = datetime.strptime(purchase_date_str, '%Y-%m-%d').date() if purchase_date_str else None
+            purchase_cost = Decimal(purchase_cost_str) if purchase_cost_str else None
+        except (ValueError, InvalidOperation):
+            flash('Неверный формат даты или стоимости', 'danger')
+            return redirect(url_for('edit_graphics_card', card_id=card_id))
+        
+        graphics_card.vendor_id = vendor_id
+        graphics_card.model = model
+        graphics_card.memory_size = memory_size
+        graphics_card.memory_type = memory_type
+        graphics_card.serial_number = serial_number
+        graphics_card.purchase_date = purchase_date
+        graphics_card.purchase_cost = purchase_cost
+        graphics_card.comment = comment
+        graphics_card.active = active
+        
+        db.session.commit()
+        
+        vendor = Vendor.query.get(vendor_id)
+        vendor_name = vendor.name if vendor else 'Unknown'
+        flash(f'Видеокарта {vendor_name} {model} успешно обновлена', 'success')
+        return redirect(url_for('graphics_cards_list'))
+    
+    vendors = Vendor.query.filter_by(active=True).order_by(Vendor.name).all()
+    return render_template('pc_components/edit_graphics_card.html',
+                         graphics_card=graphics_card,
+                         vendors=vendors,
+                         is_admin=is_admin)
+
+@app.route('/pc_components/edit_hard_drive/<int:drive_id>', methods=['GET', 'POST'])
+@login_required
+def edit_hard_drive(drive_id):
+    """Редактирование жесткого диска."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('graphics_cards_list'))
+    
+    if TEST_MODE:
+        flash('Редактирование комплектующих ПК недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('graphics_cards_list'))
+    
+    from models import PCHardDrive, Vendor
+    
+    hard_drive = PCHardDrive.query.get_or_404(drive_id)
+    
+    if request.method == 'POST':
+        # Обязательные поля
+        drive_type = request.form.get('drive_type', '').strip()
+        vendor_id = request.form.get('vendor_id', type=int)
+        model = request.form.get('model', '').strip()
+        capacity_gb = request.form.get('capacity_gb', type=int)
+        serial_number = request.form.get('serial_number', '').strip()
+        
+        # Необязательные поля
+        health_check_date_str = request.form.get('health_check_date', '')
+        power_on_count = request.form.get('power_on_count', type=int)
+        power_on_hours = request.form.get('power_on_hours', type=int)
+        health_status = request.form.get('health_status', '').strip()
+        comment = request.form.get('comment', '').strip()
+        
+        # Дополнительные поля
+        interface = request.form.get('interface', '').strip()
+        purchase_date_str = request.form.get('purchase_date', '')
+        purchase_cost_str = request.form.get('purchase_cost', '')
+        active = request.form.get('active') == 'on'
+        
+        # Валидация обязательных полей
+        if not drive_type or not vendor_id or not model or not capacity_gb or not serial_number:
+            flash('Все обязательные поля должны быть заполнены: Тип, Марка, Модель, Объем, Серийный номер', 'danger')
+            return redirect(url_for('edit_hard_drive', drive_id=drive_id))
+        
+        try:
+            health_check_date = datetime.strptime(health_check_date_str, '%Y-%m-%d').date() if health_check_date_str else None
+            purchase_date = datetime.strptime(purchase_date_str, '%Y-%m-%d').date() if purchase_date_str else None
+            purchase_cost = Decimal(purchase_cost_str) if purchase_cost_str else None
+        except (ValueError, InvalidOperation):
+            flash('Неверный формат даты или стоимости', 'danger')
+            return redirect(url_for('edit_hard_drive', drive_id=drive_id))
+        
+        # Сохраняем старые значения для сравнения
+        old_health_check_date = hard_drive.health_check_date
+        old_power_on_count = hard_drive.power_on_count
+        old_power_on_hours = hard_drive.power_on_hours
+        old_health_status = hard_drive.health_status
+        
+        hard_drive.drive_type = drive_type
+        hard_drive.vendor_id = vendor_id
+        hard_drive.model = model
+        hard_drive.capacity_gb = capacity_gb
+        hard_drive.serial_number = serial_number
+        hard_drive.health_check_date = health_check_date
+        hard_drive.power_on_count = power_on_count
+        hard_drive.power_on_hours = power_on_hours
+        hard_drive.health_status = health_status
+        hard_drive.comment = comment
+        hard_drive.interface = interface
+        hard_drive.purchase_date = purchase_date
+        hard_drive.purchase_cost = purchase_cost
+        hard_drive.active = active
+        
+        # Создаем запись в истории, если изменились параметры состояния
+        # или если указана дата проверки
+        from models import PCHardDriveHistory
+        
+        state_changed = (
+            old_health_check_date != health_check_date or
+            old_power_on_count != power_on_count or
+            old_power_on_hours != power_on_hours or
+            old_health_status != health_status
+        )
+        
+        if state_changed and health_check_date:
+            history_record = PCHardDriveHistory(
+                hard_drive_id=drive_id,
+                check_date=health_check_date,
+                power_on_hours=power_on_hours,
+                power_on_count=power_on_count,
+                health_status=health_status,
+                comment=f'Обновление состояния. {comment}' if comment else 'Обновление состояния'
+            )
+            db.session.add(history_record)
+        
+        db.session.commit()
+        
+        vendor = Vendor.query.get(vendor_id)
+        vendor_name = vendor.name if vendor else 'Unknown'
+        flash(f'Жесткий диск {vendor_name} {model} успешно обновлен', 'success')
+        return redirect(url_for('hard_drives_list'))
+    
+    vendors = Vendor.query.filter_by(active=True).order_by(Vendor.name).all()
+    return render_template('pc_components/edit_hard_drive.html',
+                         hard_drive=hard_drive,
+                         vendors=vendors,
+                         is_admin=is_admin)
+
+@app.route('/pc_components/delete_graphics_card/<int:card_id>', methods=['POST'])
+@login_required
+def delete_graphics_card(card_id):
+    """Удаление видеокарты (деактивация)."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('graphics_cards_list'))
+    
+    if TEST_MODE:
+        flash('Удаление комплектующих ПК недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('graphics_cards_list'))
+    
+    from models import PCGraphicsCard, PCComponentLink
+    
+    graphics_card = PCGraphicsCard.query.get_or_404(card_id)
+    
+    # Проверяем, не привязана ли видеокарта к ПК
+    links = PCComponentLink.query.filter_by(graphics_card_id=card_id, active=True).first()
+    if links:
+        flash('Нельзя удалить видеокарту, которая привязана к ПК. Сначала отвяжите её', 'danger')
+        return redirect(url_for('graphics_cards_list'))
+    
+    graphics_card.active = False
+    db.session.commit()
+    
+    vendor_name = graphics_card.vendor.name if graphics_card.vendor else 'Unknown'
+    flash(f'Видеокарта {vendor_name} {graphics_card.model} успешно удалена', 'success')
+    return redirect(url_for('graphics_cards_list'))
+
+@app.route('/pc_components/delete_hard_drive/<int:drive_id>', methods=['POST'])
+@login_required
+def delete_hard_drive(drive_id):
+    """Удаление жесткого диска (деактивация)."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('graphics_cards_list'))
+    
+    if TEST_MODE:
+        flash('Удаление комплектующих ПК недоступно в тестовом режиме', 'warning')
+        return redirect(url_for('graphics_cards_list'))
+    
+    from models import PCHardDrive, PCComponentLink
+    
+    hard_drive = PCHardDrive.query.get_or_404(drive_id)
+    
+    # Проверяем, не привязан ли диск к ПК
+    links = PCComponentLink.query.filter_by(hard_drive_id=drive_id, active=True).first()
+    if links:
+        flash('Нельзя удалить жесткий диск, который привязан к ПК. Сначала отвяжите его', 'danger')
+        return redirect(url_for('hard_drives_list'))
+    
+    hard_drive.active = False
+    db.session.commit()
+    
+    vendor_name = hard_drive.vendor.name if hard_drive.vendor else 'Unknown'
+    flash(f'Жесткий диск {vendor_name} {hard_drive.model} успешно удален', 'success')
+    return redirect(url_for('hard_drives_list'))
+
+@app.route('/pc_components/hard_drive/<int:drive_id>/history')
+@login_required
+def hard_drive_history(drive_id):
+    """История состояний жесткого диска."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('hard_drives_list'))
+    
+    from models import PCHardDrive, PCHardDriveHistory
+    
+    hard_drive = PCHardDrive.query.get_or_404(drive_id)
+    
+    # Получаем историю состояний (сортируем по дате проверки по убыванию)
+    history = PCHardDriveHistory.query.filter_by(hard_drive_id=drive_id).order_by(PCHardDriveHistory.check_date.desc()).all()
+    
+    return render_template('pc_components/hard_drive_history.html',
+                         hard_drive=hard_drive,
+                         history=history,
+                         is_admin=is_admin)
 
 @app.route('/manage_users')
 @login_required
@@ -3365,7 +4014,7 @@ def calculate_stats_data(tmc_query, is_admin=False):
     stats_data['status_labels'] = ['Активные', 'В ремонте']
     stats_data['status_counts'] = [active_count, repair_count]
     
-    # Общее количество комплектующих (только для админа)
+    # Общее количество компьютерной периферии (только для админа)
     if is_admin:
         components_count = Equipment.query.filter_by(active=True, os=False).count()
         stats_data['components_count'] = components_count
@@ -3523,7 +4172,7 @@ def my_stats():
         stats_data['department_labels'] = [row.department_name for row in department_stats] if department_stats else []
         stats_data['department_counts'] = [row.count for row in department_stats] if department_stats else []
     
-    # Статистика по комплектующим МОЛ
+    # Статистика по компьютерной периферии МОЛ
     components_count = Equipment.query.filter_by(
         usersid=current_user.id,
         active=True,
@@ -3580,7 +4229,7 @@ def all_moves():
 @app.route('/my_moves')
 @login_required
 def my_moves():
-    """Страница перемещений для МОЛ - только перемещения его ТМЦ и комплектующих."""
+    """Страница перемещений для МОЛ - только перемещения его ТМЦ и компьютерной периферии."""
     is_mol = current_user_has_role(1)
     is_admin = current_user.mode == 1
     
@@ -3600,8 +4249,8 @@ def my_moves():
     ).all()
     my_equipment_ids = [eq[0] for eq in my_equipment_ids]
     
-    # Получаем ID основного ТМЦ для комплектующих, которые связаны с ТМЦ МОЛ
-    # Перемещения комплектующих записываются через их основное ТМЦ (id_main_asset)
+    # Получаем ID основного ТМЦ для компьютерной периферии, которая связана с ТМЦ МОЛ
+    # Перемещения периферии записываются через их основное ТМЦ (id_main_asset)
     my_components_main_asset_ids = db.session.query(AppComponents.id_main_asset).join(
         Equipment, AppComponents.id_main_asset == Equipment.id
     ).filter(
@@ -3610,11 +4259,11 @@ def my_moves():
     ).distinct().all()
     my_components_main_asset_ids = [comp[0] for comp in my_components_main_asset_ids]
     
-    # Объединяем ID ТМЦ и основных ТМЦ для комплектующих
+    # Объединяем ID ТМЦ и основных ТМЦ для компьютерной периферии
     all_equipment_ids = list(set(my_equipment_ids + my_components_main_asset_ids))
     
     # Получаем перемещения для ТМЦ МОЛ
-    # Перемещения комплектующих уже включены через их основное ТМЦ
+    # Перемещения компьютерной периферии уже включены через их основное ТМЦ
     if all_equipment_ids:
         moves = Move.query.filter(
             Move.eqid.in_(all_equipment_ids)
@@ -4473,6 +5122,35 @@ def edit_place(place_id):
             flash('Название помещения обязательно для заполнения', 'danger')
             return redirect(url_for('edit_place', place_id=place_id))
         
+        # Обработка загрузки схемы помещения
+        map_image_file = request.files.get('map_image')
+        if map_image_file and map_image_file.filename != '':
+            if allowed_map_image(map_image_file.filename):
+                # Удаляем старое изображение схемы, если оно существует
+                if place.map_image and place.map_image.strip():
+                    old_map_path = os.path.join(app.config['UPLOAD_FOLDER'], 'place_maps', place.map_image)
+                    if os.path.exists(old_map_path):
+                        try:
+                            os.remove(old_map_path)
+                        except OSError:
+                            pass  # Игнорируем ошибки удаления
+                
+                # Сохраняем новое изображение схемы
+                filename = secure_filename(map_image_file.filename)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                ext = filename.rsplit('.', 1)[1].lower()
+                map_filename = f"place_{place_id}_{timestamp}.{ext}"
+                
+                # Создаем директорию для схем помещений, если её нет
+                place_maps_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'place_maps')
+                os.makedirs(place_maps_dir, exist_ok=True)
+                
+                map_image_file.save(os.path.join(place_maps_dir, map_filename))
+                place.map_image = map_filename
+                flash('Схема помещения успешно загружена', 'success')
+            else:
+                flash('Неверный формат файла схемы. Допустимые форматы: PNG, JPG, JPEG, SVG', 'danger')
+        
         try:
             place.name = name
             place.active = active
@@ -4573,6 +5251,116 @@ def place_equipment(place_id):
                           total_cost=total_cost,
                           is_admin=is_admin,
                           is_mol=is_mol)
+
+@app.route('/place_map/<int:place_id>')
+@login_required
+def place_map(place_id):
+    """Схема размещения ТМЦ в помещении."""
+    is_admin = current_user.mode == 1
+    place = db.session.get(Places, place_id)
+    if not place:
+        flash('Помещение не найдено', 'danger')
+        return redirect(url_for('my_places'))
+    
+    # Проверка доступа
+    if not is_admin:
+        user_tmc_in_place = Equipment.query.filter_by(
+            placesid=place_id,
+            usersid=current_user.id,
+            active=True,
+            os=True
+        ).first()
+        if not user_tmc_in_place:
+            flash('Доступ запрещён', 'danger')
+            return redirect(url_for('my_places'))
+    
+    # Получаем ТМЦ помещения с координатами
+    if is_admin:
+        equipment_list = Equipment.query.filter_by(
+            placesid=place_id,
+            active=True,
+            os=True
+        ).order_by(Equipment.invnum, Equipment.buhname).all()
+    else:
+        equipment_list = Equipment.query.filter_by(
+            placesid=place_id,
+            usersid=current_user.id,
+            active=True,
+            os=True
+        ).order_by(Equipment.invnum, Equipment.buhname).all()
+    
+    # Подготавливаем данные для схемы
+    equipment_data = []
+    for eq in equipment_list:
+        x = float(eq.mapx) if eq.mapx and eq.mapx.strip() else None
+        y = float(eq.mapy) if eq.mapy and eq.mapy.strip() else None
+        equipment_data.append({
+            'id': eq.id,
+            'name': eq.buhname,
+            'invnum': eq.invnum or '',
+            'sernum': eq.sernum or '',
+            'x': x,
+            'y': y,
+            'rack': eq.warehouse_rack or '',
+            'cell': eq.warehouse_cell or '',
+            'status': 'repair' if eq.repair else ('lost' if eq.lost else 'active'),
+            'cost': float(eq.cost) if eq.cost else 0.0
+        })
+    
+    is_mol = current_user_has_role(1)
+    can_edit = is_admin or is_mol
+    
+    # Путь к схеме помещения
+    map_image_url = None
+    if place.map_image and place.map_image.strip():
+        map_image_url = url_for('static', filename=f'uploads/place_maps/{place.map_image}')
+    
+    return render_template('places/place_map.html',
+                          place=place,
+                          equipment_data=equipment_data,
+                          map_image_url=map_image_url,
+                          is_admin=is_admin,
+                          is_mol=is_mol,
+                          can_edit=can_edit)
+
+@app.route('/api/save_equipment_position', methods=['POST'])
+@login_required
+def save_equipment_position():
+    """API для сохранения позиции ТМЦ на схеме."""
+    is_admin = current_user.mode == 1
+    is_mol = current_user_has_role(1)
+    
+    if not (is_admin or is_mol):
+        return jsonify({'success': False, 'error': 'Доступ запрещён'}), 403
+    
+    try:
+        data = request.get_json()
+        equipment_id = data.get('equipment_id')
+        x = data.get('x')
+        y = data.get('y')
+        
+        if not equipment_id:
+            return jsonify({'success': False, 'error': 'Не указан ID ТМЦ'}), 400
+        
+        equipment = Equipment.query.get(equipment_id)
+        if not equipment:
+            return jsonify({'success': False, 'error': 'ТМЦ не найдено'}), 404
+        
+        # Проверка доступа: МОЛ может редактировать только свои ТМЦ
+        if not is_admin and equipment.usersid != current_user.id:
+            return jsonify({'success': False, 'error': 'Доступ запрещён'}), 403
+        
+        # Сохраняем координаты
+        equipment.mapx = str(x) if x is not None else ''
+        equipment.mapy = str(y) if y is not None else ''
+        equipment.mapyet = True if x is not None and y is not None else False
+        
+        db.session.commit()
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/add_department', methods=['GET', 'POST'])
 @login_required
@@ -4692,6 +5480,9 @@ def delete_department(department_id):
 @login_required
 def generate_form8(department_id):
     """Генерация формы 8 (Книга учета материальных ценностей) для отдела."""
+    from import_export.pdf_export import generate_form8_pdf
+    import models
+    
     is_admin = current_user.mode == 1
     department = Department.query.get_or_404(department_id)
     
@@ -4727,164 +5518,6 @@ def generate_form8(department_id):
         flash('В отделе нет ТМЦ для формирования отчета', 'warning')
         return redirect(url_for('my_departments'))
     
-    # Генерируем PDF файл формы 8
-    from io import BytesIO
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.units import mm
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-    import os
-    
-    # Регистрируем шрифт Times New Roman (или Liberation Serif как аналог)
-    # Пытаемся найти системный шрифт с кириллицей (Times New Roman или аналог)
-    times_font_paths = [
-        '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
-        '/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf',
-        '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf',
-        '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf',
-        '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
-        '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-    ]
-    
-    # Ищем доступный шрифт (приоритет Serif, затем Sans)
-    regular_font_path = None
-    bold_font_path = None
-    
-    # Сначала ищем Serif (Times New Roman аналог)
-    for path in times_font_paths:
-        if os.path.exists(path) and 'Serif' in path and 'Regular' in path:
-            regular_font_path = path
-            break
-    
-    # Если не нашли Serif, ищем Sans
-    if not regular_font_path:
-        for path in times_font_paths:
-            if os.path.exists(path) and ('Regular' in path or ('Sans.ttf' in path and 'Bold' not in path and 'Serif' not in path)):
-                regular_font_path = path
-                break
-    
-    # Ищем Bold версию
-    for path in times_font_paths:
-        if os.path.exists(path) and 'Bold' in path:
-            # Предпочитаем Serif Bold, если есть
-            if 'Serif' in path:
-                bold_font_path = path
-                break
-            elif not bold_font_path:  # Сохраняем первый найденный Bold
-                bold_font_path = path
-    
-    # Регистрируем шрифты, если найдены
-    if regular_font_path:
-        try:
-            pdfmetrics.registerFont(TTFont('TimesFont', regular_font_path))
-            font_name = 'TimesFont'
-        except:
-            font_name = 'Helvetica'
-    else:
-        font_name = 'Helvetica'
-    
-    if bold_font_path:
-        try:
-            pdfmetrics.registerFont(TTFont('TimesFontBold', bold_font_path))
-            bold_font_name = 'TimesFontBold'
-        except:
-            bold_font_name = 'Helvetica-Bold'
-    else:
-        bold_font_name = 'Helvetica-Bold'
-    
-    # Создаем буфер для PDF
-    buffer = BytesIO()
-    
-    # Создаем документ в альбомной ориентации
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
-                           rightMargin=10*mm, leftMargin=10*mm,
-                           topMargin=10*mm, bottomMargin=10*mm)
-    
-    # Контейнер для элементов документа
-    elements = []
-    
-    # Стили
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=14,
-        textColor=colors.HexColor('#000000'),
-        spaceAfter=6,
-        alignment=TA_CENTER,
-        fontName=bold_font_name
-    )
-    
-    normal_style = ParagraphStyle(
-        'CustomNormal',
-        parent=styles['Normal'],
-        fontSize=9,
-        textColor=colors.HexColor('#000000'),
-        alignment=TA_LEFT,
-        fontName=font_name
-    )
-    
-    small_style = ParagraphStyle(
-        'CustomSmall',
-        parent=styles['Normal'],
-        fontSize=7,
-        textColor=colors.HexColor('#000000'),
-        alignment=TA_CENTER,
-        fontName=font_name,
-        leading=8  # Межстрочный интервал
-    )
-    
-    # Стиль для данных в таблице (меньший размер для лучшего масштабирования)
-    table_data_style = ParagraphStyle(
-        'TableData',
-        parent=styles['Normal'],
-        fontSize=6,
-        textColor=colors.HexColor('#000000'),
-        alignment=TA_CENTER,  # Центрирование
-        fontName=font_name,
-        leading=7
-    )
-    
-    # Стиль для чисел в таблице
-    table_number_style = ParagraphStyle(
-        'TableNumber',
-        parent=styles['Normal'],
-        fontSize=6,
-        textColor=colors.HexColor('#000000'),
-        alignment=TA_CENTER,  # Центрирование для чисел
-        fontName=font_name,
-        leading=7
-    )
-    
-    # Стиль для заголовков таблицы (без переноса)
-    table_header_style = ParagraphStyle(
-        'TableHeader',
-        parent=styles['Normal'],
-        fontSize=6,
-        textColor=colors.HexColor('#000000'),
-        alignment=TA_CENTER,
-        fontName=bold_font_name,
-        leading=7
-    )
-    
-    # Титульная страница
-    # Заголовок формы
-    elements.append(Spacer(1, 20*mm))
-    form_title = Paragraph('Форма № 8', normal_style)
-    elements.append(form_title)
-    elements.append(Spacer(1, 5*mm))
-    
-    # Основной заголовок
-    main_title = Paragraph('КНИГА № ____<br/>УЧЕТА МАТЕРИАЛЬНЫХ ЦЕННОСТЕЙ', title_style)
-    elements.append(main_title)
-    elements.append(Spacer(1, 10*mm))
-    
     # Получаем организацию пользователя
     user_org = None
     if hasattr(current_user, 'orgid') and current_user.orgid:
@@ -4898,459 +5531,197 @@ def generate_form8(department_id):
     elif current_user:
         mol_name = current_user.login
     
-    # Информация об отделе и датах
-    info_data = [
-        [
-            Paragraph('Учреждение:', normal_style),
-            Paragraph(org_name, normal_style),
-            Paragraph('по ОКУД', normal_style),
-            Paragraph('', normal_style)
-        ],
-        [
-            Paragraph('Структурное подразделение:', normal_style),
-            Paragraph(department.name, normal_style),
-            Paragraph('Дата открытия', normal_style),
-            Paragraph('', normal_style)
-        ],
-        [
-            Paragraph('Материально ответственное лицо:', normal_style),
-            Paragraph(mol_name, normal_style),
-            Paragraph('Дата закрытия', normal_style),
-            Paragraph('', normal_style)
-        ],
-        [
-            Paragraph('', normal_style),
-            Paragraph('', normal_style),
-            Paragraph('по ОКПО', normal_style),
-            Paragraph('', normal_style)
-        ]
-    ]
-    
-    info_table = Table(info_data, colWidths=[50*mm, 90*mm, 35*mm, 25*mm])
-    info_table.setStyle(TableStyle([
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('FONTNAME', (0, 0), (0, -1), bold_font_name),
-        ('FONTNAME', (1, 0), (1, -1), font_name),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-    ]))
-    elements.append(info_table)
-    elements.append(Spacer(1, 10*mm))
-    
-    # Даты начала и окончания
-    date_text = f'Начата «____» ________ {datetime.now().year} г.<br/>Окончена «____» ________ {datetime.now().year} г.'
-    date_para = Paragraph(date_text, normal_style)
-    elements.append(date_para)
-    elements.append(Spacer(1, 5*mm))
-    elements.append(PageBreak())
-    
-    # Пояснения к форме
-    explanations = [
-        'Пояснения к форме:',
-        '1. Книга используется для учета материальных ценностей, выданных в установленных случаях во временное пользование на период не более одного месяца.',
-        '2. Книга ведется в подразделении, на складе, в мастерской (цехе) воинской части.',
-        '3. В книге отдельные листы отводятся для каждого наименования материальных ценностей или для каждой единицы (военнослужащего), получающей их.',
-    ]
-    
-    for exp in explanations:
-        elements.append(Paragraph(exp, normal_style))
-        elements.append(Spacer(1, 3*mm))
-    
-    elements.append(PageBreak())
-    
-    # Группируем ТМЦ по nomeid (группам ТМЦ)
-    from collections import defaultdict
-    equipment_by_nome = defaultdict(list)
-    for eq in equipment_list:
-        equipment_by_nome[eq.nomeid].append(eq)
-    
-    # Для каждой группы ТМЦ создаем отдельную страницу
-    for nome_id, nome_equipment_list in equipment_by_nome.items():
-        # Получаем название группы ТМЦ
-        nome = Nome.query.get(nome_id)
-        nome_name = nome.name if nome else f'Группа ID {nome_id}'
+    # Генерируем PDF файл формы 8
+    return generate_form8_pdf(department, equipment_list, org_name, mol_name, db.session, models)
+
+# === API ДЛЯ СБОРА ДАННЫХ О ЖЕСТКИХ ДИСКАХ ===
+
+@app.route('/api/hdd_collect', methods=['POST'])
+def api_hdd_collect():
+    """API endpoint для приема данных о жестких дисках с Windows ПК."""
+    try:
+        data = request.get_json()
         
-        # Создаем единую таблицу для всей страницы
-        # Берем данные из первого ТМЦ группы (если есть)
-        first_eq = nome_equipment_list[0] if nome_equipment_list else None
+        if not data or 'disks' not in data:
+            return jsonify({'error': 'Неверный формат данных'}), 400
         
-        # Получаем данные для верхней секции
-        # Убеждаемся, что все значения являются строками (не None)
-        def safe_str(value):
-            """Безопасное преобразование в строку, возвращает '' если None"""
-            return str(value) if value is not None else ''
+        from models import PCHardDrive, Vendor, PCHardDriveHistory
         
-        warehouse = safe_str(first_eq.places.name) if first_eq and first_eq.places else ''  # Склад (из places)
-        rack = safe_str(getattr(first_eq, 'warehouse_rack', None)) if first_eq else ''  # Стеллаж
-        cell = safe_str(getattr(first_eq, 'warehouse_cell', None)) if first_eq else ''  # Ячейка
-        unit_name = safe_str(getattr(first_eq, 'unit_name', None)) if first_eq else ''  # Единица измерения (наименование)
-        unit_code = safe_str(getattr(first_eq, 'unit_code', None)) if first_eq else ''  # Единица измерения (код)
-        price = f"{float(first_eq.cost):,.2f}".replace(',', ' ') if first_eq and first_eq.cost else ''  # Цена
+        hostname = data.get('hostname', 'Unknown')
+        timestamp = data.get('timestamp', datetime.now().isoformat())
+        disks_data = data.get('disks', [])
         
-        # Марка (из vendor через vendorid)
-        brand = ''
-        if first_eq and first_eq.nome and first_eq.nome.vendorid:
-            vendor = Vendor.query.get(first_eq.nome.vendorid)
-            brand = safe_str(vendor.name) if vendor else ''
+        processed = 0
+        errors = []
         
-        # Категория (сорт) - значение от 1 до 5 из группы ТМЦ
-        category = ''
-        if first_eq and first_eq.nome and first_eq.nome.category_sort:
-            category = str(first_eq.nome.category_sort)  # Категория (сорт) - значение от 1 до 5
-        profile = safe_str(getattr(first_eq, 'profile', None)) if first_eq else ''  # Профиль
-        size = safe_str(getattr(first_eq, 'size', None)) if first_eq else ''  # Размер
-        stock_norm = safe_str(getattr(first_eq, 'stock_norm', None)) if first_eq else ''  # Норма запаса
-        service_life = first_eq.dtendlife.strftime('%d.%m.%Y') if first_eq and first_eq.dtendlife else ''  # Срок службы
-        
-        # Создаем единую таблицу
-        table_data = []
-        
-        # Первая строка - заголовки верхней секции
-        # Только заголовки, без значений
-        header_row1 = [
-            Paragraph('Склад', table_header_style),
-            Paragraph('Стеллаж', table_header_style),
-            Paragraph('Ячейка', table_header_style),
-            Paragraph('Единица измерения', table_header_style),
-            Paragraph('', table_header_style),  # Пустая ячейка для объединения
-            Paragraph('Цена, руб. коп.', table_header_style),
-            Paragraph('Марка', table_header_style),
-            Paragraph('Категория (сорт)', table_header_style),
-            Paragraph('Профиль', table_header_style),
-            Paragraph('Размер', table_header_style),
-            Paragraph('Норма запаса', table_header_style),
-            Paragraph('Срок службы', table_header_style)
-        ]
-        table_data.append(header_row1)
-        
-        # Вторая строка - подзаголовки
-        # Для объединяемых столбцов (0,1,2,5,6,7,8,9,10,11) - пустые ячейки
-        # Для столбцов 3,4 - подзаголовки "наименование" и "код"
-        header_row2 = [
-            Paragraph('', table_data_style),  # Столбец 0 - пусто (будет объединен)
-            Paragraph('', table_data_style),  # Столбец 1 - пусто (будет объединен)
-            Paragraph('', table_data_style),  # Столбец 2 - пусто (будет объединен)
-            Paragraph('наименование', table_header_style),
-            Paragraph('код', table_header_style),
-            Paragraph('', table_data_style),  # Столбец 5 - пусто (будет объединен)
-            Paragraph('', table_data_style),  # Столбец 6 - пусто (будет объединен)
-            Paragraph('', table_data_style),  # Столбец 7 - пусто (будет объединен)
-            Paragraph('', table_data_style),  # Столбец 8 - пусто (будет объединен)
-            Paragraph('', table_data_style),  # Столбец 9 - пусто (будет объединен)
-            Paragraph('', table_data_style),  # Столбец 10 - пусто (будет объединен)
-            Paragraph('', table_data_style)  # Столбец 11 - пусто (будет объединен)
-        ]
-        table_data.append(header_row2)
-        
-        # Третья строка - все данные из базы данных
-        # Для объединяемых столбцов (0,1,2,5,6,7,8,9,10,11) - значения из БД
-        # Для столбцов 3,4 - значения единицы измерения из БД
-        data_row3 = [
-            Paragraph(warehouse, table_data_style) if warehouse else Paragraph('', table_data_style),  # Столбец 0 - значение склада
-            Paragraph(rack, table_data_style) if rack else Paragraph('', table_data_style),  # Столбец 1 - значение стеллажа
-            Paragraph(cell, table_data_style) if cell else Paragraph('', table_data_style),  # Столбец 2 - значение ячейки
-            Paragraph(unit_name, table_data_style) if unit_name else Paragraph('', table_data_style),  # Столбец 3 - значение единицы измерения (наименование)
-            Paragraph(unit_code, table_data_style) if unit_code else Paragraph('', table_data_style),  # Столбец 4 - значение единицы измерения (код)
-            Paragraph(price, table_data_style) if price else Paragraph('', table_data_style),  # Столбец 5 - значение цены
-            Paragraph(brand, table_data_style) if brand else Paragraph('', table_data_style),  # Столбец 6 - значение марки
-            Paragraph(category, table_data_style) if category else Paragraph('', table_data_style),  # Столбец 7 - значение категории
-            Paragraph(profile, table_data_style) if profile else Paragraph('', table_data_style),  # Столбец 8 - значение профиля
-            Paragraph(size, table_data_style) if size else Paragraph('', table_data_style),  # Столбец 9 - значение размера
-            Paragraph(stock_norm, table_data_style) if stock_norm else Paragraph('', table_data_style),  # Столбец 10 - значение нормы запаса
-            Paragraph(service_life, table_data_style) if service_life else Paragraph('', table_data_style)  # Столбец 11 - значение срока службы
-        ]
-        table_data.append(data_row3)
-        
-        # Четвертая строка - "Наименование материальных ценностей" с названием группы (объединенная ячейка на всю ширину)
-        nome_row = [
-            Paragraph(f'Наименование материальных ценностей "{nome_name}"', table_header_style),
-            Paragraph('', table_data_style),  # Пустые ячейки для объединения
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style)
-        ]
-        table_data.append(nome_row)
-        
-        # Пятая строка - заголовки основной таблицы
-        main_header_row1 = [
-            Paragraph('Порядковый<br/>номер<br/>записи', table_header_style),
-            Paragraph('Дата<br/>записи', table_header_style),
-            Paragraph('Документ', table_header_style),
-            Paragraph('Документ', table_header_style),
-            Paragraph('Документ', table_header_style),
-            Paragraph('От кого получено<br/>(кому отпущено)', table_header_style),
-            Paragraph('Заводской номер<br/>(иной номер)', table_header_style),
-            Paragraph('Инвентарный<br/>номер', table_header_style),
-            Paragraph('Приход', table_header_style),
-            Paragraph('Расход', table_header_style),
-            Paragraph('Остаток', table_header_style),
-            Paragraph('Контроль<br/>(подпись и дата)', table_header_style)
-        ]
-        table_data.append(main_header_row1)
-        
-        # Шестая строка - подзаголовки для документа
-        main_header_row2 = [
-            Paragraph('', table_header_style),
-            Paragraph('', table_header_style),
-            Paragraph('наименование', table_header_style),
-            Paragraph('дата', table_header_style),
-            Paragraph('номер', table_header_style),
-            Paragraph('', table_header_style),
-            Paragraph('', table_header_style),
-            Paragraph('', table_header_style),
-            Paragraph('', table_header_style),
-            Paragraph('', table_header_style),
-            Paragraph('', table_header_style),
-            Paragraph('', table_header_style)
-        ]
-        table_data.append(main_header_row2)
-        
-        # Данные для этой группы
-        total_cost = 0
-        for idx, eq in enumerate(nome_equipment_list, 1):
-            # Дата поступления
-            date_str = eq.datepost.strftime('%d.%m.%Y') if eq.datepost else ''
-            
-            # Документ (можно использовать накладные или другие документы)
-            # Ищем связанные накладные
-            doc_name = 'Поступление'
-            doc_date = date_str
-            doc_number = ''
-            
-            # Пытаемся найти первую накладную для этого ТМЦ (по дате накладной)
-            # Сортируем по дате накладной, чтобы получить самую раннюю
-            invoice_eq = InvoiceEquipment.query.join(Invoices).filter(
-                InvoiceEquipment.equipment_id == eq.id
-            ).order_by(Invoices.invoice_date.asc()).first()
-            
-            if invoice_eq and invoice_eq.invoice:
-                doc_name = 'Накладная'
-                doc_date = invoice_eq.invoice.invoice_date.strftime('%d.%m.%Y') if invoice_eq.invoice.invoice_date else date_str
-                doc_number = invoice_eq.invoice.invoice_number or ''
+        for disk_data in disks_data:
+            try:
+                model = disk_data.get('model', '').strip()
+                serial_number = disk_data.get('serial_number', '').strip()
                 
-                # Определяем, от кого был принят ТМЦ согласно первой накладной
-                invoice = invoice_eq.invoice
-                from_info = ''
+                if not model or not serial_number:
+                    errors.append(f"Пропущен диск: отсутствует модель или серийный номер")
+                    continue
                 
-                # Загружаем связанные данные, если они не загружены
-                if invoice.type == 'Склад-МОЛ':
-                    # От склада (from_knt)
-                    if invoice.from_knt_id:
-                        knt = Knt.query.get(invoice.from_knt_id)
-                        if knt and knt.name:
-                            from_info = knt.name
-                        else:
-                            from_info = f'Склад ID {invoice.from_knt_id}'
-                    else:
-                        from_info = 'Склад (не указан)'
-                elif invoice.type == 'МОЛ-МОЛ':
-                    # От МОЛ (from_user)
-                    if invoice.from_user_id:
-                        from_user = Users.query.get(invoice.from_user_id)
-                        if from_user and from_user.login:
-                            from_info = from_user.login
-                        else:
-                            from_info = f'МОЛ ID {invoice.from_user_id}'
-                    else:
-                        from_info = 'МОЛ (не указан)'
-                elif invoice.type == 'МОЛ-Склад':
-                    # От МОЛ (from_user) - при возврате на склад
-                    if invoice.from_user_id:
-                        from_user = Users.query.get(invoice.from_user_id)
-                        if from_user and from_user.login:
-                            from_info = from_user.login
-                        else:
-                            from_info = f'МОЛ ID {invoice.from_user_id}'
-                    else:
-                        from_info = 'МОЛ (не указан)'
+                # Определяем тип диска
+                media_type = disk_data.get('media_type', '').upper()
+                if 'SSD' in media_type or 'SOLID' in media_type:
+                    drive_type = 'SSD'
+                elif 'SAS' in disk_data.get('interface', '').upper():
+                    drive_type = 'SAS'
                 else:
-                    from_info = 'Не указано'
+                    drive_type = 'HDD'
                 
-                from_to_info = from_info
-            else:
-                # Если накладной нет, используем текущего МОЛ как fallback
-                mol_name = eq.users.login if eq.users else 'Не указан'
-                from_to_info = mol_name
-            
-            # Заводской номер
-            factory_num = eq.sernum or ''
-            
-            # Инвентарный номер
-            inv_num = eq.invnum or ''
-            
-            # Приход (стоимость при поступлении)
-            cost = float(eq.cost) if eq.cost else 0.0
-            total_cost += cost
-            receipt = f"{cost:,.2f}".replace(',', ' ') if cost > 0 else ''
-            
-            # Расход (пусто, так как это книга учета)
-            expense = ''
-            
-            # Остаток (равен приходу для учета)
-            balance = receipt
-            
-            # Используем Paragraph для всех текстовых элементов для корректного масштабирования
-            row = [
-                Paragraph(str(idx), table_data_style),
-                Paragraph(date_str, table_data_style) if date_str else '',
-                Paragraph(doc_name, table_data_style) if doc_name else '',
-                Paragraph(doc_date, table_data_style) if doc_date else '',
-                Paragraph(doc_number, table_data_style) if doc_number else '',
-                Paragraph(from_to_info, table_data_style) if from_to_info else '',  # Наименование ТМЦ и МОЛ
-                Paragraph(factory_num, table_data_style) if factory_num else '',
-                Paragraph(inv_num, table_data_style) if inv_num else '',
-                Paragraph(receipt, table_number_style) if receipt else '',
-                Paragraph(expense, table_number_style) if expense else '',
-                Paragraph(balance, table_number_style) if balance else '',
-                Paragraph('', table_data_style)  # Контроль (подпись и дата)
-            ]
-            table_data.append(row)
+                # Определяем производителя
+                manufacturer = disk_data.get('manufacturer', '').strip()
+                if not manufacturer and model:
+                    # Пытаемся определить по модели
+                    model_upper = model.upper()
+                    if 'WD' in model_upper or 'WESTERN' in model_upper:
+                        manufacturer = 'Western Digital'
+                    elif 'SEAGATE' in model_upper or model_upper.startswith('ST'):
+                        manufacturer = 'Seagate'
+                    elif 'TOSHIBA' in model_upper or model_upper.startswith('DT'):
+                        manufacturer = 'Toshiba'
+                    elif 'HP' in model_upper:
+                        manufacturer = 'HP'
+                    elif 'SAMSUNG' in model_upper:
+                        manufacturer = 'Samsung'
+                
+                # Ищем или создаем производителя
+                vendor = Vendor.query.filter_by(name=manufacturer, active=True).first()
+                if not vendor and manufacturer:
+                    vendor = Vendor(name=manufacturer, active=True)
+                    db.session.add(vendor)
+                    db.session.flush()
+                
+                if not vendor:
+                    errors.append(f"Не найден производитель для {model}")
+                    continue
+                
+                # Ищем существующий диск по серийному номеру
+                existing_drive = PCHardDrive.query.filter_by(
+                    serial_number=serial_number,
+                    active=True
+                ).first()
+                
+                capacity_gb = disk_data.get('size_gb')
+                power_on_hours = disk_data.get('power_on_hours')
+                power_on_count = disk_data.get('power_on_count')
+                health_status = disk_data.get('health_status')
+                interface = disk_data.get('interface', '').strip()
+                
+                # Определяем интерфейс
+                if not interface:
+                    if 'SATA' in disk_data.get('interface', '').upper():
+                        interface = 'SATA III'
+                    elif 'SAS' in disk_data.get('interface', '').upper():
+                        interface = 'SAS'
+                    elif 'NVMe' in model.upper() or 'NVME' in model.upper():
+                        interface = 'NVMe'
+                
+                if existing_drive:
+                    # Обновляем существующий диск
+                    update_needed = False
+                    old_health_check_date = existing_drive.health_check_date
+                    old_power_on_hours = existing_drive.power_on_hours
+                    old_power_on_count = existing_drive.power_on_count
+                    old_health_status = existing_drive.health_status
+                    
+                    if capacity_gb and existing_drive.capacity_gb != capacity_gb:
+                        existing_drive.capacity_gb = capacity_gb
+                        update_needed = True
+                    
+                    if power_on_hours is not None and existing_drive.power_on_hours != power_on_hours:
+                        existing_drive.power_on_hours = power_on_hours
+                        update_needed = True
+                    
+                    if power_on_count is not None and existing_drive.power_on_count != power_on_count:
+                        existing_drive.power_on_count = power_on_count
+                        update_needed = True
+                    
+                    if health_status and existing_drive.health_status != health_status:
+                        existing_drive.health_status = health_status
+                        update_needed = True
+                    
+                    if interface and existing_drive.interface != interface:
+                        existing_drive.interface = interface
+                        update_needed = True
+                    
+                    # Обновляем дату проверки
+                    existing_drive.health_check_date = datetime.now().date()
+                    
+                    # Создаем запись в истории если данные изменились
+                    if update_needed and (power_on_hours is not None or power_on_count is not None or health_status):
+                        history_record = PCHardDriveHistory(
+                            hard_drive_id=existing_drive.id,
+                            check_date=datetime.now().date(),
+                            power_on_hours=power_on_hours,
+                            power_on_count=power_on_count,
+                            health_status=health_status,
+                            comment=f'Автоматический сбор с {hostname}'
+                        )
+                        db.session.add(history_record)
+                    
+                    processed += 1
+                else:
+                    # Создаем новый диск
+                    if not capacity_gb:
+                        errors.append(f"Не указан объем для {model} {serial_number}")
+                        continue
+                    
+                    new_drive = PCHardDrive(
+                        drive_type=drive_type,
+                        vendor_id=vendor.id,
+                        model=model,
+                        capacity_gb=capacity_gb,
+                        serial_number=serial_number,
+                        health_check_date=datetime.now().date(),
+                        power_on_hours=power_on_hours,
+                        power_on_count=power_on_count,
+                        health_status=health_status,
+                        interface=interface,
+                        comment=f'Автоматически добавлен с {hostname}'
+                    )
+                    db.session.add(new_drive)
+                    db.session.flush()
+                    
+                    # Создаем начальную запись в истории
+                    if power_on_hours is not None or power_on_count is not None or health_status:
+                        history_record = PCHardDriveHistory(
+                            hard_drive_id=new_drive.id,
+                            check_date=datetime.now().date(),
+                            power_on_hours=power_on_hours,
+                            power_on_count=power_on_count,
+                            health_status=health_status,
+                            comment=f'Автоматический сбор с {hostname}'
+                        )
+                        db.session.add(history_record)
+                    
+                    processed += 1
+                    
+            except Exception as e:
+                errors.append(f"Ошибка обработки диска {disk_data.get('model', 'Unknown')}: {str(e)}")
+                continue
         
-        # Итоговая строка для этой группы
-        total_cost_str = f"{total_cost:,.2f}".replace(',', ' ')
-        total_row = [
-            Paragraph('ИТОГО', table_header_style),  # Используем стиль заголовка для "ИТОГО"
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph('', table_data_style),
-            Paragraph(total_cost_str, table_number_style),
-            Paragraph('', table_data_style),
-            Paragraph(total_cost_str, table_number_style),
-            Paragraph('', table_data_style)
-        ]
-        table_data.append(total_row)
+        db.session.commit()
         
-        # Создаем таблицу (для альбомной ориентации увеличиваем ширину колонок)
-        # Увеличиваем ширину колонок для предотвращения переноса слов
-        table = Table(table_data, colWidths=[
-            15*mm,  # Порядковый номер (увеличено)
-            18*mm,  # Дата записи (увеличено)
-            22*mm,  # Документ - наименование (увеличено)
-            18*mm,  # Документ - дата (увеличено)
-            18*mm,  # Документ - номер (увеличено)
-            40*mm,  # От кого получено (увеличено)
-            22*mm,  # Заводской номер (увеличено)
-            20*mm,  # Инвентарный номер (увеличено)
-            20*mm,  # Приход (увеличено)
-            20*mm,  # Расход (увеличено)
-            20*mm,  # Остаток (увеличено)
-            28*mm   # Контроль (увеличено)
-        ])
-        
-        # Стиль единой таблицы (белый фон)
-        table.setStyle(TableStyle([
-            # Общие стили для всей таблицы - белый фон
-            ('BACKGROUND', (0, 0), (-1, -1), colors.white),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-            
-            # Первая строка (индекс 0) - заголовки верхней секции
-            ('FONTNAME', (0, 0), (-1, 0), bold_font_name),
-            ('FONTSIZE', (0, 0), (-1, 0), 6),
-            # Объединение ячеек для "Единица измерения" в первой строке (горизонтально)
-            ('SPAN', (3, 0), (4, 0)),
-            
-            # Вторая строка (индекс 1) - значения верхней секции
-            ('FONTSIZE', (0, 1), (-1, 1), 6),
-            # Подзаголовки единицы измерения (столбцы 3 и 4 не объединяем)
-            ('FONTNAME', (3, 1), (4, 1), bold_font_name),
-            
-            # Объединение 1-й и 2-й строк для столбцов 0,1,2,5,6,7,8,9,10,11 (вертикально)
-            # НЕ объединяем с третьей строкой, чтобы данные из строки 2 были видны
-            # В ReportLab при SPAN отображается только содержимое первой ячейки
-            # Поэтому объединяем только строки 0 и 1, а данные в строке 2 будут видны отдельно
-            ('SPAN', (0, 0), (0, 1)),  # Столбец 0 (Склад) - объединяем строки 0 и 1
-            ('SPAN', (1, 0), (1, 1)),  # Столбец 1 (Стеллаж) - объединяем строки 0 и 1
-            ('SPAN', (2, 0), (2, 1)),  # Столбец 2 (Ячейка) - объединяем строки 0 и 1
-            ('SPAN', (5, 0), (5, 1)),  # Столбец 5 (Цена) - объединяем строки 0 и 1
-            ('SPAN', (6, 0), (6, 1)),  # Столбец 6 (Марка) - объединяем строки 0 и 1
-            ('SPAN', (7, 0), (7, 1)),  # Столбец 7 (Категория) - объединяем строки 0 и 1
-            ('SPAN', (8, 0), (8, 1)),  # Столбец 8 (Профиль) - объединяем строки 0 и 1
-            ('SPAN', (9, 0), (9, 1)),  # Столбец 9 (Размер) - объединяем строки 0 и 1
-            ('SPAN', (10, 0), (10, 1)),  # Столбец 10 (Норма запаса) - объединяем строки 0 и 1
-            ('SPAN', (11, 0), (11, 1)),  # Столбец 11 (Срок службы) - объединяем строки 0 и 1
-            
-            # Третья строка (индекс 2) - все данные из базы данных
-            ('FONTSIZE', (0, 2), (-1, 2), 6),
-            
-            # Четвертая строка (индекс 3) - "Наименование материальных ценностей" (объединенная на всю ширину)
-            ('FONTNAME', (0, 3), (-1, 3), bold_font_name),
-            ('FONTSIZE', (0, 3), (-1, 3), 6),
-            ('SPAN', (0, 3), (-1, 3)),  # Объединяем все ячейки в строке
-            
-            # Пятая строка (индекс 4) - заголовки основной таблицы
-            ('FONTNAME', (0, 4), (-1, 4), bold_font_name),
-            ('FONTSIZE', (0, 4), (-1, 4), 6),
-            # Объединение ячеек для заголовка "Документ"
-            ('SPAN', (2, 4), (4, 4)),
-            
-            # Шестая строка (индекс 5) - подзаголовки документа
-            ('FONTNAME', (0, 5), (-1, 5), font_name),
-            ('FONTSIZE', (0, 5), (-1, 5), 5),
-            
-            # Данные (начиная с седьмой строки, индекс 6)
-            ('FONTNAME', (0, 6), (-1, -2), font_name),
-            ('FONTSIZE', (0, 6), (-1, -2), 6),
-            ('ALIGN', (0, 6), (-1, -2), 'CENTER'),  # Все данные по центру
-            
-            # Общие стили для всей таблицы
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 2),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
-            ('TOPPADDING', (0, 0), (-1, -1), 2),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-            
-            # Итоговая строка
-            ('FONTNAME', (0, -1), (-1, -1), bold_font_name),
-            ('FONTSIZE', (0, -1), (-1, -1), 6),
-        ]))
-        
-        elements.append(table)
-        
-        # Разрыв страницы перед следующей группой (кроме последней)
-        nome_ids_list = list(equipment_by_nome.keys())
-        if nome_id != nome_ids_list[-1]:
-            elements.append(PageBreak())
-    
-    # Собираем PDF
-    doc.build(elements)
-    
-    # Подготовка ответа
-    buffer.seek(0)
-    
-    # Создаем безопасное имя файла (только ASCII символы)
-    safe_dept_name = department.name.replace(' ', '_').encode('ascii', 'ignore').decode('ascii')
-    if not safe_dept_name:
-        safe_dept_name = 'department'
-    filename_ascii = f"form8_{safe_dept_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    
-    # Для кириллицы используем RFC 2231 encoding
-    from urllib.parse import quote
-    filename_utf8 = f"form8_{department.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    filename_encoded = quote(filename_utf8.encode('utf-8'))
-    
-    response = Response(
-        buffer.getvalue(),
-        mimetype='application/pdf',
-        headers={
-            'Content-Disposition': f'inline; filename="{filename_ascii}"; filename*=UTF-8\'\'{filename_encoded}'
+        result = {
+            'success': True,
+            'processed': processed,
+            'total': len(disks_data),
+            'hostname': hostname,
+            'timestamp': timestamp
         }
-    )
-    
-    return response
+        
+        if errors:
+            result['errors'] = errors
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Ошибка обработки данных: {str(e)}'}), 500
 
 # === ЗАПУСК ПРИЛОЖЕНИЯ ===
 

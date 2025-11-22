@@ -10,6 +10,11 @@
         </p>
     </div>
     <div class="user-info">
+        {% if equipment_list %}
+        <a href="{{ url_for('place_map', place_id=place.id) }}" class="btn btn-primary btn-sm me-2">
+            <i class="bi bi-diagram-3 me-1"></i>Схема размещения
+        </a>
+        {% endif %}
         <a href="{{ url_for('my_places') }}" class="btn btn-secondary btn-sm">
             <i class="bi bi-arrow-left me-1"></i>Назад к помещениям
         </a>

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Скрипт для экспорта базы данных MySQL в корень проекта.
+Модуль для экспорта базы данных MySQL в корень проекта.
 Использует mysqldump для создания дампа базы данных.
 """
 import os
@@ -50,7 +50,9 @@ def export_database():
         # Создаем имя файла с датой и временем
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         dump_filename = f"database_backup_{db_params['database']}_{timestamp}.sql"
-        dump_path = os.path.join(os.path.dirname(__file__), dump_filename)
+        # Сохраняем в корень проекта
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        dump_path = os.path.join(project_root, dump_filename)
         
         # Формируем команду mysqldump
         cmd = [

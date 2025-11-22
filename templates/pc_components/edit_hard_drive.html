@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}Редактировать жесткий диск{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Редактировать жесткий диск</h1>
+        <p class="text-muted mb-0">Изменение данных комплектующего ПК</p>
+    </div>
+    <div class="user-info">
+        <a href="{{ url_for('hard_drives_list') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>Назад
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="POST" novalidate>
+            <div class="row g-3">
+                <!-- Обязательные поля -->
+                <div class="col-12">
+                    <h5 class="mb-3">
+                        <i class="bi bi-asterisk me-2 text-danger"></i>Обязательные поля
+                    </h5>
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="drive_type" class="form-label">
+                        <i class="bi bi-diagram-3 me-1"></i>Тип <span class="text-danger">*</span>
+                    </label>
+                    <select class="form-select" id="drive_type" name="drive_type" required>
+                        <option value="">-- Выберите тип --</option>
+                        <option value="HDD" {% if hard_drive.drive_type == 'HDD' %}selected{% endif %}>HDD</option>
+                        <option value="SSD" {% if hard_drive.drive_type == 'SSD' %}selected{% endif %}>SSD</option>
+                        <option value="NVMe" {% if hard_drive.drive_type == 'NVMe' %}selected{% endif %}>NVMe</option>
+                    </select>
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="vendor_id" class="form-label">
+                        <i class="bi bi-building me-1"></i>Марка <span class="text-danger">*</span>
+                    </label>
+                    <select class="form-select" id="vendor_id" name="vendor_id" required>
+                        <option value="">-- Выберите марку --</option>
+                        {% for vendor in vendors %}
+                            <option value="{{ vendor.id }}" {% if hard_drive.vendor_id == vendor.id %}selected{% endif %}>
+                                {{ vendor.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="model" class="form-label">
+                        <i class="bi bi-tag me-1"></i>Модель <span class="text-danger">*</span>
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="model" 
+                           name="model" 
+                           required
+                           value="{{ hard_drive.model }}"
+                           placeholder="Например: WD Blue 1TB">
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="capacity_gb" class="form-label">
+                        <i class="bi bi-hdd-stack me-1"></i>Объем (ГБ) <span class="text-danger">*</span>
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="capacity_gb" 
+                           name="capacity_gb"
+                           required
+                           min="1"
+                           value="{{ hard_drive.capacity_gb if hard_drive.capacity_gb else '' }}"
+                           placeholder="Например: 1000">
+                </div>
+                
+                <div class="col-md-12">
+                    <label for="serial_number" class="form-label">
+                        <i class="bi bi-upc-scan me-1"></i>Серийный номер <span class="text-danger">*</span>
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="serial_number" 
+                           name="serial_number"
+                           required
+                           value="{{ hard_drive.serial_number if hard_drive.serial_number else '' }}"
+                           placeholder="Серийный номер">
+                </div>
+                
+                <!-- Необязательные поля -->
+                <div class="col-12 mt-4">
+                    <h5 class="mb-3">
+                        <i class="bi bi-info-circle me-2"></i>Необязательные поля
+                    </h5>
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="health_check_date" class="form-label">
+                        <i class="bi bi-calendar-check me-1"></i>Дата проверки здоровья
+                    </label>
+                    <input type="date" 
+                           class="form-control" 
+                           id="health_check_date" 
+                           name="health_check_date"
+                           value="{{ hard_drive.health_check_date.strftime('%Y-%m-%d') if hard_drive.health_check_date else '' }}">
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="power_on_count" class="form-label">
+                        <i class="bi bi-power me-1"></i>Число включений
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="power_on_count" 
+                           name="power_on_count"
+                           min="0"
+                           value="{{ hard_drive.power_on_count if hard_drive.power_on_count else '' }}"
+                           placeholder="Количество включений">
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="power_on_hours" class="form-label">
+                        <i class="bi bi-clock-history me-1"></i>Наработка (часы)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="power_on_hours" 
+                           name="power_on_hours"
+                           min="0"
+                           value="{{ hard_drive.power_on_hours if hard_drive.power_on_hours else '' }}"
+                           placeholder="Часы работы">
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="health_status" class="form-label">
+                        <i class="bi bi-heart-pulse me-1"></i>Здоровье
+                    </label>
+                    <select class="form-select" id="health_status" name="health_status">
+                        <option value="">-- Не указано --</option>
+                        <option value="Здоров" {% if hard_drive.health_status == 'Здоров' %}selected{% endif %}>Здоров</option>
+                        <option value="Тревога" {% if hard_drive.health_status == 'Тревога' %}selected{% endif %}>Тревога</option>
+                        <option value="Неработает" {% if hard_drive.health_status == 'Неработает' %}selected{% endif %}>Неработает</option>
+                    </select>
+                </div>
+                
+                <div class="col-12">
+                    <label for="comment" class="form-label">
+                        <i class="bi bi-chat-text me-1"></i>Комментарий
+                    </label>
+                    <textarea class="form-control" 
+                              id="comment" 
+                              name="comment" 
+                              rows="3"
+                              placeholder="Дополнительная информация">{{ hard_drive.comment if hard_drive.comment else '' }}</textarea>
+                </div>
+                
+                <!-- Дополнительные поля -->
+                <div class="col-12 mt-4">
+                    <h5 class="mb-3">
+                        <i class="bi bi-gear me-2"></i>Дополнительная информация
+                    </h5>
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="interface" class="form-label">
+                        <i class="bi bi-plug me-1"></i>Интерфейс
+                    </label>
+                    <select class="form-select" id="interface" name="interface">
+                        <option value="">Не указано</option>
+                        <option value="SATA" {% if hard_drive.interface == 'SATA' %}selected{% endif %}>SATA</option>
+                        <option value="SATA III" {% if hard_drive.interface == 'SATA III' %}selected{% endif %}>SATA III</option>
+                        <option value="SAS" {% if hard_drive.interface == 'SAS' %}selected{% endif %}>SAS</option>
+                        <option value="NVMe" {% if hard_drive.interface == 'NVMe' %}selected{% endif %}>NVMe</option>
+                        <option value="PCIe" {% if hard_drive.interface == 'PCIe' %}selected{% endif %}>PCIe</option>
+                        <option value="M.2" {% if hard_drive.interface == 'M.2' %}selected{% endif %}>M.2</option>
+                    </select>
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="purchase_date" class="form-label">
+                        <i class="bi bi-calendar me-1"></i>Дата приобретения
+                    </label>
+                    <input type="date" 
+                           class="form-control" 
+                           id="purchase_date" 
+                           name="purchase_date"
+                           value="{{ hard_drive.purchase_date.strftime('%Y-%m-%d') if hard_drive.purchase_date else '' }}">
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="purchase_cost" class="form-label">
+                        <i class="bi bi-currency-exchange me-1"></i>Стоимость приобретения (₽)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="purchase_cost" 
+                           name="purchase_cost"
+                           step="0.01"
+                           value="{{ hard_drive.purchase_cost if hard_drive.purchase_cost else '' }}"
+                           placeholder="0.00">
+                </div>
+                
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" 
+                               type="checkbox" 
+                               id="active" 
+                               name="active"
+                               {% if hard_drive.active %}checked{% endif %}>
+                        <label class="form-check-label" for="active">
+                            Жесткий диск активен
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="d-flex justify-content-between mt-4">
+                <a href="{{ url_for('hard_drives_list') }}" class="btn btn-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Отмена
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1"></i>Сохранить изменения
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

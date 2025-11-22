@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Скрипт для импорта базы данных MySQL из SQL файла.
+Модуль для импорта базы данных MySQL из SQL файла.
 Использует mysql для восстановления базы данных из дампа.
 """
 import os
@@ -33,7 +33,7 @@ def parse_database_url(database_url):
 
 def list_backup_files():
     """Возвращает список доступных файлов резервных копий."""
-    project_root = os.path.dirname(__file__)
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     pattern = os.path.join(project_root, 'database_backup_*.sql')
     files = sorted(glob.glob(pattern), reverse=True)  # Сначала самые новые
     return files

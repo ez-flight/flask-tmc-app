@@ -1,11 +1,11 @@
-<!-- templates/all_components.html -->
+<!-- templates/components/all_peripherals.html -->
 {% extends "base.html" %}
-{% block title %}Комплектующие и не ОС{% endblock %}
+{% block title %}Компьютерная периферия{% endblock %}
 {% block content %}
 <div class="page-header">
     <div>
-        <h1>Комплектующие и не основные средства</h1>
-        <p class="text-muted mb-0">Комплектующих: {{ tmc_count }} шт. | Общая стоимость: {{ "{:,.2f}".format(total_cost) }} руб.</p>
+        <h1>Компьютерная периферия</h1>
+        <p class="text-muted mb-0">Всего единиц: {{ tmc_count }} шт. | Общая стоимость: {{ "{:,.2f}".format(total_cost) }} руб.</p>
     </div>
     <div class="user-info">
         <span class="text-muted">Вы вошли как: <strong>{{ user_login }}</strong></span>
@@ -60,15 +60,15 @@
 {% if is_admin %}
 <div class="alert alert-success d-flex align-items-center mb-3" role="alert">
     <i class="bi bi-shield-check me-2"></i>
-    <span>Вы администратор. У вас полный доступ к комплектующим.</span>
+    <span>Вы администратор. У вас полный доступ к компьютерной периферии.</span>
 </div>
 {% endif %}
 
 <!-- Кнопки действий -->
 <div class="mb-3">
     {% if is_admin %}
-        <a href="{{ url_for('all_components') }}" class="btn btn-primary me-2">
-            <i class="bi bi-puzzle me-1"></i>Комплектующие
+        <a href="{{ url_for('peripherals') }}" class="btn btn-primary me-2">
+            <i class="bi bi-keyboard me-1"></i>Компьютерная периферия
         </a>
         <a href="{{ url_for('all_tmc') }}" class="btn btn-outline-primary me-2">
             <i class="bi bi-bar-chart me-1"></i>Основные средства
@@ -76,8 +76,8 @@
         <a href="{{ url_for('add_nome') }}" class="btn btn-success me-2">
             <i class="bi bi-plus me-1"></i>Группа ТМЦ
         </a>
-        <a href="{{ url_for('add_component') }}" class="btn btn-success me-2">
-            <i class="bi bi-plus-circle me-1"></i>Добавить комплектующее
+        <a href="{{ url_for('add_peripheral') }}" class="btn btn-success me-2">
+            <i class="bi bi-plus-circle me-1"></i>Добавить периферию
         </a>
     {% endif %}
     <a href="{{ url_for('index') }}" class="btn btn-secondary">
@@ -85,7 +85,18 @@
     </a>
 </div>
 
-<!-- Таблица комплектующих -->
+{% if selected_group_name %}
+<!-- Заголовок выбранной группы -->
+<div class="alert alert-info mb-3">
+    <i class="bi bi-folder me-2"></i>
+    <strong>Группа:</strong> {{ selected_group_name }}
+        <a href="{{ url_for('peripherals') }}" class="btn btn-sm btn-outline-secondary ms-2">
+        <i class="bi bi-arrow-left me-1"></i>Назад к группам
+    </a>
+</div>
+{% endif %}
+
+<!-- Таблица периферии -->
 <div class="card shadow-sm">
     <div class="card-body">
         <div class="table-responsive">
@@ -93,15 +104,27 @@
                 <thead class="table-light">
                     <tr>
                         <th scope="col" style="width: 80px;">Фото</th>
-                        <th scope="col">Тип комплектующего</th>
+                        <th scope="col">
+                            {% if filter_group_id %}
+                                Тип периферии
+                            {% else %}
+                                Группа периферии
+                            {% endif %}
+                        </th>
                         <th scope="col" style="width: 100px;">Кол-во</th>
-                        <th scope="col" style="width: 120px;">Действия</th>
+                        <th scope="col" style="width: 40px;"></th>
                     </tr>
                 </thead>
                 <tbody>
                     {% if grouped_tmc %}
                         {% for item in grouped_tmc %}
-                        <tr>
+                        {% if not filter_group_id and item.is_group is defined and item.is_group %}
+                            <!-- Если группа не выбрана, показываем группы - вся строка кликабельна -->
+                            <tr style="cursor: pointer;" onclick="window.location.href='{{ url_for('peripherals', group_id=item.nomeid) }}'">
+                        {% else %}
+                            <!-- Обычный просмотр по наименованию - вся строка кликабельна -->
+                            <tr style="cursor: pointer;" onclick="window.location.href='{{ url_for('list_by_nome', nome_id=item.nomeid) }}'">
+                        {% endif %}
                             <td>
                                 {% if item.nome_photo %}
                                     <img src="{{ url_for('static', filename='uploads/' + item.nome_photo) }}" 
@@ -111,20 +134,21 @@
                                 {% else %}
                                     <div class="d-flex justify-content-center align-items-center bg-light rounded" 
                                          style="width: 60px; height: 60px; border: 1px solid #ddd;">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-image" viewBox="0 0 16 16">
-                                            <path d="M6.002 5.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm2.002 1.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/>
-                                            <path d="M6.502 7a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM6.002 9a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM1.005 16h13.99a.997.997 0 0 0 .99-1.005L15.002 2a.997.997 0 0 0-.99-1.005H1.005C.01 1 0 1.01 0 2v12.993c0 .99.99 1.005 1.005 1.005z"/>
-                                        </svg>
+                                        <i class="bi bi-{% if filter_group_id %}keyboard{% else %}folder{% endif %}" style="font-size: 1.5rem; color: #6c757d;"></i>
                                     </div>
                                 {% endif %}
                             </td>
-                            <td>{{ item.nome_name }}</td>
-                            <td>{{ item.quantity }}</td>
                             <td>
-                                <a href="{{ url_for('list_by_nome', nome_id=item.nomeid) }}" 
-                                   class="btn btn-sm btn-primary w-100">
-                                   <i class="bi bi-eye me-1"></i>Показать
-                                </a>
+                                <strong>{{ item.nome_name }}</strong>
+                                {% if not filter_group_id and item.total_cost is defined and item.total_cost %}
+                                    <br><small class="text-muted">Стоимость: {{ "{:,.2f}".format(item.total_cost).replace(',', ' ') }} ₽</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-primary">{{ item.quantity }}</span>
+                            </td>
+                            <td>
+                                <i class="bi bi-chevron-right text-muted"></i>
                             </td>
                         </tr>
                         {% endfor %}
@@ -136,7 +160,7 @@
                                         <path d="M8.864.02a.493.493 0 0 0-.728 0l-5.5 7.07A2.5 2.5 0 0 0 3 12h10a2.5 2.5 0 0 0 .364-4.93l-5.5-7.07zM11 10.5a.5.5 0 0 1-.5.5h-5a.5.5 0 0 1 0-1h5a.5.5 0 0 1 .5.5zm-5-4a.5.5 0 0 1-.5.5H4.293l2.854-3.656a.5.5 0 0 1 .764-.035L8 3.5V5.5z"/>
                                         <path d="M12.5.373a.5.5 0 0 1 .602.025l1.5 2a.5.5 0 0 1-.728.643L12.5 1.268V.373zM2.5.373v.895L1.123 3.04a.5.5 0 0 1-.728-.643l1.5-2a.5.5 0 0 1 .602-.024zM15 10.5h.5a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5H15v-3zm-14 0H.5a.5.5 0 0 0-.5.5v2a.5.5 0 0 0 .5.5H1v-3zm13.5-9a.5.5 0 0 0-.5-.5h-11a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5v-1z"/>
                                     </svg>
-                                    <h5>Нет комплектующих</h5>
+                                    <h5>Нет компьютерной периферии</h5>
                                     <p class="mb-0">Нет данных, соответствующих выбранным фильтрам.</p>
                                 </div>
                             </td>
@@ -170,6 +194,17 @@
     }
     .card {
         border: none;
+    }
+    /* Стили для кликабельных строк */
+    tbody tr[onclick] {
+        transition: background-color 0.2s ease;
+    }
+    tbody tr[onclick]:hover {
+        background-color: #f8f9fa !important;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    tbody tr[onclick]:active {
+        background-color: #e9ecef !important;
     }
 </style>
 {% endblock %}

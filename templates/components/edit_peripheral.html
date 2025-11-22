@@ -1,9 +1,9 @@
-<!-- templates/edit_component.html -->
+<!-- templates/components/edit_peripheral.html -->
 {% extends "base.html" %}
-{% block title %}Редактировать комплектующее{% endblock %}
+{% block title %}Редактировать компьютерную периферию{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h1>Редактировать комплектующее</h1>
+    <h1>Редактировать компьютерную периферию</h1>
     <div class="user-info">
         <a href="javascript:history.back()" class="btn btn-secondary btn-sm">
             <i class="bi bi-arrow-left me-1"></i>Назад
@@ -109,7 +109,7 @@
 
     <!-- Группа ТМЦ (только для отображения, не редактируется) -->
     <div class="mb-3">
-        <label class="form-label">Тип комплектующего</label>
+        <label class="form-label">Тип периферии</label>
         <div class="form-control" readonly>{{ current_group.name }}</div>
     </div>
 
@@ -144,12 +144,12 @@
             </div>
         {% endif %}
         <small class="form-text text-muted">
-            ТМЦ, к которым уже привязан данный тип комплектующего, не отображаются в списке (кроме текущей привязки).
+            ТМЦ, к которым уже привязан данный тип периферии, не отображаются в списке (кроме текущей привязки).
         </small>
     </div>
     
     <script>
-    // Фильтрация списка ТМЦ для редактирования комплектующего
+    // Фильтрация списка ТМЦ для редактирования периферии
     document.addEventListener('DOMContentLoaded', function() {
         const blockedAssets = {{ blocked_assets_by_nome|tojson }};
         const currentNomeId = {{ current_component_nome_id }};
@@ -178,7 +178,7 @@
                 <button type="submit" class="btn btn-success">
                     <i class="bi bi-check-circle me-1"></i>Сохранить изменения
                 </button>
-                <a href="{{ url_for('all_components') }}" class="btn btn-secondary">
+                <a href="{{ url_for('peripherals') }}" class="btn btn-secondary">
                     <i class="bi bi-x-circle me-1"></i>Отмена
                 </a>
             </div>

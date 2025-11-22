@@ -1,9 +1,9 @@
-<!-- templates/add_component.html -->
+<!-- templates/components/add_peripheral.html -->
 {% extends "base.html" %}
-{% block title %}Добавить комплектующее{% endblock %}
+{% block title %}Добавить компьютерную периферию{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h1>Добавить новое комплектующее</h1>
+    <h1>Добавить новую компьютерную периферию</h1>
     <div class="user-info">
         <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
             <i class="bi bi-arrow-left me-1"></i>Назад
@@ -48,7 +48,7 @@
             {% endfor %}
         </select>
         <small class="form-text text-muted">
-            ТМЦ, к которым уже привязан выбранный тип комплектующего, не отображаются в списке.
+            ТМЦ, к которым уже привязан выбранный тип периферии, не отображаются в списке.
         </small>
     </div>
     <div class="mb-3">
@@ -99,9 +99,9 @@
         </select>
     </div>
 
-    <!-- Группа ТМЦ (только комплектующие) -->
+    <!-- Группа ТМЦ (только компьютерная периферия) -->
     <div class="mb-3">
-        <label for="groupid" class="form-label">Тип комплектующего *</label>
+        <label for="groupid" class="form-label">Тип периферии *</label>
         <select class="form-select" id="groupid" name="groupid" required onchange="loadVendors()">
             <option value="">-- Выберите тип --</option>
             {% for group in component_groups %}
@@ -129,9 +129,9 @@
 
             <div class="d-flex gap-2 mt-4">
                 <button type="submit" class="btn btn-success">
-                    <i class="bi bi-check-circle me-1"></i>Добавить комплектующее
+                    <i class="bi bi-check-circle me-1"></i>Добавить периферию
                 </button>
-                <a href="{{ url_for('all_components') }}" class="btn btn-secondary">
+                <a href="{{ url_for('peripherals') }}" class="btn btn-secondary">
                     <i class="bi bi-x-circle me-1"></i>Отмена
                 </a>
             </div>
@@ -187,13 +187,13 @@ function loadNomenclatures() {
         });
 }
 
-// Функция для фильтрации списка ТМЦ на основе выбранного типа комплектующего
+// Функция для фильтрации списка ТМЦ на основе выбранного типа периферии
 function updateMainAssetsList() {
     const nomeId = document.getElementById('nomeid').value;
     const mainAssetSelect = document.getElementById('main_asset_id');
     const blockedAssets = {{ blocked_assets_by_nome|tojson }};
     
-    // Если тип комплектующего не выбран, показываем все ТМЦ
+    // Если тип периферии не выбран, показываем все ТМЦ
     if (!nomeId) {
         mainAssetSelect.querySelectorAll('option').forEach(opt => {
             if (opt.value !== '') {
@@ -221,7 +221,7 @@ function updateMainAssetsList() {
     });
 }
 
-// Обновляем список ТМЦ при изменении типа комплектующего
+// Обновляем список ТМЦ при изменении типа периферии
 document.addEventListener('DOMContentLoaded', function() {
     const nomeSelect = document.getElementById('nomeid');
     if (nomeSelect) {

@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}Комплектующие ПК{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Комплектующие ПК</h1>
+        <p class="text-muted mb-0">Учет аппаратного обеспечения: видеокарты и жесткие диски</p>
+    </div>
+    <div class="user-info">
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
+            <i class="bi bi-arrow-left me-1"></i>На главную
+        </a>
+    </div>
+</div>
+
+<!-- Статистика -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-gpu-card me-2"></i>Видеокарты
+                </h5>
+                <p class="card-text">
+                    <strong>Всего:</strong> {{ graphics_cards_count }}<br>
+                    <strong>Привязано к ПК:</strong> {{ linked_graphics_cards_count }}
+                </p>
+                <a href="{{ url_for('add_graphics_card') }}" class="btn btn-primary btn-sm">
+                    <i class="bi bi-plus-circle me-1"></i>Добавить видеокарту
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-hdd me-2"></i>Жесткие диски
+                </h5>
+                <p class="card-text">
+                    <strong>Всего:</strong> {{ hard_drives_count }}<br>
+                    <strong>Привязано к ПК:</strong> {{ linked_hard_drives_count }}
+                </p>
+                <a href="{{ url_for('add_hard_drive') }}" class="btn btn-primary btn-sm">
+                    <i class="bi bi-plus-circle me-1"></i>Добавить жесткий диск
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Видеокарты -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-gpu-card me-2"></i>Видеокарты
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">Производитель</th>
+                        <th scope="col">Модель</th>
+                        <th scope="col">Память</th>
+                        <th scope="col">Серийный номер</th>
+                        <th scope="col">Стоимость</th>
+                        <th scope="col" style="width: 120px;">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if graphics_cards %}
+                        {% for card in graphics_cards %}
+                        <tr>
+                            <td><strong>{{ card.vendor.name if card.vendor else 'Unknown' }}</strong></td>
+                            <td>{{ card.model }}</td>
+                            <td>
+                                {% if card.memory_size %}
+                                    {{ card.memory_size }} МБ
+                                    {% if card.memory_type %}
+                                        ({{ card.memory_type }})
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if card.serial_number %}
+                                    <code>{{ card.serial_number }}</code>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if card.purchase_cost %}
+                                    {{ "{:,.2f}".format(card.purchase_cost).replace(',', ' ') }} ₽
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <a href="{{ url_for('edit_graphics_card', card_id=card.id) }}" 
+                                       class="btn btn-outline-primary">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <form method="POST" action="{{ url_for('delete_graphics_card', card_id=card.id) }}" 
+                                          style="display: inline;" 
+                                          onsubmit="return confirm('Вы уверены, что хотите удалить эту видеокарту?');">
+                                        <button type="submit" class="btn btn-outline-danger">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center py-4 text-muted">
+                                <i class="bi bi-info-circle me-1"></i>Нет видеокарт
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Жесткие диски -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-hdd me-2"></i>Жесткие диски
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">Тип</th>
+                        <th scope="col">Марка</th>
+                        <th scope="col">Модель</th>
+                        <th scope="col">Объем</th>
+                        <th scope="col">Серийный номер</th>
+                        <th scope="col">Здоровье</th>
+                        <th scope="col" style="width: 120px;">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if hard_drives %}
+                        {% for drive in hard_drives %}
+                        <tr>
+                            <td>
+                                {% if drive.drive_type %}
+                                    <span class="badge bg-secondary">{{ drive.drive_type }}</span>
+                                    {% if drive.interface %}
+                                        <span class="badge bg-info ms-1">{{ drive.interface }}</span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td><strong>{{ drive.vendor.name if drive.vendor else 'Unknown' }}</strong></td>
+                            <td>{{ drive.model }}</td>
+                            <td>
+                                {% if drive.capacity_gb %}
+                                    {{ drive.capacity_gb }} ГБ
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if drive.serial_number %}
+                                    <code>{{ drive.serial_number }}</code>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if drive.health_status %}
+                                    {% if drive.health_status == 'Здоров' %}
+                                        <span class="badge bg-success">{{ drive.health_status }}</span>
+                                    {% elif drive.health_status == 'Тревога' %}
+                                        <span class="badge bg-warning text-dark">{{ drive.health_status }}</span>
+                                    {% elif drive.health_status == 'Неработает' %}
+                                        <span class="badge bg-danger">{{ drive.health_status }}</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ drive.health_status }}</span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <a href="{{ url_for('edit_hard_drive', drive_id=drive.id) }}" 
+                                       class="btn btn-outline-primary">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <form method="POST" action="{{ url_for('delete_hard_drive', drive_id=drive.id) }}" 
+                                          style="display: inline;" 
+                                          onsubmit="return confirm('Вы уверены, что хотите удалить этот жесткий диск?');">
+                                        <button type="submit" class="btn btn-outline-danger">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center py-4 text-muted">
+                                <i class="bi bi-info-circle me-1"></i>Нет жестких дисков
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

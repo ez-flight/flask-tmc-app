@@ -1,0 +1,13 @@
+# Зависимости для Windows HDD Collector
+# Установка: pip install -r requirements.txt
+
+# Основные библиотеки для работы с Windows
+wmi>=1.5.1
+pywin32>=306; sys_platform == 'win32'
+
+# Работа с системой
+psutil>=5.9.0
+
+# HTTP запросы
+requests>=2.31.0
+

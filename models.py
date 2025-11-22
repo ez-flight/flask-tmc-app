@@ -102,6 +102,7 @@ class Places(db.Model):
     active = db.Column(db.Boolean, nullable=False)                    # Активно ли место
     comment = db.Column(db.Text, nullable=False, default='')           # Комментарий к помещению
     opgroup = db.Column(db.Integer, nullable=False, default=0)         # Группа операций
+    map_image = db.Column(db.String(255), nullable=True, default='')  # Путь к схеме помещения (PNG, JPG, SVG)
 
 class Knt(db.Model):
     """
@@ -369,3 +370,107 @@ class EquipmentComments(db.Model):
     
     def __repr__(self):
         return f'<EquipmentComment {self.id}: Eq {self.equipment_id} at {self.created_at}>'
+
+class PCGraphicsCard(db.Model):
+    """
+    Видеокарты - комплектующие ПК (аппаратное обеспечение).
+    Не являются ТМЦ, отдельная таблица для учета.
+    """
+    __tablename__ = 'pc_graphics_cards'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.id'), nullable=False)  # Производитель из справочника
+    model = db.Column(db.String(200), nullable=False)  # Модель видеокарты
+    memory_size = db.Column(db.Integer, nullable=True)  # Объем памяти в МБ
+    memory_type = db.Column(db.String(50), nullable=True)  # Тип памяти (GDDR5, GDDR6, etc.)
+    serial_number = db.Column(db.String(100), nullable=True)  # Серийный номер
+    purchase_date = db.Column(db.Date, nullable=True)  # Дата приобретения
+    purchase_cost = db.Column(db.DECIMAL(precision=12, scale=2), nullable=True)  # Стоимость приобретения
+    comment = db.Column(db.Text, nullable=True)  # Комментарий
+    active = db.Column(db.Boolean, nullable=False, default=True)  # Активна ли видеокарта
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    # Связи
+    vendor = db.relationship('Vendor', backref='graphics_cards')
+    pc_links = db.relationship('PCComponentLink', back_populates='graphics_card', foreign_keys='PCComponentLink.graphics_card_id')
+    
+    def __repr__(self):
+        vendor_name = self.vendor.name if self.vendor else 'Unknown'
+        return f'<PCGraphicsCard {self.id}: {vendor_name} {self.model}>'
+
+class PCHardDrive(db.Model):
+    """
+    Жесткие диски - комплектующие ПК (аппаратное обеспечение).
+    Не являются ТМЦ, отдельная таблица для учета.
+    """
+    __tablename__ = 'pc_hard_drives'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # Обязательные поля
+    drive_type = db.Column(db.String(50), nullable=False)  # Тип (HDD, SSD, NVMe) - ОБЯЗАТЕЛЬНО
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.id'), nullable=False)  # Марка (производитель) - ОБЯЗАТЕЛЬНО
+    model = db.Column(db.String(200), nullable=False)  # Модель - ОБЯЗАТЕЛЬНО
+    capacity_gb = db.Column(db.Integer, nullable=False)  # Объем в ГБ - ОБЯЗАТЕЛЬНО
+    serial_number = db.Column(db.String(100), nullable=False)  # Серийный номер - ОБЯЗАТЕЛЬНО
+    # Необязательные поля
+    health_check_date = db.Column(db.Date, nullable=True)  # Дата проверки здоровья
+    power_on_count = db.Column(db.Integer, nullable=True)  # Число включений
+    power_on_hours = db.Column(db.Integer, nullable=True)  # Наработка (часы работы)
+    health_status = db.Column(db.String(50), nullable=True)  # Здоровье (Здоров, Тревога, Неработает)
+    comment = db.Column(db.Text, nullable=True)  # Комментарий
+    # Дополнительные поля (необязательные)
+    interface = db.Column(db.String(50), nullable=True)  # Интерфейс (SATA, NVMe, etc.)
+    purchase_date = db.Column(db.Date, nullable=True)  # Дата приобретения
+    purchase_cost = db.Column(db.DECIMAL(precision=12, scale=2), nullable=True)  # Стоимость приобретения
+    active = db.Column(db.Boolean, nullable=False, default=True)  # Активен ли диск
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    # Связи
+    vendor = db.relationship('Vendor', backref='hard_drives')
+    pc_links = db.relationship('PCComponentLink', back_populates='hard_drive', foreign_keys='PCComponentLink.hard_drive_id')
+    
+    def __repr__(self):
+        vendor_name = self.vendor.name if self.vendor else 'Unknown'
+        return f'<PCHardDrive {self.id}: {vendor_name} {self.model} {self.capacity_gb}GB>'
+
+class PCHardDriveHistory(db.Model):
+    """
+    История состояний жестких дисков - учет изменений состояния во времени.
+    """
+    __tablename__ = 'pc_hard_drive_history'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    hard_drive_id = db.Column(db.Integer, db.ForeignKey('pc_hard_drives.id'), nullable=False)  # Ссылка на диск
+    check_date = db.Column(db.Date, nullable=False)  # Дата проверки
+    power_on_hours = db.Column(db.Integer, nullable=True)  # Наработка (часы работы) на момент проверки
+    power_on_count = db.Column(db.Integer, nullable=True)  # Количество включений на момент проверки
+    health_status = db.Column(db.String(50), nullable=True)  # Здоровье (Здоров, Тревога, Неработает)
+    comment = db.Column(db.Text, nullable=True)  # Комментарий к записи
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)  # Дата создания записи
+    
+    # Связи
+    hard_drive = db.relationship('PCHardDrive', backref='history_records')
+    
+    def __repr__(self):
+        return f'<PCHardDriveHistory {self.id}: Drive {self.hard_drive_id} at {self.check_date}>'
+
+class PCComponentLink(db.Model):
+    """
+    Связь комплектующих ПК с основными средствами (ПК).
+    Позволяет привязывать видеокарты и жесткие диски к компьютерам.
+    """
+    __tablename__ = 'pc_component_links'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    equipment_id = db.Column(db.Integer, db.ForeignKey('equipment.id'), nullable=False)  # Ссылка на ПК
+    graphics_card_id = db.Column(db.Integer, db.ForeignKey('pc_graphics_cards.id'), nullable=True)  # Видеокарта
+    hard_drive_id = db.Column(db.Integer, db.ForeignKey('pc_hard_drives.id'), nullable=True)  # Жесткий диск
+    installed_date = db.Column(db.Date, nullable=True)  # Дата установки
+    removed_date = db.Column(db.Date, nullable=True)  # Дата извлечения (если извлечено)
+    comment = db.Column(db.Text, nullable=True)  # Комментарий
+    active = db.Column(db.Boolean, nullable=False, default=True)  # Активна ли связь
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    # Связи
+    equipment = db.relationship('Equipment', backref='pc_components')
+    graphics_card = db.relationship('PCGraphicsCard', back_populates='pc_links', foreign_keys=[graphics_card_id])
+    hard_drive = db.relationship('PCHardDrive', back_populates='pc_links', foreign_keys=[hard_drive_id])
+    
+    def __repr__(self):
+        return f'<PCComponentLink {self.id}: PC {self.equipment_id}>'

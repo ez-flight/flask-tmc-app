@@ -160,19 +160,19 @@
             </div>
             
             <div class="login-body">
-                {% with messages = get_flashed_messages(with_categories=true) %}
-                    {% if messages %}
-                        {% for category, message in messages %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
                             <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show d-flex align-items-center" role="alert">
                                 <i class="bi bi-{{ 'exclamation-triangle-fill' if category == 'error' or category == 'danger' else 'info-circle-fill' }} me-2"></i>
                                 <div>{{ message }}</div>
                                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                            </div>
-                        {% endfor %}
-                    {% endif %}
-                {% endwith %}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
 
-                {% if test_mode %}
+            {% if test_mode %}
                 <div class="test-users-card">
                     <h6>
                         <i class="bi bi-info-circle"></i>
@@ -204,12 +204,12 @@
                             <span class="badge bg-secondary ms-auto">Тестовый</span>
                             <span class="text-muted small ms-2">(пароль: test123)</span>
                         </li>
-                    </ul>
-                </div>
-                {% endif %}
-                
+                </ul>
+            </div>
+            {% endif %}
+            
                 <form method="POST" id="loginForm">
-                    <div class="mb-3">
+                <div class="mb-3">
                         <label for="login" class="form-label fw-semibold">
                             <i class="bi bi-person me-1"></i>Логин
                         </label>
@@ -237,14 +237,14 @@
                                    name="password" 
                                    placeholder="Введите пароль"
                                    required>
-                        </div>
-                    </div>
+                </div>
+                </div>
                     
                     <button type="submit" class="btn btn-primary btn-login w-100 btn-lg">
                         <i class="bi bi-box-arrow-in-right me-2"></i>
                         Войти в систему
                     </button>
-                </form>
+            </form>
             </div>
         {% endif %}
     </div>

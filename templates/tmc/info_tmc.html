@@ -184,6 +184,113 @@
     </div>
     {% endif %}
 {% endif %}
+
+<!-- Привязанный компьютер (если есть) -->
+{% if machine %}
+<div class="card shadow-sm mt-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+            <i class="bi bi-pc-display me-2"></i>Привязанный компьютер
+        </h5>
+        <a href="{{ url_for('machine_detail', machine_id=machine.id) }}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-eye me-1"></i>Подробнее
+        </a>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-hdd-rack text-primary me-2 mt-1"></i>
+                    <div>
+                        <strong>Имя компьютера:</strong><br>
+                        <a href="{{ url_for('machine_detail', machine_id=machine.id) }}" class="text-decoration-none">
+                            {{ machine.hostname }}
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% if machine.ip_address %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-router text-info me-2 mt-1"></i>
+                    <div>
+                        <strong>IP-адрес:</strong><br>
+                        <code>{{ machine.ip_address }}</code>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if machine.mac_address %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-ethernet text-secondary me-2 mt-1"></i>
+                    <div>
+                        <strong>MAC-адрес:</strong><br>
+                        <code>{{ machine.mac_address }}</code>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if machine.os_name %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-windows text-success me-2 mt-1"></i>
+                    <div>
+                        <strong>ОС:</strong><br>
+                        {{ machine.os_name }}{% if machine.os_version %} {{ machine.os_version }}{% endif %}{% if machine.os_edition %} {{ machine.os_edition }}{% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if machine.processor %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-cpu text-warning me-2 mt-1"></i>
+                    <div>
+                        <strong>Процессор:</strong><br>
+                        <small>{{ machine.processor }}</small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if machine.memory_gb %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-memory text-danger me-2 mt-1"></i>
+                    <div>
+                        <strong>Память:</strong><br>
+                        {{ machine.memory_gb }} ГБ
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if machine.motherboard %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-motherboard text-primary me-2 mt-1"></i>
+                    <div>
+                        <strong>Материнская плата:</strong><br>
+                        <small>{{ machine.motherboard }}</small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if machine.last_seen %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-clock-history text-muted me-2 mt-1"></i>
+                    <div>
+                        <strong>Последнее обновление:</strong><br>
+                        <small>{{ machine.last_seen.strftime('%d.%m.%Y %H:%M') }}</small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Основная информация в двух колонках -->
 <div class="row g-3">
     <div class="col-md-6">

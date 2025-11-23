@@ -1574,6 +1574,10 @@ def info_tmc(tmc_id):
     if nome and nome.group:
         is_network_device = getattr(nome.group, 'is_network_device', False)
 
+    # Получаем привязанную машину (если есть)
+    from models import Machine
+    machine = Machine.query.filter_by(equipment_id=tmc_id).first()
+    
     return render_template('tmc/info_tmc.html',
                            tmc=tmc,
                            components=components,
@@ -1582,6 +1586,7 @@ def info_tmc(tmc_id):
                            active_usage=active_usage,
                            users_role_2=users_role_2,
                            history=history,
+                           machine=machine,
                            comment_history=comment_history,
                            is_network_device=is_network_device)
 
@@ -3022,13 +3027,29 @@ def pc_components():
         return render_template('pc_components/index.html',
                              graphics_cards_count=0,
                              hard_drives_count=0,
+                             linked_graphics_cards_count=0,
+                             linked_hard_drives_count=0,
+                             memory_modules_count=0,
+                             linked_memory_modules_count=0,
+                             processors_count=0,
+                             unique_processors_count=0,
+                             motherboards_count=0,
+                             unique_motherboards_count=0,
+                             os_count=0,
+                             unique_os_count=0,
                              is_admin=is_admin)
     
-    from models import PCGraphicsCard, PCHardDrive, PCComponentLink
+    from models import PCGraphicsCard, PCHardDrive, PCComponentLink, Machine, PCMemoryModule
+    from sqlalchemy import func, distinct
     
     # Подсчитываем статистику
     graphics_cards_count = PCGraphicsCard.query.filter_by(active=True).count()
     hard_drives_count = PCHardDrive.query.filter_by(active=True).count()
+    memory_modules_count = PCMemoryModule.query.filter_by(active=True).count()
+    linked_memory_modules_count = PCMemoryModule.query.filter(
+        PCMemoryModule.machine_id.isnot(None),
+        PCMemoryModule.active == True
+    ).count()
     
     # Подсчитываем привязанные комплектующие (те, у которых есть связь с ПК)
     linked_graphics_cards_count = PCComponentLink.query.filter(
@@ -3040,11 +3061,60 @@ def pc_components():
         PCComponentLink.active == True
     ).count()
     
+    # Статистика по процессорам
+    processors_count = Machine.query.filter(
+        Machine.processor.isnot(None),
+        Machine.processor != ''
+    ).count()
+    unique_processors_count = db.session.query(
+        func.count(distinct(Machine.processor))
+    ).filter(
+        Machine.processor.isnot(None),
+        Machine.processor != ''
+    ).scalar() or 0
+    
+    # Статистика по материнским платам
+    motherboards_count = Machine.query.filter(
+        Machine.motherboard.isnot(None),
+        Machine.motherboard != ''
+    ).count()
+    unique_motherboards_count = db.session.query(
+        func.count(distinct(Machine.motherboard))
+    ).filter(
+        Machine.motherboard.isnot(None),
+        Machine.motherboard != ''
+    ).scalar() or 0
+    
+    # Статистика по операционным системам
+    os_count = Machine.query.filter(
+        Machine.os_name.isnot(None),
+        Machine.os_name != ''
+    ).count()
+    # Подсчитываем уникальные комбинации ОС (название + версия)
+    unique_os_query = db.session.query(
+        func.concat(
+            Machine.os_name,
+            func.coalesce(func.concat(' ', Machine.os_version), '')
+        ).label('os_full')
+    ).filter(
+        Machine.os_name.isnot(None),
+        Machine.os_name != ''
+    ).distinct()
+    unique_os_count = unique_os_query.count() or 0
+    
     return render_template('pc_components/index.html',
                          graphics_cards_count=graphics_cards_count,
                          hard_drives_count=hard_drives_count,
                          linked_graphics_cards_count=linked_graphics_cards_count,
                          linked_hard_drives_count=linked_hard_drives_count,
+                         memory_modules_count=memory_modules_count,
+                         linked_memory_modules_count=linked_memory_modules_count,
+                         processors_count=processors_count,
+                         unique_processors_count=unique_processors_count,
+                         motherboards_count=motherboards_count,
+                         unique_motherboards_count=unique_motherboards_count,
+                         os_count=os_count,
+                         unique_os_count=unique_os_count,
                          is_admin=is_admin,
                          user_login=current_user.login)
 
@@ -3064,10 +3134,13 @@ def graphics_cards_list():
                              graphics_cards=[],
                              is_admin=is_admin)
     
-    from models import PCGraphicsCard
+    from models import PCGraphicsCard, Machine
+    from sqlalchemy.orm import joinedload
     
-    # Получаем видеокарты
-    graphics_cards = PCGraphicsCard.query.filter_by(active=True).order_by(PCGraphicsCard.created_at.desc()).all()
+    # Получаем видеокарты с загрузкой связанных машин
+    graphics_cards = PCGraphicsCard.query.filter_by(active=True).options(
+        joinedload(PCGraphicsCard.machine)
+    ).order_by(PCGraphicsCard.created_at.desc()).all()
     
     return render_template('pc_components/graphics_cards_list.html',
                          graphics_cards=graphics_cards,
@@ -3159,6 +3232,213 @@ def hard_drives_list():
                          drives_warning=drives_warning,
                          drives_failed=drives_failed,
                          drives_high_hours=drives_high_hours,
+                         is_admin=is_admin,
+                         user_login=current_user.login)
+
+@app.route('/pc_components/processors')
+@login_required
+def processors_list():
+    """Страница списка процессоров."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('pc_components/processors_list.html',
+                             processors_data=[],
+                             total_processors=0,
+                             is_admin=is_admin)
+    
+    from models import Machine
+    from sqlalchemy import func
+    
+    # Группируем машины по процессору
+    processors_data = db.session.query(
+        Machine.processor,
+        func.count(Machine.id).label('machines_count')
+    ).filter(
+        Machine.processor.isnot(None),
+        Machine.processor != ''
+    ).group_by(Machine.processor).order_by(
+        func.count(Machine.id).desc(),
+        Machine.processor.asc()
+    ).all()
+    
+    # Получаем список машин для каждого процессора
+    processors_with_machines = []
+    for processor, count in processors_data:
+        machines = Machine.query.filter(
+            Machine.processor == processor,
+            Machine.processor.isnot(None),
+            Machine.processor != ''
+        ).order_by(Machine.hostname.asc()).all()
+        
+        processors_with_machines.append({
+            'processor': processor,
+            'machines_count': count,
+            'machines': machines
+        })
+    
+    total_processors = len(processors_with_machines)
+    
+    return render_template('pc_components/processors_list.html',
+                         processors_data=processors_with_machines,
+                         total_processors=total_processors,
+                         is_admin=is_admin,
+                         user_login=current_user.login)
+
+@app.route('/pc_components/motherboards')
+@login_required
+def motherboards_list():
+    """Страница списка материнских плат."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('pc_components/motherboards_list.html',
+                             motherboards_data=[],
+                             total_motherboards=0,
+                             is_admin=is_admin)
+    
+    from models import Machine
+    from sqlalchemy import func
+    
+    # Группируем машины по материнской плате
+    motherboards_data = db.session.query(
+        Machine.motherboard,
+        func.count(Machine.id).label('machines_count')
+    ).filter(
+        Machine.motherboard.isnot(None),
+        Machine.motherboard != ''
+    ).group_by(Machine.motherboard).order_by(
+        func.count(Machine.id).desc(),
+        Machine.motherboard.asc()
+    ).all()
+    
+    # Получаем список машин для каждой материнской платы
+    motherboards_with_machines = []
+    for motherboard, count in motherboards_data:
+        machines = Machine.query.filter(
+            Machine.motherboard == motherboard,
+            Machine.motherboard.isnot(None),
+            Machine.motherboard != ''
+        ).order_by(Machine.hostname.asc()).all()
+        
+        motherboards_with_machines.append({
+            'motherboard': motherboard,
+            'machines_count': count,
+            'machines': machines
+        })
+    
+    total_motherboards = len(motherboards_with_machines)
+    
+    return render_template('pc_components/motherboards_list.html',
+                         motherboards_data=motherboards_with_machines,
+                         total_motherboards=total_motherboards,
+                         is_admin=is_admin,
+                         user_login=current_user.login)
+
+@app.route('/pc_components/operating_systems')
+@login_required
+def operating_systems_list():
+    """Страница списка операционных систем."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('pc_components/operating_systems_list.html',
+                             os_data=[],
+                             total_os=0,
+                             is_admin=is_admin)
+    
+    from models import Machine
+    from sqlalchemy import func
+    
+    # Группируем машины по ОС (название + версия)
+    os_data = db.session.query(
+        Machine.os_name,
+        Machine.os_version,
+        func.count(Machine.id).label('machines_count')
+    ).filter(
+        Machine.os_name.isnot(None),
+        Machine.os_name != ''
+    ).group_by(Machine.os_name, Machine.os_version).order_by(
+        func.count(Machine.id).desc(),
+        Machine.os_name.asc(),
+        Machine.os_version.asc()
+    ).all()
+    
+    # Получаем список машин для каждой ОС
+    os_with_machines = []
+    for os_name, os_version, count in os_data:
+        machines = Machine.query.filter(
+            Machine.os_name == os_name,
+            Machine.os_version == os_version,
+            Machine.os_name.isnot(None),
+            Machine.os_name != ''
+        ).order_by(Machine.hostname.asc()).all()
+        
+        os_full_name = f"{os_name} {os_version}" if os_version else os_name
+        
+        os_with_machines.append({
+            'os_name': os_name,
+            'os_version': os_version,
+            'os_full_name': os_full_name,
+            'machines_count': count,
+            'machines': machines
+        })
+    
+    total_os = len(os_with_machines)
+    
+    return render_template('pc_components/operating_systems_list.html',
+                         os_data=os_with_machines,
+                         total_os=total_os,
+                         is_admin=is_admin,
+                         user_login=current_user.login)
+
+@app.route('/pc_components/memory_modules')
+@login_required
+def memory_modules_list():
+    """Страница списка модулей ОЗУ."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('pc_components/memory_modules_list.html',
+                             memory_modules=[],
+                             total_capacity=0,
+                             is_admin=is_admin)
+    
+    from models import PCMemoryModule, Machine
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import func
+    
+    # Получаем модули ОЗУ с загрузкой связанных машин
+    memory_modules = PCMemoryModule.query.filter_by(active=True).options(
+        joinedload(PCMemoryModule.machine)
+    ).order_by(PCMemoryModule.created_at.desc()).all()
+    
+    # Подсчитываем общий объем ОЗУ
+    total_capacity = db.session.query(func.sum(PCMemoryModule.capacity_gb)).filter_by(active=True).scalar() or 0
+    
+    return render_template('pc_components/memory_modules_list.html',
+                         memory_modules=memory_modules,
+                         total_capacity=total_capacity,
                          is_admin=is_admin,
                          user_login=current_user.login)
 
@@ -3533,6 +3813,363 @@ def delete_hard_drive(drive_id):
     vendor_name = hard_drive.vendor.name if hard_drive.vendor else 'Unknown'
     flash(f'Жесткий диск {vendor_name} {hard_drive.model} успешно удален', 'success')
     return redirect(url_for('hard_drives_list'))
+
+# === КОМПЬЮТЕРЫ (МАШИНЫ) ===
+
+@app.route('/machines')
+@login_required
+def machines():
+    """Главная страница учета компьютеров (обзорная)."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('machines/index.html',
+                             machines_count=0,
+                             machines_with_drives_count=0,
+                             is_admin=is_admin)
+    
+    from models import Machine, PCHardDrive
+    
+    machines_count = Machine.query.count()
+    
+    # Подсчитываем машины с дисками
+    machines_with_drives_count = db.session.query(Machine.id).join(PCHardDrive).filter(
+        PCHardDrive.active == True
+    ).distinct().count()
+    
+    return render_template('machines/index.html',
+                         machines_count=machines_count,
+                         machines_with_drives_count=machines_with_drives_count,
+                         is_admin=is_admin,
+                         user_login=current_user.login)
+
+@app.route('/machines/list')
+@login_required
+def machines_list():
+    """Страница списка машин/компьютеров."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    # В тестовом режиме возвращаем пустые данные
+    if TEST_MODE:
+        return render_template('machines/machines_list.html',
+                             machines=[],
+                             is_admin=is_admin)
+    
+    from models import Machine, PCHardDrive
+    from sqlalchemy import func
+    
+    # Получаем машины с подсчетом дисков
+    machines = db.session.query(
+        Machine,
+        func.count(PCHardDrive.id).label('drives_count')
+    ).outerjoin(
+        PCHardDrive, 
+        db.and_(
+            PCHardDrive.machine_id == Machine.id,
+            PCHardDrive.active == True
+        )
+    ).group_by(Machine.id).order_by(Machine.last_seen.desc()).all()
+    
+    return render_template('machines/machines_list.html',
+                         machines=machines,
+                         is_admin=is_admin)
+
+@app.route('/machines/<int:machine_id>')
+@login_required
+def machine_detail(machine_id):
+    """Детальная информация о машине."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    from models import Machine, PCHardDrive, MachineHistory, Equipment, PCGraphicsCard, PCMemoryModule
+    
+    machine = Machine.query.get_or_404(machine_id)
+    
+    # Получаем диски, привязанные к этой машине
+    hard_drives = PCHardDrive.query.filter_by(
+        machine_id=machine_id,
+        active=True
+    ).order_by(PCHardDrive.created_at.desc()).all()
+    
+    # Получаем видеокарты, привязанные к этой машине
+    graphics_cards = PCGraphicsCard.query.filter_by(
+        machine_id=machine_id,
+        active=True
+    ).order_by(PCGraphicsCard.created_at.desc()).all()
+    
+    # Получаем модули ОЗУ, привязанные к этой машине
+    # Используем filter вместо filter_by для более надежной работы
+    memory_modules = PCMemoryModule.query.filter(
+        PCMemoryModule.machine_id == machine_id
+    ).order_by(PCMemoryModule.created_at.desc()).all()
+    
+    # Если не найдено через явный запрос, пробуем через relationship
+    if not memory_modules:
+        try:
+            # Обновляем объект machine из базы, чтобы загрузить relationships
+            db.session.refresh(machine)
+            if hasattr(machine, 'memory_modules') and machine.memory_modules:
+                memory_modules = list(machine.memory_modules)
+        except Exception as e:
+            print(f"DEBUG: Ошибка при загрузке модулей ОЗУ через relationship: {e}")
+    
+    # Получаем историю изменений машины
+    history = MachineHistory.query.filter_by(
+        machine_id=machine_id
+    ).order_by(MachineHistory.changed_at.desc()).limit(50).all()
+    
+    # Получаем привязанное ТМЦ, если есть
+    equipment = None
+    if machine.equipment_id:
+        equipment = Equipment.query.get(machine.equipment_id)
+    
+    # Получаем список ТМЦ для выбора
+    # Фильтруем только по категориям: "Стационарные компьютеры" и "Портативная вычислительная техника"
+    # Находим категории по названиям
+    computer_categories = Category.query.filter(
+        Category.name.in_(['Стационарные компьютеры', 'Портативная вычислительная техника']),
+        Category.active == True
+    ).all()
+    
+    category_ids = [cat.id for cat in computer_categories]
+    
+    if category_ids:
+        # Получаем ТМЦ из этих категорий через GroupNome и Nome
+        available_equipment = Equipment.query.join(
+            Nome, Equipment.nomeid == Nome.id
+        ).join(
+            GroupNome, Nome.groupid == GroupNome.id
+        ).filter(
+            Equipment.active == True,
+            GroupNome.category_id.in_(category_ids)
+        ).order_by(Equipment.buhname).all()
+    else:
+        # Если категории не найдены, возвращаем пустой список
+        available_equipment = []
+    
+    return render_template('machines/machine_detail.html',
+                         machine=machine,
+                         hard_drives=hard_drives,
+                         graphics_cards=graphics_cards,
+                         memory_modules=memory_modules,
+                         history=history,
+                         equipment=equipment,
+                         available_equipment=available_equipment,
+                         is_admin=is_admin)
+
+@app.route('/machines/<int:machine_id>/link_equipment', methods=['POST'])
+@login_required
+def link_machine_equipment(machine_id):
+    """Привязка машины к ТМЦ."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    from models import Machine, Equipment, MachineHistory
+    
+    machine = Machine.query.get_or_404(machine_id)
+    
+    equipment_id = request.form.get('equipment_id')
+    equipment_id = int(equipment_id) if equipment_id else None
+    
+    old_equipment_id = machine.equipment_id
+    
+    if equipment_id:
+        equipment = Equipment.query.get(equipment_id)
+        if not equipment:
+            flash('ТМЦ не найдено', 'danger')
+            return redirect(url_for('machine_detail', machine_id=machine_id))
+        
+        # Проверяем, не привязано ли это ТМЦ уже к другой машине (связь один к одному)
+        existing_machine = Machine.query.filter_by(equipment_id=equipment_id).first()
+        if existing_machine and existing_machine.id != machine_id:
+            flash(f'Это ТМЦ уже привязано к компьютеру {existing_machine.hostname}. Связь один к одному.', 'warning')
+            return redirect(url_for('machine_detail', machine_id=machine_id))
+        
+        machine.equipment_id = equipment_id
+        
+        # Проверяем конфликт IP-адресов и обновляем IP в ТМЦ приоритетом из API v2
+        ip_updated = False
+        if machine.ip_address:
+            old_ip = equipment.ip or ''
+            new_ip = machine.ip_address.strip()
+            
+            # Если IP-адреса различаются, обновляем IP в ТМЦ на IP из API v2
+            if old_ip != new_ip:
+                equipment.ip = new_ip
+                ip_updated = True
+                
+                # Записываем обновление IP в историю машины
+                ip_history_record = MachineHistory(
+                    machine_id=machine.id,
+                    changed_field='equipment_ip',
+                    old_value=old_ip if old_ip else None,
+                    new_value=new_ip,
+                    comment=f'IP-адрес ТМЦ обновлен из API v2 (было: {old_ip if old_ip else "не указано"})'
+                )
+                db.session.add(ip_history_record)
+        
+        # Записываем привязку в историю
+        history_record = MachineHistory(
+            machine_id=machine.id,
+            changed_field='equipment_id',
+            old_value=str(old_equipment_id) if old_equipment_id else None,
+            new_value=str(equipment_id),
+            comment=f'Привязано к ТМЦ: {equipment.buhname}' + (f' (IP обновлен: {machine.ip_address})' if ip_updated else '')
+        )
+        db.session.add(history_record)
+        
+        if ip_updated:
+            flash(f'Машина привязана к ТМЦ: {equipment.buhname}. IP-адрес ТМЦ обновлен на {machine.ip_address} (приоритет API v2)', 'success')
+        else:
+            flash(f'Машина привязана к ТМЦ: {equipment.buhname}', 'success')
+    else:
+        # Отвязка
+        if old_equipment_id:
+            old_equipment = Equipment.query.get(old_equipment_id)
+            old_name = old_equipment.buhname if old_equipment else str(old_equipment_id)
+            
+            history_record = MachineHistory(
+                machine_id=machine.id,
+                changed_field='equipment_id',
+                old_value=str(old_equipment_id),
+                new_value=None,
+                comment=f'Отвязано от ТМЦ: {old_name}'
+            )
+            db.session.add(history_record)
+        
+        machine.equipment_id = None
+        flash('Машина отвязана от ТМЦ', 'success')
+    
+    db.session.commit()
+    return redirect(url_for('machine_detail', machine_id=machine_id))
+
+@app.route('/machines/<int:machine_id>/auto_link_equipment', methods=['POST'])
+@login_required
+def auto_link_machine_equipment(machine_id):
+    """Автоматическая привязка машины к ТМЦ по MAC-адресу (приоритет), hostname, IP или серийному номеру."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    from models import Machine, Equipment, MachineHistory
+    
+    machine = Machine.query.get_or_404(machine_id)
+    
+    # Ищем ТМЦ по MAC-адресу (приоритет), hostname, IP или серийному номеру
+    equipment = None
+    
+    # Поиск по MAC-адресу (приоритетный, так как MAC-адрес реже меняется)
+    if machine.mac_address:
+        mac_address = machine.mac_address.strip().upper()
+        # Ищем MAC-адрес в комментариях, бухгалтерском наименовании или серийном номере
+        equipment = Equipment.query.filter(
+            db.or_(
+                Equipment.comment.like(f'%{mac_address}%'),
+                Equipment.comment.like(f'%{machine.mac_address}%'),
+                Equipment.buhname.like(f'%{mac_address}%'),
+                Equipment.buhname.like(f'%{machine.mac_address}%'),
+                Equipment.sernum == mac_address,
+                Equipment.sernum == machine.mac_address
+            ),
+            Equipment.active == True,
+            Equipment.os == True
+        ).first()
+    
+    # Поиск по hostname в бухгалтерском наименовании или комментарии
+    if not equipment and machine.hostname:
+        equipment = Equipment.query.filter(
+            db.or_(
+                Equipment.buhname.like(f'%{machine.hostname}%'),
+                Equipment.comment.like(f'%{machine.hostname}%'),
+                Equipment.sernum == machine.hostname
+            ),
+            Equipment.active == True,
+            Equipment.os == True
+        ).first()
+    
+    # Поиск по IP-адресу
+    if not equipment and machine.ip_address:
+        equipment = Equipment.query.filter(
+            Equipment.ip == machine.ip_address,
+            Equipment.active == True,
+            Equipment.os == True
+        ).first()
+    
+    # Поиск по серийному номеру
+    if not equipment and machine.hostname:
+        equipment = Equipment.query.filter(
+            Equipment.sernum == machine.hostname,
+            Equipment.active == True,
+            Equipment.os == True
+        ).first()
+    
+    if equipment:
+        # Проверяем, не привязано ли это ТМЦ уже к другой машине (связь один к одному)
+        existing_machine = Machine.query.filter_by(equipment_id=equipment.id).first()
+        if existing_machine and existing_machine.id != machine_id:
+            flash(f'Это ТМЦ уже привязано к компьютеру {existing_machine.hostname}. Связь один к одному.', 'warning')
+            return redirect(url_for('machine_detail', machine_id=machine_id))
+        
+        old_equipment_id = machine.equipment_id
+        machine.equipment_id = equipment.id
+        
+        # Проверяем конфликт IP-адресов и обновляем IP в ТМЦ приоритетом из API v2
+        ip_updated = False
+        if machine.ip_address:
+            old_ip = equipment.ip or ''
+            new_ip = machine.ip_address.strip()
+            
+            # Если IP-адреса различаются, обновляем IP в ТМЦ на IP из API v2
+            if old_ip != new_ip:
+                equipment.ip = new_ip
+                ip_updated = True
+                
+                # Записываем обновление IP в историю машины
+                ip_history_record = MachineHistory(
+                    machine_id=machine.id,
+                    changed_field='equipment_ip',
+                    old_value=old_ip if old_ip else None,
+                    new_value=new_ip,
+                    comment=f'IP-адрес ТМЦ обновлен из API v2 (было: {old_ip if old_ip else "не указано"})'
+                )
+                db.session.add(ip_history_record)
+        
+        # Записываем привязку в историю
+        history_record = MachineHistory(
+            machine_id=machine.id,
+            changed_field='equipment_id',
+            old_value=str(old_equipment_id) if old_equipment_id else None,
+            new_value=str(equipment.id),
+            comment=f'Автоматически привязано к ТМЦ: {equipment.buhname}' + (f' (IP обновлен: {machine.ip_address})' if ip_updated else '')
+        )
+        db.session.add(history_record)
+        db.session.commit()
+        
+        if ip_updated:
+            flash(f'Машина автоматически привязана к ТМЦ: {equipment.buhname}. IP-адрес ТМЦ обновлен на {machine.ip_address} (приоритет API v2)', 'success')
+        else:
+            flash(f'Машина автоматически привязана к ТМЦ: {equipment.buhname}', 'success')
+    else:
+        flash('Не найдено подходящего ТМЦ для автоматической привязки', 'warning')
+    
+    return redirect(url_for('machine_detail', machine_id=machine_id))
 
 @app.route('/pc_components/hard_drive/<int:drive_id>/history')
 @login_required
@@ -5878,6 +6515,726 @@ def api_hdd_collect():
         response['errors'] = errors[:10]  # Первые 10 ошибок
     
     return jsonify(response), 200
+
+@app.route('/api/hdd_collect/v2', methods=['POST'])
+def api_hdd_collect_v2():
+    """
+    API v2 endpoint для приема данных о компьютерах и жестких дисках.
+    Поддерживает расширенную информацию о машинах, ОС, железе и сетевых настройках.
+    """
+    try:
+        data = request.json
+        
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided',
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }), 400
+        
+        # Проверяем наличие подтверждения для обновления данных
+        confirm_update = data.get('confirm', False) or request.args.get('confirm', 'false').lower() == 'true'
+        
+        # Проверка обязательных полей
+        machine_data = data.get('machine')
+        if not machine_data:
+            return jsonify({
+                'success': False,
+                'error': 'Field "machine" is required',
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }), 400
+        
+        hostname = machine_data.get('hostname')
+        mac_address = machine_data.get('mac_address')
+        
+        # Проверяем наличие хотя бы одного идентификатора
+        if not hostname and not mac_address:
+            return jsonify({
+                'success': False,
+                'error': 'Field "machine.hostname" or "machine.mac_address" is required',
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }), 400
+        
+        disks = data.get('disks', [])
+        collection_info = data.get('collection_info', {})
+        
+        from models import PCHardDrive, Vendor, Machine, MachineHistory, PCGraphicsCard, PCMemoryModule
+        
+        # === ОБРАБОТКА МАШИНЫ ===
+        # Идентификация: сначала по MAC-адресу (приоритет), если нет - по hostname
+        machine = None
+        found_by_mac = False
+        found_by_hostname = False
+        
+        if mac_address:
+            mac_address = mac_address.strip().upper()
+            machine = Machine.query.filter_by(mac_address=mac_address).first()
+            if machine:
+                found_by_mac = True
+        
+        if not machine and hostname:
+            machine = Machine.query.filter_by(hostname=hostname).first()
+            if machine:
+                found_by_hostname = True
+        
+        machine_status = 'updated'
+        machine_changes = []
+        
+        if machine:
+            # Если машина найдена по hostname, не обновляем данные без подтверждения
+            if found_by_hostname and not confirm_update:
+                print(f"Info: Machine found by hostname '{hostname}'. Data update requires confirmation (machine ID: {machine.id})")
+                machine_status = 'requires_confirmation'
+                # Откатываем все изменения, так как требуется подтверждение
+                db.session.rollback()
+                
+                # Формируем ответ с требованием подтверждения
+                return jsonify({
+                    'success': False,
+                    'requires_confirmation': True,
+                    'machine': {
+                        'id': machine.id,
+                        'hostname': machine.hostname,
+                        'current_hostname': machine.hostname,
+                        'requested_hostname': hostname,
+                        'ip_address': machine.ip_address,
+                        'mac_address': machine.mac_address
+                    },
+                    'message': f'Машина найдена по hostname "{hostname}". Требуется подтверждение для записи данных. Отправьте запрос повторно с параметром "confirm=true" в JSON или query string для подтверждения обновления.',
+                    'timestamp': datetime.utcnow().isoformat() + 'Z'
+                }), 200
+            else:
+                # Обновляем существующую машину
+                if found_by_hostname and confirm_update:
+                    print(f"Info: Machine found by hostname '{hostname}'. Updating data with confirmation (machine ID: {machine.id})")
+                old_values = {}
+                
+                # Базовые поля
+                if 'ip_address' in machine_data and machine_data['ip_address'] != machine.ip_address:
+                    old_values['ip_address'] = machine.ip_address
+                    machine.ip_address = machine_data.get('ip_address')
+                    machine_changes.append('ip_address')
+                
+                if 'mac_address' in machine_data and machine_data['mac_address'] != machine.mac_address:
+                    old_values['mac_address'] = machine.mac_address
+                    machine.mac_address = machine_data.get('mac_address')
+                    machine_changes.append('mac_address')
+                
+                # Обновляем hostname, если он изменился
+                if hostname and hostname != machine.hostname:
+                    # Проверяем, не используется ли новый hostname другой машиной
+                    existing_machine_with_hostname = Machine.query.filter_by(hostname=hostname).first()
+                    should_update_hostname = True
+                    
+                    if existing_machine_with_hostname and existing_machine_with_hostname.id != machine.id:
+                        # Если машина найдена по MAC-адресу (приоритет), обновляем hostname принудительно
+                        # Освобождаем hostname у старой машины
+                        if found_by_mac:
+                            old_hostname_for_other = existing_machine_with_hostname.hostname
+                            # Устанавливаем временный hostname для старой машины, чтобы освободить уникальный hostname
+                            existing_machine_with_hostname.hostname = f"OLD-{old_hostname_for_other}-{existing_machine_with_hostname.id}"
+                            print(f"Info: Hostname '{hostname}' was used by machine {existing_machine_with_hostname.id}. Freed for machine {machine.id} (found by MAC)")
+                        else:
+                            # Если машина найдена не по MAC, пропускаем обновление
+                            print(f"Warning: Hostname '{hostname}' already exists for machine {existing_machine_with_hostname.id}, skipping update")
+                            should_update_hostname = False
+                    
+                    # Обновляем hostname, если это разрешено
+                    if should_update_hostname:
+                        old_values['hostname'] = machine.hostname
+                        machine.hostname = hostname
+                        machine_changes.append('hostname')
+                        print(f"Info: Hostname updated from '{old_values['hostname']}' to '{hostname}' for machine {machine.id}")
+                
+                # Операционная система
+                os_data = machine_data.get('os', {})
+                if os_data:
+                    os_fields = ['os_name', 'os_version', 'os_build', 'os_edition', 'os_architecture']
+                    for field in os_fields:
+                        os_field = field.replace('os_', '')
+                        if os_field in os_data:
+                            old_val = getattr(machine, field, None)
+                            new_val = os_data[os_field]
+                            if old_val != new_val:
+                                old_values[field] = old_val
+                                setattr(machine, field, new_val)
+                                machine_changes.append(field)
+                
+                # Аппаратное обеспечение
+                hardware_data = machine_data.get('hardware', {})
+                if hardware_data:
+                    hw_fields = ['processor', 'memory_gb', 'motherboard', 'bios_version']
+                    for field in hw_fields:
+                        if field in hardware_data:
+                            old_val = getattr(machine, field, None)
+                            new_val = hardware_data[field]
+                            if old_val != new_val:
+                                old_values[field] = old_val
+                                setattr(machine, field, new_val)
+                                machine_changes.append(field)
+                
+                # Сетевая информация
+                network_data = machine_data.get('network', {})
+                if network_data:
+                    net_fields = ['domain', 'computer_role', 'dns_suffix']
+                    for field in net_fields:
+                        if field in network_data:
+                            old_val = getattr(machine, field, None)
+                            new_val = network_data[field]
+                            if old_val != new_val:
+                                old_values[field] = old_val
+                                setattr(machine, field, new_val)
+                                machine_changes.append(field)
+                
+                # Обновляем last_seen
+                machine.last_seen = datetime.utcnow()
+                machine.updated_at = datetime.utcnow()
+                
+                # Если машина привязана к ТМЦ и изменился IP-адрес, обновляем IP в ТМЦ (приоритет API v2)
+                if machine.equipment_id and 'ip_address' in machine_changes:
+                    from models import Equipment
+                    equipment = Equipment.query.get(machine.equipment_id)
+                    if equipment and machine.ip_address:
+                        old_ip = equipment.ip or ''
+                        new_ip = machine.ip_address.strip()
+                        
+                        # Если IP-адреса различаются, обновляем IP в ТМЦ на IP из API v2
+                        if old_ip != new_ip:
+                            equipment.ip = new_ip
+                            
+                            # Записываем обновление IP в историю машины
+                            ip_history_record = MachineHistory(
+                                machine_id=machine.id,
+                                changed_field='equipment_ip',
+                                old_value=old_ip if old_ip else None,
+                                new_value=new_ip,
+                                comment=f'IP-адрес ТМЦ обновлен из API v2 (было: {old_ip if old_ip else "не указано"})'
+                            )
+                            db.session.add(ip_history_record)
+                
+                # Записываем изменения в историю
+                if machine_changes:
+                    for field in machine_changes:
+                        history_record = MachineHistory(
+                            machine_id=machine.id,
+                            changed_field=field,
+                            old_value=str(old_values.get(field, '')) if old_values.get(field) is not None else None,
+                            new_value=str(getattr(machine, field, '')),
+                            comment=collection_info.get('comment', 'Обновление через API v2')
+                        )
+                        db.session.add(history_record)
+        else:
+            # Создаем новую машину
+            # Если нет hostname, но есть MAC, используем MAC как hostname
+            if not hostname and mac_address:
+                hostname = f"MAC-{mac_address.replace(':', '-')}"
+            
+            os_data = machine_data.get('os', {})
+            hardware_data = machine_data.get('hardware', {})
+            network_data = machine_data.get('network', {})
+            
+            machine = Machine(
+                hostname=hostname,
+                ip_address=machine_data.get('ip_address'),
+                mac_address=mac_address.strip().upper() if mac_address else None,
+                os_name=os_data.get('name') if os_data else None,
+                os_version=os_data.get('version') if os_data else None,
+                os_build=os_data.get('build') if os_data else None,
+                os_edition=os_data.get('edition') if os_data else None,
+                os_architecture=os_data.get('architecture') if os_data else None,
+                processor=hardware_data.get('processor') if hardware_data else None,
+                memory_gb=hardware_data.get('memory_gb') if hardware_data else None,
+                motherboard=hardware_data.get('motherboard') if hardware_data else None,
+                bios_version=hardware_data.get('bios_version') if hardware_data else None,
+                domain=network_data.get('domain') if network_data else None,
+                computer_role=network_data.get('computer_role') if network_data else None,
+                dns_suffix=network_data.get('dns_suffix') if network_data else None,
+                first_seen=datetime.utcnow(),
+                last_seen=datetime.utcnow()
+            )
+            db.session.add(machine)
+            db.session.flush()  # Получаем ID машины
+            
+            # Записываем в историю создание машины
+            history_record = MachineHistory(
+                machine_id=machine.id,
+                changed_field='created',
+                comment=collection_info.get('comment', 'Машина создана через API v2')
+            )
+            db.session.add(history_record)
+            machine_status = 'created'
+        
+        # === ОБРАБОТКА ДИСКОВ ===
+        # Используем существующую логику обработки дисков, но добавляем связь с машиной
+        new_count = 0
+        updated_count = 0
+        error_count = 0
+        errors = []
+        
+        # Вспомогательные функции (копируем из v1)
+        def get_or_create_vendor(manufacturer_name):
+            if not manufacturer_name:
+                return None
+            vendor = Vendor.query.filter(
+                db.func.lower(Vendor.name) == manufacturer_name.lower(),
+                Vendor.active == True
+            ).first()
+            if not vendor:
+                vendor = Vendor(name=manufacturer_name, active=True)
+                db.session.add(vendor)
+                db.session.flush()
+            return vendor
+        
+        def detect_manufacturer_by_model(model):
+            if not model:
+                return 'Unknown'
+            model_upper = model.upper()
+            if 'BESHTAU' in model_upper:
+                return 'БЕШТАУ'
+            elif 'XRAYDISK' in model_upper:
+                return 'XrayDisk'
+            elif 'WD' in model_upper or 'WESTERN' in model_upper:
+                return 'Western Digital'
+            elif 'SEAGATE' in model_upper or model_upper.startswith('ST'):
+                return 'Seagate'
+            elif 'TOSHIBA' in model_upper or model_upper.startswith('DT'):
+                return 'Toshiba'
+            elif 'HP' in model_upper or 'HEWLETT' in model_upper:
+                return 'HP'
+            elif 'SAMSUNG' in model_upper:
+                return 'Samsung'
+            elif 'KINGSTON' in model_upper:
+                return 'Kingston'
+            elif 'CRUCIAL' in model_upper:
+                return 'Crucial'
+            elif 'INTEL' in model_upper:
+                return 'Intel'
+            elif 'SANDISK' in model_upper or 'SAN DISK' in model_upper:
+                return 'SanDisk'
+            elif 'ADATA' in model_upper:
+                return 'ADATA'
+            elif 'CORSAIR' in model_upper:
+                return 'Corsair'
+            else:
+                return 'Unknown'
+        
+        def convert_health_status_to_russian(status):
+            if not status:
+                return None
+            status_upper = status.upper()
+            if status_upper == 'GOOD':
+                return 'Здоров'
+            elif status_upper == 'CAUTION':
+                return 'Тревога'
+            elif status_upper == 'BAD':
+                return 'Неработает'
+            else:
+                return 'Неизвестно'
+        
+        # Обрабатываем диски
+        for disk_data in disks:
+            try:
+                serial = disk_data.get('serial_number')
+                if not serial:
+                    error_count += 1
+                    errors.append(f'Disk skipped: missing serial_number')
+                    continue
+                
+                existing_disk = PCHardDrive.query.filter_by(serial_number=serial).first()
+                
+                if existing_disk:
+                    # Обновляем существующий диск
+                    if 'model' in disk_data:
+                        existing_disk.model = disk_data.get('model')
+                    if 'size_gb' in disk_data:
+                        existing_disk.capacity_gb = disk_data.get('size_gb')
+                    if 'interface' in disk_data:
+                        existing_disk.interface = disk_data.get('interface')
+                    if 'power_on_hours' in disk_data:
+                        existing_disk.power_on_hours = disk_data.get('power_on_hours')
+                    if 'power_on_count' in disk_data:
+                        existing_disk.power_on_count = disk_data.get('power_on_count')
+                    if 'health_status' in disk_data:
+                        health_status = disk_data.get('health_status')
+                        existing_disk.health_status = convert_health_status_to_russian(health_status)
+                    
+                    # Обновляем производителя
+                    manufacturer = disk_data.get('manufacturer', '').strip() if 'manufacturer' in disk_data else ''
+                    if not manufacturer and 'model' in disk_data:
+                        model = disk_data.get('model', '').strip()
+                        manufacturer = detect_manufacturer_by_model(model)
+                    
+                    if manufacturer:
+                        vendor = get_or_create_vendor(manufacturer)
+                        if vendor:
+                            existing_disk.vendor_id = vendor.id
+                    
+                    # Связываем с машиной
+                    existing_disk.machine_id = machine.id
+                    
+                    # Обновляем дату и комментарий
+                    existing_disk.health_check_date = datetime.now().date()
+                    comment_text = f'Последний раз обнаружен на {hostname}'
+                    if collection_info.get('comment'):
+                        comment_text += f'. {collection_info.get("comment")}'
+                    existing_disk.comment = comment_text
+                    
+                    # Активируем диск, если был деактивирован
+                    if not existing_disk.active:
+                        existing_disk.active = True
+                    
+                    # Создаем запись в истории диска
+                    from models import PCHardDriveHistory
+                    history_record = PCHardDriveHistory(
+                        hard_drive_id=existing_disk.id,
+                        check_date=datetime.now().date(),
+                        power_on_hours=existing_disk.power_on_hours,
+                        power_on_count=existing_disk.power_on_count,
+                        health_status=existing_disk.health_status,
+                        comment=f'Обновление через API v2 с {hostname}'
+                    )
+                    db.session.add(history_record)
+                    
+                    updated_count += 1
+                else:
+                    # Создаем новый диск
+                    model = disk_data.get('model', '').strip()
+                    size_gb = disk_data.get('size_gb')
+                    
+                    if not model:
+                        error_count += 1
+                        errors.append(f'Disk {serial}: missing model')
+                        continue
+                    
+                    if size_gb is None:
+                        error_count += 1
+                        errors.append(f'Disk {serial}: missing size_gb')
+                        continue
+                    
+                    # Определяем тип диска
+                    media_type = disk_data.get('media_type', '').upper()
+                    if 'SSD' in media_type or 'SOLID' in media_type:
+                        drive_type = 'SSD'
+                    elif 'NVMe' in model.upper() or 'NVME' in model.upper():
+                        drive_type = 'NVMe'
+                    else:
+                        drive_type = 'HDD'
+                    
+                    # Определяем производителя
+                    manufacturer = disk_data.get('manufacturer', '').strip()
+                    if not manufacturer:
+                        manufacturer = detect_manufacturer_by_model(model)
+                    
+                    vendor = get_or_create_vendor(manufacturer)
+                    if not vendor:
+                        error_count += 1
+                        errors.append(f'Disk {serial}: could not create vendor for {manufacturer}')
+                        continue
+                    
+                    # Конвертируем статус здоровья
+                    health_status = disk_data.get('health_status')
+                    health_status_ru = convert_health_status_to_russian(health_status) if health_status else None
+                    
+                    new_disk = PCHardDrive(
+                        serial_number=serial,
+                        model=model,
+                        capacity_gb=size_gb,
+                        drive_type=drive_type,
+                        vendor_id=vendor.id,
+                        interface=disk_data.get('interface'),
+                        power_on_hours=disk_data.get('power_on_hours'),
+                        power_on_count=disk_data.get('power_on_count'),
+                        health_status=health_status_ru,
+                        health_check_date=datetime.now().date(),
+                        machine_id=machine.id,
+                        comment=f'Автоматически добавлен с {hostname} через API v2'
+                    )
+                    db.session.add(new_disk)
+                    new_count += 1
+                    
+            except Exception as e:
+                error_count += 1
+                serial = disk_data.get('serial_number', 'unknown')
+                error_msg = f'Disk {serial}: {str(e)}'
+                errors.append(error_msg)
+                import traceback
+                print(f"ERROR processing disk {serial}: {str(e)}")
+                print(traceback.format_exc())
+                db.session.rollback()
+                continue
+        
+        # === ОБРАБОТКА ВИДЕОКАРТ ===
+        graphics_cards = data.get('graphics_cards', [])
+        graphics_new_count = 0
+        graphics_updated_count = 0
+        graphics_error_count = 0
+        graphics_errors = []
+        
+        def detect_graphics_manufacturer_by_model(model):
+            """Определяет производителя видеокарты по модели."""
+            if not model:
+                return 'Unknown'
+            model_upper = model.upper()
+            if 'NVIDIA' in model_upper or 'GEFORCE' in model_upper or 'RTX' in model_upper or 'GTX' in model_upper:
+                return 'NVIDIA'
+            elif 'AMD' in model_upper or 'RADEON' in model_upper or 'RX' in model_upper:
+                return 'AMD'
+            elif 'INTEL' in model_upper:
+                return 'Intel'
+            else:
+                return 'Unknown'
+        
+        for gpu_data in graphics_cards:
+            try:
+                serial = gpu_data.get('serial_number')
+                model = gpu_data.get('model', '').strip()
+                
+                if not model:
+                    graphics_error_count += 1
+                    graphics_errors.append(f'Graphics card skipped: missing model')
+                    continue
+                
+                # Ищем существующую видеокарту по серийному номеру или модели + машине
+                existing_gpu = None
+                if serial:
+                    existing_gpu = PCGraphicsCard.query.filter_by(serial_number=serial).first()
+                
+                # Если не найдено по серийному номеру, ищем по модели и машине
+                if not existing_gpu and machine:
+                    existing_gpu = PCGraphicsCard.query.filter_by(
+                        model=model,
+                        machine_id=machine.id
+                    ).first()
+                
+                if existing_gpu:
+                    # Обновляем существующую видеокарту
+                    if 'memory_size' in gpu_data:
+                        existing_gpu.memory_size = gpu_data.get('memory_size')
+                    if 'memory_type' in gpu_data:
+                        existing_gpu.memory_type = gpu_data.get('memory_type')
+                    if serial:
+                        existing_gpu.serial_number = serial
+                    
+                    # Обновляем производителя
+                    manufacturer = gpu_data.get('manufacturer', '').strip()
+                    if not manufacturer:
+                        manufacturer = detect_graphics_manufacturer_by_model(model)
+                    
+                    if manufacturer:
+                        vendor = get_or_create_vendor(manufacturer)
+                        if vendor:
+                            existing_gpu.vendor_id = vendor.id
+                    
+                    # Связываем с машиной
+                    if machine:
+                        existing_gpu.machine_id = machine.id
+                    
+                    # Обновляем комментарий
+                    comment_text = f'Последний раз обнаружена на {hostname}'
+                    if collection_info.get('comment'):
+                        comment_text += f'. {collection_info.get("comment")}'
+                    existing_gpu.comment = comment_text
+                    
+                    # Активируем видеокарту, если была деактивирована
+                    if not existing_gpu.active:
+                        existing_gpu.active = True
+                    
+                    graphics_updated_count += 1
+                else:
+                    # Создаем новую видеокарту
+                    # Определяем производителя
+                    manufacturer = gpu_data.get('manufacturer', '').strip()
+                    if not manufacturer:
+                        manufacturer = detect_graphics_manufacturer_by_model(model)
+                    
+                    vendor = get_or_create_vendor(manufacturer)
+                    if not vendor:
+                        graphics_error_count += 1
+                        graphics_errors.append(f'Graphics card {model}: could not create vendor for {manufacturer}')
+                        continue
+                    
+                    new_gpu = PCGraphicsCard(
+                        vendor_id=vendor.id,
+                        model=model,
+                        memory_size=gpu_data.get('memory_size'),
+                        memory_type=gpu_data.get('memory_type'),
+                        serial_number=serial,
+                        machine_id=machine.id if machine else None,
+                        comment=f'Автоматически добавлена с {hostname} через API v2'
+                    )
+                    db.session.add(new_gpu)
+                    graphics_new_count += 1
+                    
+            except Exception as e:
+                graphics_error_count += 1
+                model = gpu_data.get('model', 'unknown')
+                error_msg = f'Graphics card {model}: {str(e)}'
+                graphics_errors.append(error_msg)
+                import traceback
+                print(f"ERROR processing graphics card {model}: {str(e)}")
+                print(traceback.format_exc())
+                db.session.rollback()
+                continue
+        
+        # === ОБРАБОТКА МОДУЛЕЙ ОЗУ ===
+        memory_modules = data.get('memory_modules', [])
+        memory_new_count = 0
+        memory_updated_count = 0
+        memory_error_count = 0
+        memory_errors = []
+        
+        for memory_data in memory_modules:
+            try:
+                capacity_gb = memory_data.get('capacity_gb')
+                serial_number = memory_data.get('serial_number')
+                location = memory_data.get('location')
+                
+                if not capacity_gb:
+                    memory_error_count += 1
+                    memory_errors.append(f'Memory module skipped: missing capacity_gb')
+                    continue
+                
+                # Ищем существующий модуль по серийному номеру или location + машине
+                existing_memory = None
+                if serial_number:
+                    existing_memory = PCMemoryModule.query.filter_by(serial_number=serial_number).first()
+                
+                # Если не найдено по серийному номеру, ищем по location и машине
+                if not existing_memory and location and machine:
+                    existing_memory = PCMemoryModule.query.filter_by(
+                        location=location,
+                        machine_id=machine.id
+                    ).first()
+                
+                if existing_memory:
+                    # Обновляем существующий модуль
+                    if 'capacity_gb' in memory_data:
+                        existing_memory.capacity_gb = memory_data.get('capacity_gb')
+                    if 'memory_type' in memory_data:
+                        existing_memory.memory_type = memory_data.get('memory_type')
+                    if 'speed_mhz' in memory_data:
+                        existing_memory.speed_mhz = memory_data.get('speed_mhz')
+                    if 'manufacturer' in memory_data:
+                        existing_memory.manufacturer = memory_data.get('manufacturer')
+                    if 'part_number' in memory_data:
+                        existing_memory.part_number = memory_data.get('part_number')
+                    if serial_number:
+                        existing_memory.serial_number = serial_number
+                    if location:
+                        existing_memory.location = location
+                    
+                    # Связываем с машиной
+                    if machine:
+                        existing_memory.machine_id = machine.id
+                    
+                    # Обновляем комментарий
+                    comment_text = f'Последний раз обнаружен на {hostname}'
+                    if collection_info.get('comment'):
+                        comment_text += f'. {collection_info.get("comment")}'
+                    existing_memory.comment = comment_text
+                    
+                    # Активируем модуль, если был деактивирован
+                    if not existing_memory.active:
+                        existing_memory.active = True
+                    
+                    memory_updated_count += 1
+                else:
+                    # Создаем новый модуль
+                    new_memory = PCMemoryModule(
+                        capacity_gb=capacity_gb,
+                        memory_type=memory_data.get('memory_type'),
+                        speed_mhz=memory_data.get('speed_mhz'),
+                        manufacturer=memory_data.get('manufacturer'),
+                        part_number=memory_data.get('part_number'),
+                        serial_number=serial_number,
+                        location=location,
+                        machine_id=machine.id if machine else None,
+                        comment=f'Автоматически добавлен с {hostname} через API v2'
+                    )
+                    db.session.add(new_memory)
+                    memory_new_count += 1
+                    
+            except Exception as e:
+                memory_error_count += 1
+                location = memory_data.get('location', 'unknown')
+                error_msg = f'Memory module {location}: {str(e)}'
+                memory_errors.append(error_msg)
+                import traceback
+                print(f"ERROR processing memory module {location}: {str(e)}")
+                print(traceback.format_exc())
+                db.session.rollback()
+                continue
+        
+        # Коммитим все изменения
+        try:
+            db.session.commit()
+            print(f"API v2: Machine {hostname} {machine_status}, Disks: new={new_count}, updated={updated_count}, Graphics: new={graphics_new_count}, updated={graphics_updated_count}, Memory: new={memory_new_count}, updated={memory_updated_count}")
+        except Exception as e:
+            db.session.rollback()
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"ERROR committing transaction: {str(e)}")
+            print(error_trace)
+            return jsonify({
+                'success': False,
+                'error': f'Database error: {str(e)}',
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }), 500
+        
+        # Формируем ответ
+        response = {
+            'success': True,
+            'machine': {
+                'id': machine.id,
+                'hostname': machine.hostname,
+                'status': machine_status,
+                'message': f'Machine information {machine_status}'
+            },
+            'disks': {
+                'processed': new_count + updated_count,
+                'total': len(disks),
+                'new': new_count,
+                'updated': updated_count
+            },
+            'graphics_cards': {
+                'processed': graphics_new_count + graphics_updated_count,
+                'total': len(graphics_cards),
+                'new': graphics_new_count,
+                'updated': graphics_updated_count
+            },
+            'memory_modules': {
+                'processed': memory_new_count + memory_updated_count,
+                'total': len(memory_modules),
+                'new': memory_new_count,
+                'updated': memory_updated_count
+            },
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        }
+        
+        if error_count > 0:
+            response['disks']['error_count'] = error_count
+            response['disks']['errors'] = errors[:10]
+        
+        if graphics_error_count > 0:
+            response['graphics_cards']['error_count'] = graphics_error_count
+            response['graphics_cards']['errors'] = graphics_errors[:10]
+        
+        if memory_error_count > 0:
+            response['memory_modules']['error_count'] = memory_error_count
+            response['memory_modules']['errors'] = memory_errors[:10]
+        
+        return jsonify(response), 200
+        
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"ERROR in API v2: {str(e)}")
+        print(error_trace)
+        return jsonify({
+            'success': False,
+            'error': f'Invalid request: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        }), 400
 
 # === ЗАПУСК ПРИЛОЖЕНИЯ ===
 

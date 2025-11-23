@@ -31,6 +31,7 @@
                         <th scope="col">Модель</th>
                         <th scope="col">Память</th>
                         <th scope="col">Серийный номер</th>
+                        <th scope="col">Компьютер</th>
                         <th scope="col">Стоимость</th>
                         <th scope="col" style="width: 120px;">Действия</th>
                     </tr>
@@ -54,6 +55,20 @@
                             <td>
                                 {% if card.serial_number %}
                                     <code>{{ card.serial_number }}</code>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if card.machine %}
+                                    <a href="{{ url_for('machine_detail', machine_id=card.machine.id) }}" 
+                                       class="text-decoration-none"
+                                       title="Подробнее о компьютере">
+                                        <i class="bi bi-pc-display me-1"></i>{{ card.machine.hostname }}
+                                    </a>
+                                    {% if card.machine.ip_address %}
+                                        <br><small class="text-muted">{{ card.machine.ip_address }}</small>
+                                    {% endif %}
                                 {% else %}
                                     <span class="text-muted">—</span>
                                 {% endif %}

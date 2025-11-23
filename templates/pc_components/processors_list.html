@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Процессоры{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Процессоры</h1>
+        <p class="text-muted mb-0">Список процессоров в системе</p>
+    </div>
+    <div class="user-info">
+        <a href="{{ url_for('pc_components') }}" class="btn btn-secondary btn-sm me-2">
+            <i class="bi bi-arrow-left me-1"></i>Назад
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-cpu me-2"></i>Список процессоров
+            {% if total_processors > 0 %}
+                <span class="badge bg-secondary ms-2">{{ total_processors }}</span>
+            {% endif %}
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if processors_data %}
+            {% for item in processors_data %}
+            <div class="card mb-3">
+                <div class="card-header bg-light">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-0">
+                                <i class="bi bi-cpu me-2"></i>{{ item.processor }}
+                            </h6>
+                        </div>
+                        <div>
+                            <span class="badge bg-primary">{{ item.machines_count }} компьютер{{ 'ов' if item.machines_count > 1 else '' }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Hostname</th>
+                                    <th>IP-адрес</th>
+                                    <th>MAC-адрес</th>
+                                    <th>ОС</th>
+                                    <th>Память</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for machine in item.machines %}
+                                <tr>
+                                    <td><strong>{{ machine.hostname }}</strong></td>
+                                    <td>
+                                        {% if machine.ip_address %}
+                                            <code>{{ machine.ip_address }}</code>
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if machine.mac_address %}
+                                            <code>{{ machine.mac_address }}</code>
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if machine.os_name %}
+                                            {{ machine.os_name }}{% if machine.os_version %} {{ machine.os_version }}{% endif %}
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if machine.memory_gb %}
+                                            {{ machine.memory_gb }} ГБ
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="{{ url_for('machine_detail', machine_id=machine.id) }}" 
+                                           class="btn btn-sm btn-outline-primary"
+                                           title="Подробнее о компьютере">
+                                            <i class="bi bi-eye me-1"></i>Подробнее
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="alert alert-info mb-0">
+                <i class="bi bi-info-circle me-2"></i>Нет данных о процессорах
+                <br><small>Процессоры появляются автоматически при отправке данных через API v2</small>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+

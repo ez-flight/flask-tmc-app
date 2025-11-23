@@ -388,9 +388,11 @@ class PCGraphicsCard(db.Model):
     comment = db.Column(db.Text, nullable=True)  # Комментарий
     active = db.Column(db.Boolean, nullable=False, default=True)  # Активна ли видеокарта
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    machine_id = db.Column(db.Integer, db.ForeignKey('machines.id'), nullable=True)  # Связь с машиной
     
     # Связи
     vendor = db.relationship('Vendor', backref='graphics_cards')
+    machine = db.relationship('Machine', backref='graphics_cards')
     pc_links = db.relationship('PCComponentLink', back_populates='graphics_card', foreign_keys='PCComponentLink.graphics_card_id')
     
     def __repr__(self):
@@ -422,6 +424,7 @@ class PCHardDrive(db.Model):
     purchase_cost = db.Column(db.DECIMAL(precision=12, scale=2), nullable=True)  # Стоимость приобретения
     active = db.Column(db.Boolean, nullable=False, default=True)  # Активен ли диск
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    machine_id = db.Column(db.Integer, db.ForeignKey('machines.id'), nullable=True)  # Связь с машиной
     
     # Связи
     vendor = db.relationship('Vendor', backref='hard_drives')
@@ -450,6 +453,90 @@ class PCHardDriveHistory(db.Model):
     
     def __repr__(self):
         return f'<PCHardDriveHistory {self.id}: Drive {self.hard_drive_id} at {self.check_date}>'
+
+class PCMemoryModule(db.Model):
+    """
+    Модули оперативной памяти (ОЗУ) - комплектующие ПК (аппаратное обеспечение).
+    Не являются ТМЦ, отдельная таблица для учета.
+    """
+    __tablename__ = 'pc_memory_modules'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # Обязательные поля
+    capacity_gb = db.Column(db.Integer, nullable=False)  # Объем модуля в ГБ
+    # Необязательные поля
+    memory_type = db.Column(db.String(50), nullable=True)  # Тип памяти (DDR, DDR2, DDR3, DDR4, DDR5)
+    speed_mhz = db.Column(db.Integer, nullable=True)  # Частота в МГц
+    manufacturer = db.Column(db.String(200), nullable=True)  # Производитель
+    part_number = db.Column(db.String(200), nullable=True)  # Номер партии/модель
+    serial_number = db.Column(db.String(100), nullable=True)  # Серийный номер
+    location = db.Column(db.String(100), nullable=True)  # Расположение слота (BankLabel или DeviceLocator)
+    comment = db.Column(db.Text, nullable=True)  # Комментарий
+    active = db.Column(db.Boolean, nullable=False, default=True)  # Активен ли модуль
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    machine_id = db.Column(db.Integer, db.ForeignKey('machines.id'), nullable=True)  # Связь с машиной
+    
+    # Связи
+    machine = db.relationship('Machine', backref='memory_modules')
+    
+    def __repr__(self):
+        return f'<PCMemoryModule {self.id}: {self.capacity_gb}GB {self.memory_type or "Unknown"} @ {self.machine_id}>'
+
+class Machine(db.Model):
+    """
+    Машины/компьютеры - информация о ПК, на которых установлены жесткие диски.
+    """
+    __tablename__ = 'machines'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # Базовые поля
+    hostname = db.Column(db.String(255), nullable=False, unique=True)  # Имя компьютера (уникальный идентификатор)
+    ip_address = db.Column(db.String(45), nullable=True)  # IP-адрес (IPv4 или IPv6)
+    mac_address = db.Column(db.String(17), nullable=True)  # MAC-адрес основного сетевого адаптера
+    # Операционная система
+    os_name = db.Column(db.String(50), nullable=True)  # Название ОС (Windows, Linux, macOS)
+    os_version = db.Column(db.String(50), nullable=True)  # Версия ОС (10, 11, etc.)
+    os_build = db.Column(db.String(50), nullable=True)  # Номер сборки ОС
+    os_edition = db.Column(db.String(50), nullable=True)  # Издание ОС (Pro, Home, Enterprise)
+    os_architecture = db.Column(db.String(10), nullable=True)  # Архитектура (x64, x86, ARM64)
+    # Аппаратное обеспечение
+    processor = db.Column(db.String(255), nullable=True)  # Модель процессора
+    memory_gb = db.Column(db.Integer, nullable=True)  # Объем оперативной памяти в ГБ
+    motherboard = db.Column(db.String(255), nullable=True)  # Модель материнской платы
+    bios_version = db.Column(db.String(255), nullable=True)  # Версия BIOS/UEFI
+    # Сетевая информация
+    domain = db.Column(db.String(255), nullable=True)  # Домен или рабочая группа
+    computer_role = db.Column(db.String(50), nullable=True)  # Роль компьютера (WORKSTATION, SERVER, DOMAIN_CONTROLLER)
+    dns_suffix = db.Column(db.String(255), nullable=True)  # DNS суффикс
+    # Временные метки
+    first_seen = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)  # Первое обнаружение
+    last_seen = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)  # Последнее обнаружение
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Связь с ТМЦ (один к одному)
+    equipment_id = db.Column(db.Integer, db.ForeignKey('equipment.id'), nullable=True, unique=True)  # Связь с ТМЦ (уникальная)
+    
+    # Связи
+    equipment = db.relationship('Equipment', backref=db.backref('machine', uselist=False))  # Один к одному
+    hard_drives = db.relationship('PCHardDrive', backref='machine', lazy='dynamic')
+    history_records = db.relationship('MachineHistory', backref='machine', lazy='dynamic', cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<Machine {self.id}: {self.hostname}>'
+
+class MachineHistory(db.Model):
+    """
+    История изменений машин - учет изменений конфигурации во времени.
+    """
+    __tablename__ = 'machine_history'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    machine_id = db.Column(db.Integer, db.ForeignKey('machines.id'), nullable=False)  # Ссылка на машину
+    changed_field = db.Column(db.String(50), nullable=True)  # Измененное поле
+    old_value = db.Column(db.Text, nullable=True)  # Старое значение
+    new_value = db.Column(db.Text, nullable=True)  # Новое значение
+    changed_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)  # Время изменения
+    comment = db.Column(db.Text, nullable=True)  # Комментарий к изменению
+    
+    def __repr__(self):
+        return f'<MachineHistory {self.id}: Machine {self.machine_id} field {self.changed_field}>'
 
 class PCComponentLink(db.Model):
     """

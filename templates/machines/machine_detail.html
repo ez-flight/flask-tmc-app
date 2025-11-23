@@ -1,0 +1,705 @@
+{% extends "base.html" %}
+{% block title %}Компьютер: {{ machine.hostname }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>{{ machine.hostname }}</h1>
+        <p class="text-muted mb-0">Детальная информация о компьютере</p>
+    </div>
+    <div class="user-info">
+        <a href="{{ url_for('machines_list') }}" class="btn btn-secondary btn-sm me-2">
+            <i class="bi bi-arrow-left me-1"></i>Назад к списку
+        </a>
+        <a href="{{ url_for('machines') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-house me-1"></i>Главная
+        </a>
+    </div>
+</div>
+
+<!-- Привязка к ТМЦ -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-link-45deg me-2"></i>Привязка к ТМЦ</h5>
+        {% if equipment %}
+        <form method="POST" action="{{ url_for('link_machine_equipment', machine_id=machine.id) }}" style="display: inline;">
+            <input type="hidden" name="equipment_id" value="">
+            <button type="submit" class="btn btn-sm btn-outline-danger" 
+                    onclick="return confirm('Отвязать машину от ТМЦ?');">
+                <i class="bi bi-x-circle me-1"></i>Отвязать
+            </button>
+        </form>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if equipment %}
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-tag text-primary me-2 mt-1"></i>
+                    <div>
+                        <strong>Название:</strong><br>
+                        <a href="{{ url_for('info_tmc', tmc_id=equipment.id) }}" class="text-decoration-none">
+                            {{ equipment.buhname }}
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% if equipment.nome %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-grid text-info me-2 mt-1"></i>
+                    <div>
+                        <strong>Тип:</strong><br>
+                        {{ equipment.nome.name }}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if equipment.invnum %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-123 text-success me-2 mt-1"></i>
+                    <div>
+                        <strong>Инвентарный номер:</strong><br>
+                        <code>{{ equipment.invnum }}</code>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if equipment.sernum %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-upc-scan text-secondary me-2 mt-1"></i>
+                    <div>
+                        <strong>Серийный номер:</strong><br>
+                        <code>{{ equipment.sernum }}</code>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if equipment.ip %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-router text-warning me-2 mt-1"></i>
+                    <div>
+                        <strong>IP-адрес (из ТМЦ):</strong><br>
+                        <code>{{ equipment.ip }}</code>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if equipment.users %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-person text-danger me-2 mt-1"></i>
+                    <div>
+                        <strong>Ответственный:</strong><br>
+                        {{ equipment.users.login }}{% if equipment.users.fio %} ({{ equipment.users.fio }}){% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if equipment.places %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-geo-alt text-primary me-2 mt-1"></i>
+                    <div>
+                        <strong>Местонахождение:</strong><br>
+                        {{ equipment.places.name }}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if equipment.cost %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-currency-exchange text-success me-2 mt-1"></i>
+                    <div>
+                        <strong>Стоимость:</strong><br>
+                        {{ "{:,.2f}".format(equipment.cost).replace(',', ' ').replace('.', ',') }} ₽
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if equipment.datepost %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-calendar-event text-muted me-2 mt-1"></i>
+                    <div>
+                        <strong>Дата поступления:</strong><br>
+                        <small>{{ equipment.datepost.strftime('%d.%m.%Y') }}</small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if equipment.repair %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-tools text-warning me-2 mt-1"></i>
+                    <div>
+                        <strong>Статус:</strong><br>
+                        <span class="badge bg-warning">В ремонте</span>
+                    </div>
+                </div>
+            </div>
+            {% elif equipment.lost %}
+            <div class="col-md-6">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-exclamation-triangle text-danger me-2 mt-1"></i>
+                    <div>
+                        <strong>Статус:</strong><br>
+                        <span class="badge bg-danger">Потерян</span>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            {% if equipment.comment %}
+            <div class="col-12">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-chat-left-text text-info me-2 mt-1"></i>
+                    <div>
+                        <strong>Комментарий:</strong><br>
+                        <small>{{ equipment.comment }}</small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="row">
+            <div class="col-md-8">
+                <form method="POST" action="{{ url_for('link_machine_equipment', machine_id=machine.id) }}" class="mb-3">
+                    <div class="input-group">
+                        <select name="equipment_id" class="form-select" required>
+                            <option value="">-- Выберите ТМЦ --</option>
+                            {% for eq in available_equipment %}
+                            <option value="{{ eq.id }}">{{ eq.buhname }}{% if eq.invnum %} ({{ eq.invnum }}){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-link me-1"></i>Привязать
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="col-md-4">
+                <form method="POST" action="{{ url_for('auto_link_machine_equipment', machine_id=machine.id) }}">
+                    <button type="submit" class="btn btn-outline-info w-100" 
+                            title="Автоматический поиск ТМЦ по hostname, IP или серийному номеру">
+                        <i class="bi bi-search me-1"></i>Автопоиск ТМЦ
+                    </button>
+                </form>
+            </div>
+        </div>
+        <small class="text-muted">
+            <i class="bi bi-info-circle me-1"></i>
+            Автопоиск ищет ТМЦ по MAC-адресу (приоритет), hostname, IP-адресу или серийному номеру
+        </small>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row">
+    <!-- Основная информация -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Основная информация</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <th width="40%">Hostname:</th>
+                        <td><strong>{{ machine.hostname }}</strong></td>
+                    </tr>
+                    {% if machine.ip_address %}
+                    <tr>
+                        <th>IP-адрес:</th>
+                        <td><code>{{ machine.ip_address }}</code></td>
+                    </tr>
+                    {% endif %}
+                    {% if machine.mac_address %}
+                    <tr>
+                        <th>MAC-адрес:</th>
+                        <td><code>{{ machine.mac_address }}</code></td>
+                    </tr>
+                    {% endif %}
+                    {% if machine.domain %}
+                    <tr>
+                        <th>Домен:</th>
+                        <td>{{ machine.domain }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if machine.computer_role %}
+                    <tr>
+                        <th>Роль:</th>
+                        <td><span class="badge bg-secondary">{{ machine.computer_role }}</span></td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <th>Первое обнаружение:</th>
+                        <td>{{ machine.first_seen.strftime('%d.%m.%Y %H:%M') if machine.first_seen else '—' }}</td>
+                    </tr>
+                    <tr>
+                        <th>Последнее обновление:</th>
+                        <td>{{ machine.last_seen.strftime('%d.%m.%Y %H:%M') if machine.last_seen else '—' }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Операционная система -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-windows me-2"></i>Операционная система</h5>
+            </div>
+            <div class="card-body">
+                {% if machine.os_name %}
+                <table class="table table-sm">
+                    <tr>
+                        <th width="40%">ОС:</th>
+                        <td><strong>{{ machine.os_name }}</strong></td>
+                    </tr>
+                    {% if machine.os_version %}
+                    <tr>
+                        <th>Версия:</th>
+                        <td>{{ machine.os_version }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if machine.os_build %}
+                    <tr>
+                        <th>Сборка:</th>
+                        <td>{{ machine.os_build }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if machine.os_edition %}
+                    <tr>
+                        <th>Издание:</th>
+                        <td>{{ machine.os_edition }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if machine.os_architecture %}
+                    <tr>
+                        <th>Архитектура:</th>
+                        <td><span class="badge bg-secondary">{{ machine.os_architecture }}</span></td>
+                    </tr>
+                    {% endif %}
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">Информация об ОС не указана</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Аппаратное обеспечение -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-cpu me-2"></i>Аппаратное обеспечение</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    {% if machine.processor %}
+                    <tr>
+                        <th width="40%">Процессор:</th>
+                        <td>{{ machine.processor }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if machine.memory_gb %}
+                    <tr>
+                        <th>Память:</th>
+                        <td><strong>{{ machine.memory_gb }} ГБ</strong></td>
+                    </tr>
+                    {% endif %}
+                    {% if machine.motherboard %}
+                    <tr>
+                        <th>Материнская плата:</th>
+                        <td>{{ machine.motherboard }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if machine.bios_version %}
+                    <tr>
+                        <th>BIOS:</th>
+                        <td><small>{{ machine.bios_version }}</small></td>
+                    </tr>
+                    {% endif %}
+                    {% if graphics_cards %}
+                    <tr>
+                        <th>Видеокарта:</th>
+                        <td>
+                            {% for card in graphics_cards %}
+                                <div>
+                                    <strong>{{ card.vendor.name if card.vendor else 'Unknown' }} {{ card.model }}</strong>
+                                    {% if card.memory_size %}
+                                        <span class="text-muted">({{ card.memory_size }} МБ{% if card.memory_type %} {{ card.memory_type }}{% endif %})</span>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if memory_modules %}
+                    <tr>
+                        <th>Модули ОЗУ:</th>
+                        <td>
+                            {% set total_ram = memory_modules|sum(attribute='capacity_gb') %}
+                            <div>
+                                <strong>{{ total_ram }} ГБ</strong>
+                                <span class="text-muted">({{ memory_modules|length }} модул{{ 'ь' if memory_modules|length == 1 else ('я' if memory_modules|length < 5 else 'ей') }})</span>
+                            </div>
+                            <div class="mt-2">
+                                {% for module in memory_modules %}
+                                    <div class="small">
+                                        {{ module.capacity_gb }} ГБ
+                                        {% if module.memory_type %}
+                                            <span class="badge bg-info">{{ module.memory_type }}</span>
+                                        {% endif %}
+                                        {% if module.speed_mhz %}
+                                            <span class="text-muted">@ {{ module.speed_mhz }} МГц</span>
+                                        {% endif %}
+                                        {% if module.location %}
+                                            <span class="badge bg-secondary">{{ module.location }}</span>
+                                        {% endif %}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if not machine.processor and not machine.memory_gb and not machine.motherboard and not graphics_cards and not memory_modules %}
+                    <tr>
+                        <td colspan="2" class="text-muted">Информация об аппаратном обеспечении не указана</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Сетевая информация -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-router me-2"></i>Сетевая информация</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    {% if machine.domain %}
+                    <tr>
+                        <th width="40%">Домен/Рабочая группа:</th>
+                        <td>{{ machine.domain }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if machine.computer_role %}
+                    <tr>
+                        <th>Роль компьютера:</th>
+                        <td><span class="badge bg-secondary">{{ machine.computer_role }}</span></td>
+                    </tr>
+                    {% endif %}
+                    {% if machine.dns_suffix %}
+                    <tr>
+                        <th>DNS суффикс:</th>
+                        <td>{{ machine.dns_suffix }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if not machine.domain and not machine.computer_role and not machine.dns_suffix %}
+                    <tr>
+                        <td colspan="2" class="text-muted">Сетевая информация не указана</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Жесткие диски -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-hdd me-2"></i>Жесткие диски на этом компьютере
+            {% if hard_drives %}
+                <span class="badge bg-secondary ms-2">{{ hard_drives|length }}</span>
+            {% endif %}
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if hard_drives %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">Марка</th>
+                        <th scope="col">Модель</th>
+                        <th scope="col">Объем</th>
+                        <th scope="col">Серийный номер</th>
+                        <th scope="col">Здоровье</th>
+                        <th scope="col">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for drive in hard_drives %}
+                    <tr>
+                        <td><strong>{{ drive.vendor.name if drive.vendor else 'Unknown' }}</strong></td>
+                        <td>{{ drive.model }}</td>
+                        <td>{{ drive.capacity_gb }} ГБ</td>
+                        <td><code>{{ drive.serial_number }}</code></td>
+                        <td>
+                            {% if drive.health_status %}
+                                {% set status_ru = convert_health_status(drive.health_status) %}
+                                {% if status_ru == 'Здоров' %}
+                                    <span class="badge bg-success">{{ status_ru }}</span>
+                                {% elif status_ru == 'Тревога' %}
+                                    <span class="badge bg-warning text-dark">{{ status_ru }}</span>
+                                {% elif status_ru == 'Неработает' %}
+                                    <span class="badge bg-danger">{{ status_ru }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ status_ru }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('edit_hard_drive', drive_id=drive.id) }}" 
+                               class="btn btn-outline-primary btn-sm"
+                               title="Редактировать">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <a href="{{ url_for('hard_drive_history', drive_id=drive.id) }}" 
+                               class="btn btn-outline-info btn-sm"
+                               title="История">
+                                <i class="bi bi-clock-history"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">
+            <i class="bi bi-info-circle me-1"></i>На этом компьютере не обнаружено жестких дисков
+        </p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Видеокарты -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-gpu-card me-2"></i>Видеокарты на этом компьютере
+            {% if graphics_cards %}
+                <span class="badge bg-secondary ms-2">{{ graphics_cards|length }}</span>
+            {% endif %}
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if graphics_cards %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">Производитель</th>
+                        <th scope="col">Модель</th>
+                        <th scope="col">Память</th>
+                        <th scope="col">Серийный номер</th>
+                        <th scope="col">Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for card in graphics_cards %}
+                    <tr>
+                        <td><strong>{{ card.vendor.name if card.vendor else 'Unknown' }}</strong></td>
+                        <td>{{ card.model }}</td>
+                        <td>
+                            {% if card.memory_size %}
+                                {{ card.memory_size }} МБ
+                                {% if card.memory_type %}
+                                    <span class="text-muted">({{ card.memory_type }})</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if card.serial_number %}
+                                <code>{{ card.serial_number }}</code>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ url_for('edit_graphics_card', card_id=card.id) }}" 
+                               class="btn btn-outline-primary btn-sm"
+                               title="Редактировать">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">
+            <i class="bi bi-info-circle me-1"></i>На этом компьютере не обнаружено видеокарт
+        </p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Модули ОЗУ -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-memory me-2"></i>Модули ОЗУ на этом компьютере
+            {% if memory_modules %}
+                <span class="badge bg-secondary ms-2">{{ memory_modules|length }}</span>
+                {% set total_ram = memory_modules|sum(attribute='capacity_gb') %}
+                <span class="badge bg-info ms-2">{{ total_ram }} ГБ</span>
+            {% endif %}
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if memory_modules %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">Объем</th>
+                        <th scope="col">Тип</th>
+                        <th scope="col">Частота</th>
+                        <th scope="col">Производитель</th>
+                        <th scope="col">Модель/Партия</th>
+                        <th scope="col">Серийный номер</th>
+                        <th scope="col">Расположение</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for module in memory_modules %}
+                    <tr>
+                        <td><strong>{{ module.capacity_gb }} ГБ</strong></td>
+                        <td>
+                            {% if module.memory_type %}
+                                <span class="badge bg-info">{{ module.memory_type }}</span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if module.speed_mhz %}
+                                {{ module.speed_mhz }} МГц
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if module.manufacturer %}
+                                {{ module.manufacturer }}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if module.part_number %}
+                                <code>{{ module.part_number }}</code>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if module.serial_number %}
+                                <code>{{ module.serial_number }}</code>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if module.location %}
+                                <span class="badge bg-secondary">{{ module.location }}</span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">
+            <i class="bi bi-info-circle me-1"></i>На этом компьютере не обнаружено модулей ОЗУ
+        </p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- История изменений -->
+{% if history %}
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-clock-history me-2"></i>История изменений
+            <span class="badge bg-secondary ms-2">{{ history|length }}</span>
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">Дата/Время</th>
+                        <th scope="col">Поле</th>
+                        <th scope="col">Старое значение</th>
+                        <th scope="col">Новое значение</th>
+                        <th scope="col">Комментарий</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in history %}
+                    <tr>
+                        <td><small>{{ record.changed_at.strftime('%d.%m.%Y %H:%M') }}</small></td>
+                        <td>
+                            {% if record.changed_field %}
+                                <code>{{ record.changed_field }}</code>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if record.old_value %}
+                                <small class="text-muted">{{ record.old_value[:50] }}{% if record.old_value|length > 50 %}...{% endif %}</small>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if record.new_value %}
+                                <small>{{ record.new_value[:50] }}{% if record.new_value|length > 50 %}...{% endif %}</small>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if record.comment %}
+                                <small>{{ record.comment }}</small>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
+

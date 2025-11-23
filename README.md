@@ -135,10 +135,15 @@ flask_tmc_app/
 ├── scripts/               # Вспомогательные скрипты
 │   ├── download_static_assets.py
 │   ├── extract_static_files.py
-│   └── test_mode.py
+│   ├── test_mode.py
+│   └── restore/          # Скрипты восстановления данных
+│       └── restore_disks*.py
 │
 ├── docs/                  # Документация
+│   ├── PROJECT_STRUCTURE.md
 │   ├── COMPATIBILITY.md
+│   ├── api/              # API документация
+│   │   └── API_HDD_ENDPOINTS.md
 │   └── ...
 │
 ├── templates/             # HTML шаблоны
@@ -146,7 +151,9 @@ flask_tmc_app/
 └── nginx/                 # Конфигурация Nginx
 ```
 
-**Подробная информация:** См. [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md)
+**Подробная информация:** См. [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md)
+
+**API документация:** См. [`docs/api/API_HDD_ENDPOINTS.md`](docs/api/API_HDD_ENDPOINTS.md)
 
 ---
 

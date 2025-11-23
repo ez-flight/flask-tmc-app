@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Модули ОЗУ{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Модули ОЗУ</h1>
+        <p class="text-muted mb-0">Список модулей оперативной памяти в системе</p>
+    </div>
+    <div class="user-info">
+        <a href="{{ url_for('pc_components') }}" class="btn btn-secondary btn-sm me-2">
+            <i class="bi bi-arrow-left me-1"></i>Назад
+        </a>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-4">
+                <h5 class="mb-0">
+                    <i class="bi bi-memory me-2"></i>Общая статистика
+                </h5>
+                <p class="text-muted mb-0 mt-2">
+                    <strong>Всего модулей:</strong> {{ memory_modules|length }}<br>
+                    <strong>Общий объем:</strong> {{ total_capacity }} ГБ
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-memory me-2"></i>Список модулей ОЗУ
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th scope="col">Объем</th>
+                        <th scope="col">Тип</th>
+                        <th scope="col">Частота</th>
+                        <th scope="col">Производитель</th>
+                        <th scope="col">Модель/Партия</th>
+                        <th scope="col">Серийный номер</th>
+                        <th scope="col">Расположение</th>
+                        <th scope="col">Компьютер</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if memory_modules %}
+                        {% for module in memory_modules %}
+                        <tr>
+                            <td><strong>{{ module.capacity_gb }} ГБ</strong></td>
+                            <td>
+                                {% if module.memory_type %}
+                                    <span class="badge bg-info">{{ module.memory_type }}</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if module.speed_mhz %}
+                                    {{ module.speed_mhz }} МГц
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if module.manufacturer %}
+                                    {{ module.manufacturer }}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if module.part_number %}
+                                    <code>{{ module.part_number }}</code>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if module.serial_number %}
+                                    <code>{{ module.serial_number }}</code>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if module.location %}
+                                    <span class="badge bg-secondary">{{ module.location }}</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if module.machine %}
+                                    <a href="{{ url_for('machine_detail', machine_id=module.machine.id) }}" 
+                                       class="text-decoration-none"
+                                       title="Подробнее о компьютере">
+                                        <i class="bi bi-pc-display me-1"></i>{{ module.machine.hostname }}
+                                    </a>
+                                    {% if module.machine.ip_address %}
+                                        <br><small class="text-muted">{{ module.machine.ip_address }}</small>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center py-4 text-muted">
+                                <i class="bi bi-info-circle me-1"></i>Нет модулей ОЗУ
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

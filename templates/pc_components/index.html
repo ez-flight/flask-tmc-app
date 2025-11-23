@@ -4,7 +4,7 @@
 <div class="page-header">
     <div>
         <h1>Комплектующие ПК</h1>
-        <p class="text-muted mb-0">Учет аппаратного обеспечения: видеокарты и жесткие диски</p>
+        <p class="text-muted mb-0">Учет аппаратного обеспечения: видеокарты, жесткие диски и модули ОЗУ</p>
     </div>
     <div class="user-info">
         <a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm">
@@ -15,7 +15,7 @@
 
 <!-- Статистика -->
 <div class="row mb-4">
-    <div class="col-md-6">
+    <div class="col-md-6 col-lg-4 mb-3">
         <div class="card h-100">
             <div class="card-body">
                 <h5 class="card-title">
@@ -36,7 +36,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-6">
+    <div class="col-md-6 col-lg-4 mb-3">
         <div class="card h-100">
             <div class="card-body">
                 <h5 class="card-title">
@@ -52,6 +52,78 @@
                     </a>
                     <a href="{{ url_for('add_hard_drive') }}" class="btn btn-success btn-sm">
                         <i class="bi bi-plus-circle me-1"></i>Добавить
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-memory me-2"></i>Модули ОЗУ
+                </h5>
+                <p class="card-text">
+                    <strong>Всего:</strong> {{ memory_modules_count }}<br>
+                    <strong>Привязано к ПК:</strong> {{ linked_memory_modules_count }}
+                </p>
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('memory_modules_list') }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-list-ul me-1"></i>Список модулей ОЗУ
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-cpu me-2"></i>Процессоры
+                </h5>
+                <p class="card-text">
+                    <strong>Компьютеров с процессором:</strong> {{ processors_count }}<br>
+                    <strong>Уникальных моделей:</strong> {{ unique_processors_count }}
+                </p>
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('processors_list') }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-list-ul me-1"></i>Список процессоров
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-motherboard me-2"></i>Материнские платы
+                </h5>
+                <p class="card-text">
+                    <strong>Компьютеров с платой:</strong> {{ motherboards_count }}<br>
+                    <strong>Уникальных моделей:</strong> {{ unique_motherboards_count }}
+                </p>
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('motherboards_list') }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-list-ul me-1"></i>Список материнских плат
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4 mb-3">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-windows me-2"></i>Операционные системы
+                </h5>
+                <p class="card-text">
+                    <strong>Компьютеров с ОС:</strong> {{ os_count }}<br>
+                    <strong>Уникальных ОС:</strong> {{ unique_os_count }}
+                </p>
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('operating_systems_list') }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-list-ul me-1"></i>Список ОС
                     </a>
                 </div>
             </div>

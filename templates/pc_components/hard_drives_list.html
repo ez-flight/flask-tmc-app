@@ -70,7 +70,9 @@
                         <th scope="col">Модель</th>
                         <th scope="col">Объем</th>
                         <th scope="col">Серийный номер</th>
+                        <th scope="col">Компьютер</th>
                         <th scope="col">Здоровье</th>
+                        <th scope="col">Комментарий</th>
                         <th scope="col" style="width: 120px;">Действия</th>
                     </tr>
                 </thead>
@@ -105,6 +107,20 @@
                                 {% endif %}
                             </td>
                             <td>
+                                {% if drive.machine %}
+                                    <a href="{{ url_for('machine_detail', machine_id=drive.machine.id) }}" 
+                                       class="text-decoration-none"
+                                       title="Подробнее о компьютере">
+                                        <i class="bi bi-pc-display me-1"></i>{{ drive.machine.hostname }}
+                                    </a>
+                                    {% if drive.machine.ip_address %}
+                                        <br><small class="text-muted">{{ drive.machine.ip_address }}</small>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
                                 {% if drive.health_status %}
                                     {% set status_ru = convert_health_status(drive.health_status) %}
                                     {% if status_ru == 'Здоров' %}
@@ -115,6 +131,18 @@
                                         <span class="badge bg-danger">{{ status_ru }}</span>
                                     {% else %}
                                         <span class="badge bg-secondary">{{ status_ru }}</span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if drive.comment %}
+                                    {% set comment_length = drive.comment|length %}
+                                    {% if comment_length > 50 %}
+                                        <span title="{{ drive.comment }}">{{ drive.comment[:50] }}...</span>
+                                    {% else %}
+                                        {{ drive.comment }}
                                     {% endif %}
                                 {% else %}
                                     <span class="text-muted">—</span>
@@ -145,7 +173,7 @@
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="7" class="text-center py-4 text-muted">
+                            <td colspan="9" class="text-center py-4 text-muted">
                                 <i class="bi bi-info-circle me-1"></i>Нет жестких дисков
                             </td>
                         </tr>

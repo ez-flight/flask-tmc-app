@@ -182,14 +182,15 @@
                             </td>
                             <td>
                                 {% if drive.health_status %}
-                                    {% if drive.health_status == 'Здоров' %}
-                                        <span class="badge bg-success">{{ drive.health_status }}</span>
-                                    {% elif drive.health_status == 'Тревога' %}
-                                        <span class="badge bg-warning text-dark">{{ drive.health_status }}</span>
-                                    {% elif drive.health_status == 'Неработает' %}
-                                        <span class="badge bg-danger">{{ drive.health_status }}</span>
+                                    {% set status_ru = convert_health_status(drive.health_status) %}
+                                    {% if status_ru == 'Здоров' %}
+                                        <span class="badge bg-success">{{ status_ru }}</span>
+                                    {% elif status_ru == 'Тревога' %}
+                                        <span class="badge bg-warning text-dark">{{ status_ru }}</span>
+                                    {% elif status_ru == 'Неработает' %}
+                                        <span class="badge bg-danger">{{ status_ru }}</span>
                                     {% else %}
-                                        <span class="badge bg-secondary">{{ drive.health_status }}</span>
+                                        <span class="badge bg-secondary">{{ status_ru }}</span>
                                     {% endif %}
                                 {% else %}
                                     <span class="text-muted">—</span>

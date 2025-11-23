@@ -45,14 +45,15 @@
             <div class="col-md-3">
                 <strong>Здоровье:</strong><br>
                 {% if hard_drive.health_status %}
-                    {% if hard_drive.health_status == 'Здоров' %}
-                        <span class="badge bg-success">{{ hard_drive.health_status }}</span>
-                    {% elif hard_drive.health_status == 'Тревога' %}
-                        <span class="badge bg-warning text-dark">{{ hard_drive.health_status }}</span>
-                    {% elif hard_drive.health_status == 'Неработает' %}
-                        <span class="badge bg-danger">{{ hard_drive.health_status }}</span>
+                    {% set status_ru = convert_health_status(hard_drive.health_status) %}
+                    {% if status_ru == 'Здоров' %}
+                        <span class="badge bg-success">{{ status_ru }}</span>
+                    {% elif status_ru == 'Тревога' %}
+                        <span class="badge bg-warning text-dark">{{ status_ru }}</span>
+                    {% elif status_ru == 'Неработает' %}
+                        <span class="badge bg-danger">{{ status_ru }}</span>
                     {% else %}
-                        <span class="badge bg-secondary">{{ hard_drive.health_status }}</span>
+                        <span class="badge bg-secondary">{{ status_ru }}</span>
                     {% endif %}
                 {% else %}
                     <span class="text-muted">—</span>
@@ -108,14 +109,15 @@
                             </td>
                             <td>
                                 {% if record.health_status %}
-                                    {% if record.health_status == 'Здоров' %}
-                                        <span class="badge bg-success">{{ record.health_status }}</span>
-                                    {% elif record.health_status == 'Тревога' %}
-                                        <span class="badge bg-warning text-dark">{{ record.health_status }}</span>
-                                    {% elif record.health_status == 'Неработает' %}
-                                        <span class="badge bg-danger">{{ record.health_status }}</span>
+                                    {% set status_ru = convert_health_status(record.health_status) %}
+                                    {% if status_ru == 'Здоров' %}
+                                        <span class="badge bg-success">{{ status_ru }}</span>
+                                    {% elif status_ru == 'Тревога' %}
+                                        <span class="badge bg-warning text-dark">{{ status_ru }}</span>
+                                    {% elif status_ru == 'Неработает' %}
+                                        <span class="badge bg-danger">{{ status_ru }}</span>
                                     {% else %}
-                                        <span class="badge bg-secondary">{{ record.health_status }}</span>
+                                        <span class="badge bg-secondary">{{ status_ru }}</span>
                                     {% endif %}
                                 {% else %}
                                     <span class="text-muted">—</span>

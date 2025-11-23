@@ -41,7 +41,40 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'  # маршрут для перенаправления неавторизованных пользователей
 
+# === ФУНКЦИИ КОНВЕРТАЦИИ СТАТУСОВ ЖЕСТКИХ ДИСКОВ ===
+def convert_health_status_to_russian(status):
+    """
+    Конвертирует английский статус здоровья диска в русский.
+    
+    Args:
+        status: Статус на английском ("Good", "Caution", "Bad", "Unknown") или уже на русском
+    
+    Returns:
+        str: Статус на русском языке
+    """
+    if not status:
+        return None
+    
+    status_upper = str(status).strip().upper()
+    
+    # Маппинг английских статусов на русские
+    status_map = {
+        'GOOD': 'Здоров',
+        'CAUTION': 'Тревога',
+        'BAD': 'Неработает',
+        'UNKNOWN': 'Неизвестно'
+    }
+    
+    # Если статус уже на русском, возвращаем как есть
+    russian_statuses = ['Здоров', 'Тревога', 'Неработает', 'Неизвестно']
+    if status in russian_statuses:
+        return status
+    
+    # Конвертируем английский статус
+    return status_map.get(status_upper, 'Неизвестно')
+
 app.jinja_env.globals['date'] = date
+app.jinja_env.globals['convert_health_status'] = convert_health_status_to_russian
 
 # === КОНТЕКСТНЫЙ ПРОЦЕССОР ===
 @app.context_processor
@@ -3091,22 +3124,22 @@ def hard_drives_list():
     )
     
     # Статистика по дискам, требующим замены
-    # Диски со статусом "Тревога" или "Неработает"
+    # Диски со статусом "Тревога" или "Неработает" (учитываем и английские, и русские статусы)
     drives_need_replacement = PCHardDrive.query.filter(
         PCHardDrive.active == True,
-        PCHardDrive.health_status.in_(['Тревога', 'Неработает'])
+        PCHardDrive.health_status.in_(['Тревога', 'Неработает', 'Caution', 'Bad'])
     ).count()
     
-    # Диски со статусом "Тревога"
+    # Диски со статусом "Тревога" (учитываем и английский, и русский)
     drives_warning = PCHardDrive.query.filter(
         PCHardDrive.active == True,
-        PCHardDrive.health_status == 'Тревога'
+        PCHardDrive.health_status.in_(['Тревога', 'Caution'])
     ).count()
     
-    # Диски со статусом "Неработает"
+    # Диски со статусом "Неработает" (учитываем и английский, и русский)
     drives_failed = PCHardDrive.query.filter(
         PCHardDrive.active == True,
-        PCHardDrive.health_status == 'Неработает'
+        PCHardDrive.health_status.in_(['Неработает', 'Bad'])
     ).count()
     
     # Диски с большой наработкой (более 50000 часов)
@@ -5540,188 +5573,311 @@ def generate_form8(department_id):
 def api_hdd_collect():
     """API endpoint для приема данных о жестких дисках с Windows ПК."""
     try:
-        data = request.get_json()
+        data = request.json
         
-        if not data or 'disks' not in data:
-            return jsonify({'error': 'Неверный формат данных'}), 400
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
         
-        from models import PCHardDrive, Vendor, PCHardDriveHistory
+        hostname = data.get('hostname')
+        disks = data.get('disks', [])
         
-        hostname = data.get('hostname', 'Unknown')
-        timestamp = data.get('timestamp', datetime.now().isoformat())
-        disks_data = data.get('disks', [])
+        if not disks:
+            return jsonify({'error': 'No disks provided', 'processed': 0, 'total': 0, 'new': 0, 'updated': 0}), 200
         
-        processed = 0
+        from models import PCHardDrive, Vendor
+        
+        new_count = 0
+        updated_count = 0
+        error_count = 0
         errors = []
+    except Exception as e:
+        return jsonify({'error': f'Invalid request: {str(e)}'}), 400
+    
+    # Вспомогательная функция для получения или создания производителя
+    def get_or_create_vendor(manufacturer_name):
+        """
+        Получает производителя из базы или создает нового, если его нет.
+        Поиск выполняется без учета регистра.
         
-        for disk_data in disks_data:
-            try:
+        Args:
+            manufacturer_name: Название производителя
+            
+        Returns:
+            Vendor: Объект производителя
+        """
+        if not manufacturer_name or not manufacturer_name.strip():
+            manufacturer_name = 'Unknown'
+        else:
+            manufacturer_name = manufacturer_name.strip()
+        
+        # Ищем производителя без учета регистра
+        vendor = Vendor.query.filter(
+            func.lower(Vendor.name) == func.lower(manufacturer_name),
+            Vendor.active == True
+        ).first()
+        
+        # Если не найден, создаем нового
+        if not vendor:
+            vendor = Vendor(name=manufacturer_name, active=True)
+            db.session.add(vendor)
+            db.session.flush()
+        
+        return vendor
+    
+    # Вспомогательная функция для определения производителя по модели
+    def detect_manufacturer_by_model(model):
+        """
+        Определяет производителя по модели диска.
+        
+        Args:
+            model: Модель диска
+            
+        Returns:
+            str: Название производителя
+        """
+        if not model:
+            return 'Unknown'
+        
+        model_upper = model.upper()
+        
+        # Определяем производителя по характерным признакам в модели
+        # Проверяем в порядке специфичности (более специфичные сначала)
+        if 'BESHTAU' in model_upper:
+            return 'БЕШТАУ'
+        elif 'XRAYDISK' in model_upper:
+            return 'XrayDisk'
+        elif 'WD' in model_upper or 'WESTERN' in model_upper:
+            return 'Western Digital'
+        elif 'SEAGATE' in model_upper or model_upper.startswith('ST'):
+            return 'Seagate'
+        elif 'TOSHIBA' in model_upper or model_upper.startswith('DT'):
+            return 'Toshiba'
+        elif 'HP' in model_upper or 'HEWLETT' in model_upper:
+            return 'HP'
+        elif 'SAMSUNG' in model_upper:
+            return 'Samsung'
+        elif 'KINGSTON' in model_upper:
+            return 'Kingston'
+        elif 'CRUCIAL' in model_upper:
+            return 'Crucial'
+        elif 'INTEL' in model_upper:
+            return 'Intel'
+        elif 'SANDISK' in model_upper or 'SAN DISK' in model_upper:
+            return 'SanDisk'
+        elif 'ADATA' in model_upper:
+            return 'ADATA'
+        elif 'CORSAIR' in model_upper:
+            return 'Corsair'
+        else:
+            return 'Unknown'
+    
+    for disk_data in disks:
+        try:
+            serial = disk_data.get('serial_number')
+            
+            if not serial:
+                error_count += 1
+                errors.append(f'Disk skipped: missing serial_number')
+                continue
+            
+            # Проверяем, существует ли диск в базе
+            existing_disk = PCHardDrive.query.filter_by(serial_number=serial).first()
+            
+            # Для новых дисков проверяем обязательные поля
+            if not existing_disk:
                 model = disk_data.get('model', '').strip()
-                serial_number = disk_data.get('serial_number', '').strip()
+                size_gb = disk_data.get('size_gb')
                 
-                if not model or not serial_number:
-                    errors.append(f"Пропущен диск: отсутствует модель или серийный номер")
+                # Пропускаем только если model пустой или size_gb не указан (None)
+                # size_gb = 0 считается валидным значением (может быть для некоторых дисков)
+                if not model:
+                    error_count += 1
+                    errors.append(f'Disk {serial}: missing model')
                     continue
+                
+                if size_gb is None:
+                    error_count += 1
+                    errors.append(f'Disk {serial}: missing size_gb')
+                    continue
+            
+            if existing_disk:
+                # Обновляем существующий диск
+                print(f"Updating existing disk: serial={serial}")
+                
+                if 'model' in disk_data:
+                    existing_disk.model = disk_data.get('model')
+                if 'size_gb' in disk_data:
+                    existing_disk.capacity_gb = disk_data.get('size_gb')
+                if 'interface' in disk_data:
+                    existing_disk.interface = disk_data.get('interface')
+                if 'power_on_hours' in disk_data:
+                    existing_disk.power_on_hours = disk_data.get('power_on_hours')
+                if 'power_on_count' in disk_data:
+                    existing_disk.power_on_count = disk_data.get('power_on_count')
+                if 'health_status' in disk_data:
+                    # Конвертируем английский статус в русский
+                    health_status = disk_data.get('health_status')
+                    existing_disk.health_status = convert_health_status_to_russian(health_status)
+                
+                # Обновляем производителя (если указан явно или можно определить по модели)
+                manufacturer = disk_data.get('manufacturer', '').strip() if 'manufacturer' in disk_data else ''
+                if not manufacturer and 'model' in disk_data:
+                    # Пытаемся определить по модели
+                    model = disk_data.get('model', '').strip()
+                    manufacturer = detect_manufacturer_by_model(model)
+                
+                if manufacturer:
+                    vendor = get_or_create_vendor(manufacturer)
+                    existing_disk.vendor_id = vendor.id
+                    print(f"Updated vendor for disk {serial}: {manufacturer} (vendor_id={vendor.id})")
+                
+                # Сохраняем старые значения для сравнения
+                old_health_check_date = existing_disk.health_check_date
+                old_power_on_count = existing_disk.power_on_count
+                old_power_on_hours = existing_disk.power_on_hours
+                old_health_status = existing_disk.health_status
+                
+                # Обновляем дату последней проверки
+                current_date = datetime.now().date()
+                existing_disk.health_check_date = current_date
+                
+                # Обновляем комментарий с информацией о hostname
+                if hostname:
+                    existing_disk.comment = f'Последний раз обнаружен на {hostname}'
+                
+                # Активируем диск, если он был деактивирован (автоматическое восстановление)
+                # Деактивированные диски автоматически активируются при обновлении через API
+                # Это позволяет автоматически восстанавливать удаленные диски при получении данных
+                if not existing_disk.active:
+                    existing_disk.active = True
+                    print(f"Disk {serial} reactivated (was inactive)")
+                
+                # Получаем актуальные значения после обновления
+                new_power_on_hours = existing_disk.power_on_hours
+                new_power_on_count = existing_disk.power_on_count
+                new_health_status = existing_disk.health_status
+                
+                # Создаем запись в истории при каждом обновлении через API
+                from models import PCHardDriveHistory
+                
+                # Проверяем, изменились ли параметры состояния
+                state_changed = (
+                    old_health_check_date != current_date or
+                    old_power_on_count != new_power_on_count or
+                    old_power_on_hours != new_power_on_hours or
+                    old_health_status != new_health_status
+                )
+                
+                # Создаем запись в истории при каждом обновлении (даже если параметры не изменились)
+                # Это позволяет отслеживать все обновления с актуальной временной меткой
+                history_comment = f'Обновление через API'
+                if hostname:
+                    history_comment += f' с {hostname}'
+                
+                history_record = PCHardDriveHistory(
+                    hard_drive_id=existing_disk.id,
+                    check_date=current_date,
+                    power_on_hours=new_power_on_hours,
+                    power_on_count=new_power_on_count,
+                    health_status=new_health_status,
+                    comment=history_comment
+                )
+                db.session.add(history_record)
+                print(f"History record created for disk {serial} (check_date={current_date})")
+                
+                print(f"Disk {serial} updated successfully (active={existing_disk.active})")
+                updated_count += 1
+            else:
+                # Создаем новый диск
+                # Получаем данные (если не были получены ранее в проверке)
+                model = disk_data.get('model', '').strip()
+                size_gb = disk_data.get('size_gb')
                 
                 # Определяем тип диска
                 media_type = disk_data.get('media_type', '').upper()
                 if 'SSD' in media_type or 'SOLID' in media_type:
                     drive_type = 'SSD'
-                elif 'SAS' in disk_data.get('interface', '').upper():
-                    drive_type = 'SAS'
+                elif 'NVMe' in model.upper() or 'NVME' in model.upper():
+                    drive_type = 'NVMe'
                 else:
                     drive_type = 'HDD'
                 
                 # Определяем производителя
                 manufacturer = disk_data.get('manufacturer', '').strip()
-                if not manufacturer and model:
+                if not manufacturer:
                     # Пытаемся определить по модели
-                    model_upper = model.upper()
-                    if 'WD' in model_upper or 'WESTERN' in model_upper:
-                        manufacturer = 'Western Digital'
-                    elif 'SEAGATE' in model_upper or model_upper.startswith('ST'):
-                        manufacturer = 'Seagate'
-                    elif 'TOSHIBA' in model_upper or model_upper.startswith('DT'):
-                        manufacturer = 'Toshiba'
-                    elif 'HP' in model_upper:
-                        manufacturer = 'HP'
-                    elif 'SAMSUNG' in model_upper:
-                        manufacturer = 'Samsung'
+                    manufacturer = detect_manufacturer_by_model(model)
                 
-                # Ищем или создаем производителя
-                vendor = Vendor.query.filter_by(name=manufacturer, active=True).first()
-                if not vendor and manufacturer:
-                    vendor = Vendor(name=manufacturer, active=True)
-                    db.session.add(vendor)
-                    db.session.flush()
+                # Получаем или создаем производителя
+                vendor = get_or_create_vendor(manufacturer)
                 
-                if not vendor:
-                    errors.append(f"Не найден производитель для {model}")
-                    continue
-                
-                # Ищем существующий диск по серийному номеру
-                existing_drive = PCHardDrive.query.filter_by(
-                    serial_number=serial_number,
-                    active=True
-                ).first()
-                
-                capacity_gb = disk_data.get('size_gb')
-                power_on_hours = disk_data.get('power_on_hours')
-                power_on_count = disk_data.get('power_on_count')
+                # Конвертируем статус здоровья из английского в русский
                 health_status = disk_data.get('health_status')
-                interface = disk_data.get('interface', '').strip()
+                health_status_ru = convert_health_status_to_russian(health_status) if health_status else None
                 
-                # Определяем интерфейс
-                if not interface:
-                    if 'SATA' in disk_data.get('interface', '').upper():
-                        interface = 'SATA III'
-                    elif 'SAS' in disk_data.get('interface', '').upper():
-                        interface = 'SAS'
-                    elif 'NVMe' in model.upper() or 'NVME' in model.upper():
-                        interface = 'NVMe'
+                # Логируем создание диска для отладки
+                print(f"Creating disk: serial={serial}, model={model}, size_gb={size_gb}, vendor_id={vendor.id}, drive_type={drive_type}")
                 
-                if existing_drive:
-                    # Обновляем существующий диск
-                    update_needed = False
-                    old_health_check_date = existing_drive.health_check_date
-                    old_power_on_hours = existing_drive.power_on_hours
-                    old_power_on_count = existing_drive.power_on_count
-                    old_health_status = existing_drive.health_status
-                    
-                    if capacity_gb and existing_drive.capacity_gb != capacity_gb:
-                        existing_drive.capacity_gb = capacity_gb
-                        update_needed = True
-                    
-                    if power_on_hours is not None and existing_drive.power_on_hours != power_on_hours:
-                        existing_drive.power_on_hours = power_on_hours
-                        update_needed = True
-                    
-                    if power_on_count is not None and existing_drive.power_on_count != power_on_count:
-                        existing_drive.power_on_count = power_on_count
-                        update_needed = True
-                    
-                    if health_status and existing_drive.health_status != health_status:
-                        existing_drive.health_status = health_status
-                        update_needed = True
-                    
-                    if interface and existing_drive.interface != interface:
-                        existing_drive.interface = interface
-                        update_needed = True
-                    
-                    # Обновляем дату проверки
-                    existing_drive.health_check_date = datetime.now().date()
-                    
-                    # Создаем запись в истории если данные изменились
-                    if update_needed and (power_on_hours is not None or power_on_count is not None or health_status):
-                        history_record = PCHardDriveHistory(
-                            hard_drive_id=existing_drive.id,
-                            check_date=datetime.now().date(),
-                            power_on_hours=power_on_hours,
-                            power_on_count=power_on_count,
-                            health_status=health_status,
-                            comment=f'Автоматический сбор с {hostname}'
-                        )
-                        db.session.add(history_record)
-                    
-                    processed += 1
-                else:
-                    # Создаем новый диск
-                    if not capacity_gb:
-                        errors.append(f"Не указан объем для {model} {serial_number}")
-                        continue
-                    
-                    new_drive = PCHardDrive(
-                        drive_type=drive_type,
-                        vendor_id=vendor.id,
-                        model=model,
-                        capacity_gb=capacity_gb,
-                        serial_number=serial_number,
-                        health_check_date=datetime.now().date(),
-                        power_on_hours=power_on_hours,
-                        power_on_count=power_on_count,
-                        health_status=health_status,
-                        interface=interface,
-                        comment=f'Автоматически добавлен с {hostname}'
-                    )
-                    db.session.add(new_drive)
-                    db.session.flush()
-                    
-                    # Создаем начальную запись в истории
-                    if power_on_hours is not None or power_on_count is not None or health_status:
-                        history_record = PCHardDriveHistory(
-                            hard_drive_id=new_drive.id,
-                            check_date=datetime.now().date(),
-                            power_on_hours=power_on_hours,
-                            power_on_count=power_on_count,
-                            health_status=health_status,
-                            comment=f'Автоматический сбор с {hostname}'
-                        )
-                        db.session.add(history_record)
-                    
-                    processed += 1
-                    
-            except Exception as e:
-                errors.append(f"Ошибка обработки диска {disk_data.get('model', 'Unknown')}: {str(e)}")
-                continue
-        
+                new_disk = PCHardDrive(
+                    serial_number=serial,
+                    model=model,
+                    capacity_gb=size_gb,
+                    drive_type=drive_type,
+                    vendor_id=vendor.id,
+                    interface=disk_data.get('interface'),
+                    power_on_hours=disk_data.get('power_on_hours'),
+                    power_on_count=disk_data.get('power_on_count'),
+                    health_status=health_status_ru,
+                    health_check_date=datetime.now().date(),
+                    comment=f'Автоматически добавлен с {hostname}' if hostname else 'Автоматически добавлен'
+                )
+                db.session.add(new_disk)
+                print(f"Disk {serial} added to session, new_count will be {new_count + 1}")
+                new_count += 1
+        except Exception as e:
+            error_count += 1
+            serial = disk_data.get('serial_number', 'unknown')
+            error_msg = f'Disk {serial}: {str(e)}'
+            errors.append(error_msg)
+            # Логируем ошибку для отладки
+            import traceback
+            print(f"ERROR processing disk {serial}: {str(e)}")
+            print(traceback.format_exc())
+            db.session.rollback()
+            continue
+    
+    try:
+        print(f"Committing transaction: new={new_count}, updated={updated_count}, total_disks={len(disks)}")
         db.session.commit()
-        
-        result = {
-            'success': True,
-            'processed': processed,
-            'total': len(disks_data),
-            'hostname': hostname,
-            'timestamp': timestamp
-        }
-        
-        if errors:
-            result['errors'] = errors
-        
-        return jsonify(result), 200
-        
+        print(f"Transaction committed successfully")
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'Ошибка обработки данных: {str(e)}'}), 500
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"ERROR committing transaction: {str(e)}")
+        print(error_trace)
+        return jsonify({
+            'error': f'Database error: {str(e)}',
+            'processed': new_count + updated_count,
+            'total': len(disks),
+            'new': new_count,
+            'updated': updated_count,
+            'errors': errors[:10],  # Первые 10 ошибок
+            'traceback': error_trace
+        }), 500
+    
+    response = {
+        'processed': new_count + updated_count,
+        'total': len(disks),
+        'new': new_count,
+        'updated': updated_count
+    }
+    
+    if error_count > 0:
+        response['error_count'] = error_count
+        response['errors'] = errors[:10]  # Первые 10 ошибок
+    
+    return jsonify(response), 200
 
 # === ЗАПУСК ПРИЛОЖЕНИЯ ===
 

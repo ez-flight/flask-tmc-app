@@ -6,9 +6,17 @@ venv/
 __pycache__/
 *.pyc
 *.pyo
+*.py[cod]
+*$py.class
 
 # Логи и временные файлы
 *.log
+*.tmp
+*.bak
+*.old
+*.swp
+*.swo
+*~
 instance/
 
 # Системные файлы

@@ -1,0 +1,27 @@
+{
+  "hostname": "PC-Restore",
+  "disks": [
+    {
+      "serial_number": "S6P7NS0X639479A",
+      "model": "Samsung SSD 970 EVO Plus 1TB",
+      "size_gb": 0,
+      "media_type": "NVMe",
+      "manufacturer": "Samsung",
+      "interface": "NVMe",
+      "power_on_hours": 842,
+      "power_on_count": 291,
+      "health_status": "Good"
+    },
+    {
+      "serial_number": "AA000000000000000480",
+      "model": "XrayDisk 512GB SSD",
+      "size_gb": 0,
+      "media_type": "SSD",
+      "interface": "SATA",
+      "power_on_hours": 4462,
+      "power_on_count": 1455,
+      "health_status": "Good"
+    }
+  ]
+}
+

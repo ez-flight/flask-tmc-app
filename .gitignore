@@ -27,6 +27,17 @@ Thumbs.db
 config.py
 *.env
 
+# Файлы баз данных и бэкапы
+*.db
+*.sqlite
+*.sqlite3
+*backup*.sql
+webuseorg3_backup*.sql
+database_backup*.sql
+*.sql.bak
+*.sql.gz
+*.sql.zip
+
 # Статические файлы, загруженные пользователями (если есть)
 static/uploads/
 static/invoices/

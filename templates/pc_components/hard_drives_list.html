@@ -26,22 +26,70 @@
     <div class="row">
         <div class="col-md-6">
             <p class="mb-2">
-                <strong>Требуют замены:</strong> 
-                <span class="badge bg-danger">{{ drives_need_replacement }}</span>
-                {% if drives_warning > 0 %}
-                    <span class="text-muted">(Тревога: {{ drives_warning }}, Неработает: {{ drives_failed }})</span>
+                {% if filter_need_replacement %}
+                    <strong>Требуют замены:</strong> 
+                    <span class="badge bg-danger">{{ drives_need_replacement }}</span>
+                    {% if drives_warning > 0 %}
+                        <span class="text-muted">(Тревога: {{ drives_warning }}, Неработает: {{ drives_failed }})</span>
+                    {% endif %}
+                    {% if not filter_high_hours %}
+                        <a href="{{ url_for('hard_drives_list') }}" class="btn btn-sm btn-outline-secondary ms-2">
+                            <i class="bi bi-x-circle me-1"></i>Сбросить фильтр
+                        </a>
+                    {% endif %}
+                {% else %}
+                    <strong>Требуют замены:</strong> 
+                    {% if filter_high_hours %}
+                        <a href="{{ url_for('hard_drives_list', high_hours='true', need_replacement='true') }}" class="badge bg-danger text-decoration-none">
+                            {{ drives_need_replacement }}
+                        </a>
+                    {% else %}
+                        <a href="{{ url_for('hard_drives_list', need_replacement='true') }}" class="badge bg-danger text-decoration-none">
+                            {{ drives_need_replacement }}
+                        </a>
+                    {% endif %}
+                    {% if drives_warning > 0 %}
+                        <span class="text-muted">(Тревога: {{ drives_warning }}, Неработает: {{ drives_failed }})</span>
+                    {% endif %}
                 {% endif %}
             </p>
         </div>
         {% if drives_high_hours > 0 %}
         <div class="col-md-6">
             <p class="mb-2">
-                <strong>Высокая наработка (>50000 ч):</strong> 
-                <span class="badge bg-warning text-dark">{{ drives_high_hours }}</span>
+                {% if filter_high_hours %}
+                    <strong>Высокая наработка (>50000 ч):</strong> 
+                    <span class="badge bg-warning text-dark">{{ drives_high_hours }}</span>
+                    {% if not filter_need_replacement %}
+                        <a href="{{ url_for('hard_drives_list') }}" class="btn btn-sm btn-outline-secondary ms-2">
+                            <i class="bi bi-x-circle me-1"></i>Сбросить фильтр
+                        </a>
+                    {% endif %}
+                {% else %}
+                    <strong>Высокая наработка (>50000 ч):</strong> 
+                    {% if filter_need_replacement %}
+                        <a href="{{ url_for('hard_drives_list', high_hours='true', need_replacement='true') }}" class="badge bg-warning text-dark text-decoration-none">
+                            {{ drives_high_hours }}
+                        </a>
+                    {% else %}
+                        <a href="{{ url_for('hard_drives_list', high_hours='true') }}" class="badge bg-warning text-dark text-decoration-none">
+                            {{ drives_high_hours }}
+                        </a>
+                    {% endif %}
+                {% endif %}
             </p>
         </div>
         {% endif %}
     </div>
+    {% if filter_high_hours and filter_need_replacement %}
+    <div class="alert alert-info mb-3">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>Активны оба фильтра:</strong> Показаны все проблемные диски (высокая наработка >50000 ч ИЛИ требуют замены)
+        <a href="{{ url_for('hard_drives_list') }}" class="btn btn-sm btn-outline-secondary ms-2">
+            <i class="bi bi-x-circle me-1"></i>Сбросить все фильтры
+        </a>
+    </div>
+    {% endif %}
     {% if total_drives > 0 %}
     <p class="mb-0 small text-muted">
         Всего активных дисков: {{ total_drives }} | 
@@ -65,7 +113,7 @@
             <table class="table table-hover align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th scope="col">Тип</th>
+                        <th scope="col" style="min-width: 150px;">Тип</th>
                         <th scope="col">Марка</th>
                         <th scope="col">Модель</th>
                         <th scope="col">Объем</th>
@@ -80,7 +128,7 @@
                     {% if hard_drives %}
                         {% for drive in hard_drives %}
                         <tr>
-                            <td>
+                            <td style="white-space: nowrap;">
                                 {% if drive.drive_type %}
                                     <span class="badge bg-secondary">{{ drive.drive_type }}</span>
                                     {% if drive.interface %}

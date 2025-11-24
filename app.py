@@ -8,7 +8,7 @@ from dateutil.relativedelta import relativedelta
 from datetime import datetime, date
 import os
 import hashlib
-from sqlalchemy import func, case, and_
+from sqlalchemy import func, case, and_, or_
 from flask_sqlalchemy import SQLAlchemy
 from decimal import Decimal, InvalidOperation
 from sqlalchemy.exc import IntegrityError
@@ -3272,6 +3272,41 @@ def hard_drives_list():
     
     from models import PCHardDrive
     
+    # Проверяем параметры фильтрации
+    filter_high_hours = request.args.get('high_hours', 'false').lower() == 'true'
+    filter_need_replacement = request.args.get('need_replacement', 'false').lower() == 'true'
+    
+    # Базовый фильтр для активных дисков
+    base_filter = PCHardDrive.active == True
+    
+    # Если включены оба фильтра, используем OR логику (проблемные диски)
+    # Если включен только один фильтр, используем его условие
+    if filter_high_hours and filter_need_replacement:
+        # Показываем все проблемные диски (высокая наработка ИЛИ требуют замены)
+        base_filter = and_(
+            base_filter,
+            or_(
+                and_(
+                    PCHardDrive.power_on_hours.isnot(None),
+                    PCHardDrive.power_on_hours > 50000
+                ),
+                PCHardDrive.health_status.in_(['Тревога', 'Неработает', 'Caution', 'Bad'])
+            )
+        )
+    elif filter_high_hours:
+        # Только фильтр по высокой наработке
+        base_filter = and_(
+            base_filter,
+            PCHardDrive.power_on_hours.isnot(None),
+            PCHardDrive.power_on_hours > 50000
+        )
+    elif filter_need_replacement:
+        # Только фильтр по дискам, требующим замены
+        base_filter = and_(
+            base_filter,
+            PCHardDrive.health_status.in_(['Тревога', 'Неработает', 'Caution', 'Bad'])
+        )
+    
     # Получаем жесткие диски с сортировкой:
     # 1. По максимальному объему в группе модели (по убыванию)
     # 2. По модели (для группировки)
@@ -3281,14 +3316,14 @@ def hard_drives_list():
             PCHardDrive.model,
             func.max(PCHardDrive.capacity_gb).label('max_capacity')
         )
-        .filter(PCHardDrive.active == True)
+        .filter(base_filter)
         .group_by(PCHardDrive.model)
         .subquery()
     )
     
     hard_drives = (
         PCHardDrive.query
-        .filter_by(active=True)
+        .filter(base_filter)
         .join(subquery, PCHardDrive.model == subquery.c.model)
         .order_by(
             subquery.c.max_capacity.desc(),  # Сначала группы по максимальному объему
@@ -3334,6 +3369,8 @@ def hard_drives_list():
                          drives_warning=drives_warning,
                          drives_failed=drives_failed,
                          drives_high_hours=drives_high_hours,
+                         filter_high_hours=filter_high_hours,
+                         filter_need_replacement=filter_need_replacement,
                          is_admin=is_admin,
                          user_login=current_user.login)
 
@@ -6580,11 +6617,22 @@ def api_hdd_collect_v2():
         hostname = machine_data.get('hostname')
         mac_address = machine_data.get('mac_address')
         
-        # Проверяем наличие хотя бы одного идентификатора
-        if not hostname and not mac_address:
+        # MAC-адрес обязателен для API v2 (уникальный идентификатор машины)
+        if not mac_address or not mac_address.strip():
             return jsonify({
                 'success': False,
-                'error': 'Field "machine.hostname" or "machine.mac_address" is required',
+                'error': 'Field "machine.mac_address" is required for API v2. Machines are identified by unique MAC address.',
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }), 400
+        
+        # Нормализуем MAC-адрес
+        mac_address = mac_address.strip().upper()
+        
+        # Проверяем формат MAC-адреса (базовая валидация)
+        if len(mac_address) < 12 or len(mac_address) > 17:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid MAC address format: "{mac_address}". Expected format: XX:XX:XX:XX:XX:XX or XXXXXXXXXXXX',
                 'timestamp': datetime.utcnow().isoformat() + 'Z'
             }), 400
         
@@ -6594,173 +6642,137 @@ def api_hdd_collect_v2():
         from models import PCHardDrive, Vendor, Machine, MachineHistory, PCGraphicsCard, PCMemoryModule
         
         # === ОБРАБОТКА МАШИНЫ ===
-        # Идентификация: сначала по MAC-адресу (приоритет), если нет - по hostname
-        machine = None
-        found_by_mac = False
-        found_by_hostname = False
-        
-        if mac_address:
-            mac_address = mac_address.strip().upper()
-            machine = Machine.query.filter_by(mac_address=mac_address).first()
-            if machine:
-                found_by_mac = True
-        
-        if not machine and hostname:
-            machine = Machine.query.filter_by(hostname=hostname).first()
-            if machine:
-                found_by_hostname = True
+        # Идентификация ТОЛЬКО по MAC-адресу (уникальный идентификатор)
+        machine = Machine.query.filter_by(mac_address=mac_address).first()
+        found_by_mac = machine is not None
         
         machine_status = 'updated'
         machine_changes = []
         
         if machine:
-            # Если машина найдена по hostname, не обновляем данные без подтверждения
-            if found_by_hostname and not confirm_update:
-                print(f"Info: Machine found by hostname '{hostname}'. Data update requires confirmation (machine ID: {machine.id})")
-                machine_status = 'requires_confirmation'
-                # Откатываем все изменения, так как требуется подтверждение
-                db.session.rollback()
+            # Обновляем существующую машину (найдена по MAC-адресу)
+            print(f"Info: Machine found by MAC address '{mac_address}'. Updating data (machine ID: {machine.id})")
+            old_values = {}
+            
+            # Базовые поля
+            if 'ip_address' in machine_data and machine_data['ip_address'] != machine.ip_address:
+                old_values['ip_address'] = machine.ip_address
+                machine.ip_address = machine_data.get('ip_address')
+                machine_changes.append('ip_address')
+            
+            # MAC-адрес не обновляем, так как он уникальный идентификатор
+            # Но если он изменился в запросе, это ошибка (MAC должен быть постоянным)
+            if 'mac_address' in machine_data and machine_data['mac_address'].strip().upper() != machine.mac_address:
+                print(f"Warning: MAC address mismatch for machine {machine.id}. Requested: {machine_data['mac_address']}, Current: {machine.mac_address}")
+            
+            # Обновляем hostname, если он изменился
+            if hostname and hostname != machine.hostname:
+                # Проверяем, не используется ли новый hostname другой машиной
+                existing_machine_with_hostname = Machine.query.filter_by(hostname=hostname).first()
                 
-                # Формируем ответ с требованием подтверждения
-                return jsonify({
-                    'success': False,
-                    'requires_confirmation': True,
-                    'machine': {
-                        'id': machine.id,
-                        'hostname': machine.hostname,
-                        'current_hostname': machine.hostname,
-                        'requested_hostname': hostname,
-                        'ip_address': machine.ip_address,
-                        'mac_address': machine.mac_address
-                    },
-                    'message': f'Машина найдена по hostname "{hostname}". Требуется подтверждение для записи данных. Отправьте запрос повторно с параметром "confirm=true" в JSON или query string для подтверждения обновления.',
-                    'timestamp': datetime.utcnow().isoformat() + 'Z'
-                }), 200
-            else:
-                # Обновляем существующую машину
-                if found_by_hostname and confirm_update:
-                    print(f"Info: Machine found by hostname '{hostname}'. Updating data with confirmation (machine ID: {machine.id})")
-                old_values = {}
+                if existing_machine_with_hostname and existing_machine_with_hostname.id != machine.id:
+                    # Машина найдена по MAC-адресу (приоритет), обновляем hostname принудительно
+                    # Освобождаем hostname у старой машины
+                    old_hostname_for_other = existing_machine_with_hostname.hostname
+                    # Устанавливаем временный hostname для старой машины, чтобы освободить уникальный hostname
+                    existing_machine_with_hostname.hostname = f"OLD-{old_hostname_for_other}-{existing_machine_with_hostname.id}"
+                    print(f"Info: Hostname '{hostname}' was used by machine {existing_machine_with_hostname.id}. Freed for machine {machine.id} (found by MAC)")
                 
-                # Базовые поля
-                if 'ip_address' in machine_data and machine_data['ip_address'] != machine.ip_address:
-                    old_values['ip_address'] = machine.ip_address
-                    machine.ip_address = machine_data.get('ip_address')
-                    machine_changes.append('ip_address')
-                
-                if 'mac_address' in machine_data and machine_data['mac_address'] != machine.mac_address:
-                    old_values['mac_address'] = machine.mac_address
-                    machine.mac_address = machine_data.get('mac_address')
-                    machine_changes.append('mac_address')
-                
-                # Обновляем hostname, если он изменился
-                if hostname and hostname != machine.hostname:
-                    # Проверяем, не используется ли новый hostname другой машиной
-                    existing_machine_with_hostname = Machine.query.filter_by(hostname=hostname).first()
-                    should_update_hostname = True
+                # Обновляем hostname
+                old_values['hostname'] = machine.hostname
+                machine.hostname = hostname
+                machine_changes.append('hostname')
+                print(f"Info: Hostname updated from '{old_values['hostname']}' to '{hostname}' for machine {machine.id}")
+            
+            # Операционная система
+            os_data = machine_data.get('os', {})
+            if os_data:
+                os_fields = ['os_name', 'os_version', 'os_build', 'os_edition', 'os_architecture']
+                for field in os_fields:
+                    os_field = field.replace('os_', '')
+                    if os_field in os_data:
+                        old_val = getattr(machine, field, None)
+                        new_val = os_data[os_field]
+                        if old_val != new_val:
+                            old_values[field] = old_val
+                            setattr(machine, field, new_val)
+                            machine_changes.append(field)
+            
+            # Аппаратное обеспечение
+            hardware_data = machine_data.get('hardware', {})
+            if hardware_data:
+                hw_fields = ['processor', 'memory_gb', 'motherboard', 'bios_version']
+                for field in hw_fields:
+                    if field in hardware_data:
+                        old_val = getattr(machine, field, None)
+                        new_val = hardware_data[field]
+                        if old_val != new_val:
+                            old_values[field] = old_val
+                            setattr(machine, field, new_val)
+                            machine_changes.append(field)
+            
+            # Сетевая информация
+            network_data = machine_data.get('network', {})
+            if network_data:
+                net_fields = ['domain', 'computer_role', 'dns_suffix']
+                for field in net_fields:
+                    if field in network_data:
+                        old_val = getattr(machine, field, None)
+                        new_val = network_data[field]
+                        if old_val != new_val:
+                            old_values[field] = old_val
+                            setattr(machine, field, new_val)
+                            machine_changes.append(field)
+            
+            # Обновляем last_seen
+            machine.last_seen = datetime.utcnow()
+            machine.updated_at = datetime.utcnow()
+            
+            # Если машина привязана к ТМЦ и изменился IP-адрес, обновляем IP в ТМЦ (приоритет API v2)
+            if machine.equipment_id and 'ip_address' in machine_changes:
+                from models import Equipment
+                equipment = Equipment.query.get(machine.equipment_id)
+                if equipment and machine.ip_address:
+                    old_ip = equipment.ip or ''
+                    new_ip = machine.ip_address.strip()
                     
-                    if existing_machine_with_hostname and existing_machine_with_hostname.id != machine.id:
-                        # Если машина найдена по MAC-адресу (приоритет), обновляем hostname принудительно
-                        # Освобождаем hostname у старой машины
-                        if found_by_mac:
-                            old_hostname_for_other = existing_machine_with_hostname.hostname
-                            # Устанавливаем временный hostname для старой машины, чтобы освободить уникальный hostname
-                            existing_machine_with_hostname.hostname = f"OLD-{old_hostname_for_other}-{existing_machine_with_hostname.id}"
-                            print(f"Info: Hostname '{hostname}' was used by machine {existing_machine_with_hostname.id}. Freed for machine {machine.id} (found by MAC)")
-                        else:
-                            # Если машина найдена не по MAC, пропускаем обновление
-                            print(f"Warning: Hostname '{hostname}' already exists for machine {existing_machine_with_hostname.id}, skipping update")
-                            should_update_hostname = False
-                    
-                    # Обновляем hostname, если это разрешено
-                    if should_update_hostname:
-                        old_values['hostname'] = machine.hostname
-                        machine.hostname = hostname
-                        machine_changes.append('hostname')
-                        print(f"Info: Hostname updated from '{old_values['hostname']}' to '{hostname}' for machine {machine.id}")
-                
-                # Операционная система
-                os_data = machine_data.get('os', {})
-                if os_data:
-                    os_fields = ['os_name', 'os_version', 'os_build', 'os_edition', 'os_architecture']
-                    for field in os_fields:
-                        os_field = field.replace('os_', '')
-                        if os_field in os_data:
-                            old_val = getattr(machine, field, None)
-                            new_val = os_data[os_field]
-                            if old_val != new_val:
-                                old_values[field] = old_val
-                                setattr(machine, field, new_val)
-                                machine_changes.append(field)
-                
-                # Аппаратное обеспечение
-                hardware_data = machine_data.get('hardware', {})
-                if hardware_data:
-                    hw_fields = ['processor', 'memory_gb', 'motherboard', 'bios_version']
-                    for field in hw_fields:
-                        if field in hardware_data:
-                            old_val = getattr(machine, field, None)
-                            new_val = hardware_data[field]
-                            if old_val != new_val:
-                                old_values[field] = old_val
-                                setattr(machine, field, new_val)
-                                machine_changes.append(field)
-                
-                # Сетевая информация
-                network_data = machine_data.get('network', {})
-                if network_data:
-                    net_fields = ['domain', 'computer_role', 'dns_suffix']
-                    for field in net_fields:
-                        if field in network_data:
-                            old_val = getattr(machine, field, None)
-                            new_val = network_data[field]
-                            if old_val != new_val:
-                                old_values[field] = old_val
-                                setattr(machine, field, new_val)
-                                machine_changes.append(field)
-                
-                # Обновляем last_seen
-                machine.last_seen = datetime.utcnow()
-                machine.updated_at = datetime.utcnow()
-                
-                # Если машина привязана к ТМЦ и изменился IP-адрес, обновляем IP в ТМЦ (приоритет API v2)
-                if machine.equipment_id and 'ip_address' in machine_changes:
-                    from models import Equipment
-                    equipment = Equipment.query.get(machine.equipment_id)
-                    if equipment and machine.ip_address:
-                        old_ip = equipment.ip or ''
-                        new_ip = machine.ip_address.strip()
+                    # Если IP-адреса различаются, обновляем IP в ТМЦ на IP из API v2
+                    if old_ip != new_ip:
+                        equipment.ip = new_ip
                         
-                        # Если IP-адреса различаются, обновляем IP в ТМЦ на IP из API v2
-                        if old_ip != new_ip:
-                            equipment.ip = new_ip
-                            
-                            # Записываем обновление IP в историю машины
-                            ip_history_record = MachineHistory(
-                                machine_id=machine.id,
-                                changed_field='equipment_ip',
-                                old_value=old_ip if old_ip else None,
-                                new_value=new_ip,
-                                comment=f'IP-адрес ТМЦ обновлен из API v2 (было: {old_ip if old_ip else "не указано"})'
-                            )
-                            db.session.add(ip_history_record)
-                
-                # Записываем изменения в историю
-                if machine_changes:
-                    for field in machine_changes:
-                        history_record = MachineHistory(
+                        # Записываем обновление IP в историю машины
+                        ip_history_record = MachineHistory(
                             machine_id=machine.id,
-                            changed_field=field,
-                            old_value=str(old_values.get(field, '')) if old_values.get(field) is not None else None,
-                            new_value=str(getattr(machine, field, '')),
-                            comment=collection_info.get('comment', 'Обновление через API v2')
+                            changed_field='equipment_ip',
+                            old_value=old_ip if old_ip else None,
+                            new_value=new_ip,
+                            comment=f'IP-адрес ТМЦ обновлен из API v2 (было: {old_ip if old_ip else "не указано"})'
                         )
-                        db.session.add(history_record)
+                        db.session.add(ip_history_record)
+            
+            # Записываем изменения в историю
+            if machine_changes:
+                for field in machine_changes:
+                    history_record = MachineHistory(
+                        machine_id=machine.id,
+                        changed_field=field,
+                        old_value=str(old_values.get(field, '')) if old_values.get(field) is not None else None,
+                        new_value=str(getattr(machine, field, '')),
+                        comment=collection_info.get('comment', 'Обновление через API v2')
+                    )
+                    db.session.add(history_record)
         else:
-            # Создаем новую машину
-            # Если нет hostname, но есть MAC, используем MAC как hostname
-            if not hostname and mac_address:
+            # Создаем новую машину по уникальному MAC-адресу
+            # Если нет hostname, используем MAC как hostname
+            if not hostname:
                 hostname = f"MAC-{mac_address.replace(':', '-')}"
+            
+            # Проверяем, не существует ли уже машина с таким hostname
+            existing_machine_with_hostname = Machine.query.filter_by(hostname=hostname).first()
+            if existing_machine_with_hostname:
+                # Если hostname занят, добавляем суффикс
+                hostname = f"{hostname}-{mac_address.replace(':', '')[-6:]}"
+                print(f"Info: Hostname was occupied, using '{hostname}' for new machine with MAC {mac_address}")
             
             os_data = machine_data.get('os', {})
             hardware_data = machine_data.get('hardware', {})
@@ -6769,7 +6781,7 @@ def api_hdd_collect_v2():
             machine = Machine(
                 hostname=hostname,
                 ip_address=machine_data.get('ip_address'),
-                mac_address=mac_address.strip().upper() if mac_address else None,
+                mac_address=mac_address,  # Уже нормализован выше
                 os_name=os_data.get('name') if os_data else None,
                 os_version=os_data.get('version') if os_data else None,
                 os_build=os_data.get('build') if os_data else None,
@@ -6879,8 +6891,21 @@ def api_hdd_collect_v2():
                     # Обновляем существующий диск
                     if 'model' in disk_data:
                         existing_disk.model = disk_data.get('model')
+                    # Обновляем размер диска (capacity_gb) - всегда обновляем, если поле присутствует
                     if 'size_gb' in disk_data:
-                        existing_disk.capacity_gb = disk_data.get('size_gb')
+                        size_gb = disk_data.get('size_gb')
+                        if size_gb is not None:
+                            old_capacity = existing_disk.capacity_gb
+                            new_capacity = int(size_gb)
+                            existing_disk.capacity_gb = new_capacity
+                            if old_capacity != new_capacity:
+                                print(f"Info: Disk {serial} capacity updated from {old_capacity} GB to {new_capacity} GB")
+                            else:
+                                print(f"Debug: Disk {serial} capacity unchanged ({new_capacity} GB)")
+                        else:
+                            print(f"Warning: Disk {serial} size_gb is None, skipping capacity update")
+                    else:
+                        print(f"Debug: Disk {serial} - size_gb not in disk_data")
                     if 'interface' in disk_data:
                         existing_disk.interface = disk_data.get('interface')
                     if 'power_on_hours' in disk_data:
@@ -6912,26 +6937,38 @@ def api_hdd_collect_v2():
                     # Для остальных дисков также обновляем, если они обнаружены на этой машине
                     existing_disk.machine_id = machine.id
                     
-                    # Обновляем дату и комментарий
-                    existing_disk.health_check_date = datetime.now().date()
-                    comment_text = f'Последний раз обнаружен на {hostname}'
-                    if collection_info.get('comment'):
-                        comment_text += f'. {collection_info.get("comment")}'
-                    existing_disk.comment = comment_text
+                    # Обновляем дату проверки здоровья
+                    current_date = datetime.now().date()
+                    existing_disk.health_check_date = current_date
+                    
+                    # Комментарий обновляем только если его еще нет (при первом добавлении)
+                    # При обновлении существующего диска комментарий не меняем
+                    if not existing_disk.comment or existing_disk.comment.strip() == '':
+                        # Формируем комментарий только если его нет
+                        comment_text = f'Автоматически добавлен с {hostname} через API v2'
+                        if collection_info.get('comment'):
+                            comment_text += f'. {collection_info.get("comment")}'
+                        # Если есть комментарий в disk_data, он имеет приоритет
+                        if disk_data.get('comment'):
+                            comment_text = disk_data.get('comment')
+                            if collection_info.get('comment'):
+                                comment_text += f' ({collection_info.get("comment")})'
+                        existing_disk.comment = comment_text
                     
                     # Активируем диск, если был деактивирован
                     if not existing_disk.active:
                         existing_disk.active = True
                     
-                    # Создаем запись в истории диска
+                    # Создаем запись в истории для отслеживания наработки и включений по датам
+                    # Комментарий в истории не добавляем (оставляем NULL)
                     from models import PCHardDriveHistory
                     history_record = PCHardDriveHistory(
                         hard_drive_id=existing_disk.id,
-                        check_date=datetime.now().date(),
+                        check_date=current_date,
                         power_on_hours=existing_disk.power_on_hours,
                         power_on_count=existing_disk.power_on_count,
                         health_status=existing_disk.health_status,
-                        comment=f'Обновление через API v2 с {hostname}'
+                        comment=None  # Комментарий не добавляем при автоматических обновлениях через API
                     )
                     db.session.add(history_record)
                     
@@ -6975,6 +7012,17 @@ def api_hdd_collect_v2():
                     health_status = disk_data.get('health_status')
                     health_status_ru = convert_health_status_to_russian(health_status) if health_status else None
                     
+                    # Формируем комментарий
+                    comment_text = f'Автоматически добавлен с {hostname} через API v2'
+                    # Добавляем комментарий из collection_info, если есть
+                    if collection_info.get('comment'):
+                        comment_text += f'. {collection_info.get("comment")}'
+                    # Добавляем комментарий из disk_data, если есть (приоритет)
+                    if disk_data.get('comment'):
+                        comment_text = disk_data.get('comment')
+                        if collection_info.get('comment'):
+                            comment_text += f' ({collection_info.get("comment")})'
+                    
                     new_disk = PCHardDrive(
                         serial_number=serial,
                         model=model,
@@ -6987,7 +7035,7 @@ def api_hdd_collect_v2():
                         health_status=health_status_ru,
                         health_check_date=datetime.now().date(),
                         machine_id=machine.id,
-                        comment=f'Автоматически добавлен с {hostname} через API v2'
+                        comment=comment_text
                     )
                     db.session.add(new_disk)
                     new_count += 1

@@ -490,7 +490,7 @@ class Machine(db.Model):
     # Базовые поля
     hostname = db.Column(db.String(255), nullable=False, unique=True)  # Имя компьютера (уникальный идентификатор)
     ip_address = db.Column(db.String(45), nullable=True)  # IP-адрес (IPv4 или IPv6)
-    mac_address = db.Column(db.String(17), nullable=True)  # MAC-адрес основного сетевого адаптера
+    mac_address = db.Column(db.String(17), nullable=False, unique=True)  # MAC-адрес основного сетевого адаптера (уникальный идентификатор для API v2)
     # Операционная система
     os_name = db.Column(db.String(50), nullable=True)  # Название ОС (Windows, Linux, macOS)
     os_version = db.Column(db.String(50), nullable=True)  # Версия ОС (10, 11, etc.)

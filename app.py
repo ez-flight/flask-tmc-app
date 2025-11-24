@@ -1291,11 +1291,113 @@ def list_by_nome(nome_id):
     
     # Проверяем, является ли пользователь МОЛ
     is_mol = current_user_has_role(1)
+    
+    # Собираем статистику по машинам, привязанным к ТМЦ этой группы
+    machine_stats = None
+    tmc_ids = [tmc.id for tmc in tmc_list]
+    
+    if tmc_ids:
+        from models import Machine, PCGraphicsCard, PCHardDrive, PCMemoryModule
+        from sqlalchemy import func, case
+        from collections import Counter
+        
+        # Получаем все машины, привязанные к ТМЦ этой группы
+        machines = Machine.query.filter(Machine.equipment_id.in_(tmc_ids)).all()
+        
+        if machines:
+            total_machines = len(machines)
+            
+            # 1. Статистика по ОС
+            os_counter = Counter()
+            for m in machines:
+                if m.os_name:
+                    os_name = m.os_name
+                    if m.os_version:
+                        os_name += f" {m.os_version}"
+                    os_counter[os_name] += 1
+            most_common_os = os_counter.most_common(1)[0] if os_counter else None
+            os_percent = round((most_common_os[1] / total_machines * 100), 1) if most_common_os else 0
+            
+            # 2. Статистика по материнским платам
+            mb_counter = Counter()
+            for m in machines:
+                if m.motherboard:
+                    mb_counter[m.motherboard] += 1
+            most_common_mb = mb_counter.most_common(1)[0] if mb_counter else None
+            mb_percent = round((most_common_mb[1] / total_machines * 100), 1) if most_common_mb else 0
+            
+            # 3. Статистика по видеокартам
+            machine_ids = [m.id for m in machines]
+            graphics_cards = PCGraphicsCard.query.filter(
+                PCGraphicsCard.machine_id.in_(machine_ids),
+                PCGraphicsCard.active == True
+            ).all()
+            gpu_counter = Counter()
+            for gc in graphics_cards:
+                if gc.model:
+                    gpu_counter[gc.model] += 1
+            most_common_gpu = gpu_counter.most_common(1)[0] if gpu_counter else None
+            total_gpus = len(graphics_cards)
+            gpu_percent = round((most_common_gpu[1] / total_gpus * 100), 1) if most_common_gpu and total_gpus > 0 else 0
+            
+            # 4. Статистика по HDD
+            hard_drives = PCHardDrive.query.filter(
+                PCHardDrive.machine_id.in_(machine_ids),
+                PCHardDrive.active == True
+            ).all()
+            hdd_counter = Counter()
+            for hd in hard_drives:
+                if hd.model:
+                    hdd_counter[hd.model] += 1
+            most_common_hdd = hdd_counter.most_common(1)[0] if hdd_counter else None
+            total_hdds = len(hard_drives)
+            hdd_percent = round((most_common_hdd[1] / total_hdds * 100), 1) if most_common_hdd and total_hdds > 0 else 0
+            
+            # 5. Статистика по ОЗУ (по комбинации capacity_gb + memory_type)
+            memory_modules = PCMemoryModule.query.filter(
+                PCMemoryModule.machine_id.in_(machine_ids),
+                PCMemoryModule.active == True
+            ).all()
+            ram_counter = Counter()
+            for mm in memory_modules:
+                if mm.capacity_gb:
+                    ram_str = f"{mm.capacity_gb}GB"
+                    if mm.memory_type:
+                        ram_str += f" {mm.memory_type}"
+                    ram_counter[ram_str] += 1
+            most_common_ram = ram_counter.most_common(1)[0] if ram_counter else None
+            total_ram_modules = len(memory_modules)
+            ram_percent = round((most_common_ram[1] / total_ram_modules * 100), 1) if most_common_ram and total_ram_modules > 0 else 0
+            
+            machine_stats = {
+                'total_machines': total_machines,
+                'os': {
+                    'name': most_common_os[0] if most_common_os else None,
+                    'percent': os_percent
+                },
+                'motherboard': {
+                    'name': most_common_mb[0] if most_common_mb else None,
+                    'percent': mb_percent
+                },
+                'graphics_card': {
+                    'name': most_common_gpu[0] if most_common_gpu else None,
+                    'percent': gpu_percent
+                },
+                'hard_drive': {
+                    'name': most_common_hdd[0] if most_common_hdd else None,
+                    'percent': hdd_percent
+                },
+                'memory': {
+                    'name': most_common_ram[0] if most_common_ram else None,
+                    'percent': ram_percent
+                }
+            }
 
     return render_template('tmc/list_by_nome.html',
                            nome=nome,
                            tmc_list=tmc_list,
                            component_template=component_template,
+                           machine_stats=machine_stats,
                            # Передаём переменные в шаблон
                            is_admin=is_admin,
                            is_mol=is_mol)
@@ -5338,7 +5440,7 @@ def my_departments():
 @app.route('/my_monitoring')
 @login_required
 def my_monitoring():
-    """Мониторинг сетевых устройств по помещениям."""
+    """Мониторинг сетевых устройств по помещениям. Доступен всем пользователям."""
     import subprocess
     import socket
     import platform
@@ -5346,73 +5448,40 @@ def my_monitoring():
     
     is_admin = current_user.mode == 1
     
-    # Получаем помещения, где есть ТМЦ с IP адресами
-    if is_admin:
-        # Для админа - все помещения с сетевыми устройствами
-        places_with_network_devices = db.session.query(Places).join(
-            Equipment, Places.id == Equipment.placesid
-        ).join(
-            Nome, Equipment.nomeid == Nome.id
-        ).join(
-            GroupNome, Nome.groupid == GroupNome.id
-        ).filter(
-            Equipment.active == True,
-            Equipment.os == True,
-            Equipment.ip != '',
-            Equipment.ip.isnot(None),
-            GroupNome.is_network_device == True,
-            Places.active == True
-        ).distinct().order_by(Places.name).all()
-    else:
-        # Для МОЛ - только помещения, где у него есть сетевые устройства
-        places_with_network_devices = db.session.query(Places).join(
-            Equipment, Places.id == Equipment.placesid
-        ).join(
-            Nome, Equipment.nomeid == Nome.id
-        ).join(
-            GroupNome, Nome.groupid == GroupNome.id
-        ).filter(
-            Equipment.usersid == current_user.id,
-            Equipment.active == True,
-            Equipment.os == True,
-            Equipment.ip != '',
-            Equipment.ip.isnot(None),
-            GroupNome.is_network_device == True,
-            Places.active == True
-        ).distinct().order_by(Places.name).all()
+    # Получаем все помещения, где есть ТМЦ с IP адресами (для всех пользователей)
+    places_with_network_devices = db.session.query(Places).join(
+        Equipment, Places.id == Equipment.placesid
+    ).join(
+        Nome, Equipment.nomeid == Nome.id
+    ).join(
+        GroupNome, Nome.groupid == GroupNome.id
+    ).filter(
+        Equipment.active == True,
+        Equipment.os == True,
+        Equipment.ip != '',
+        Equipment.ip.isnot(None),
+        GroupNome.is_network_device == True,
+        Places.active == True
+    ).distinct().order_by(Places.name).all()
     
     # Собираем данные по помещениям и устройствам
     places_data = []
     all_ips = []  # Для параллельной проверки ping
     
     for place in places_with_network_devices:
-        if is_admin:
-            equipment_list = db.session.query(Equipment).join(
-                Nome, Equipment.nomeid == Nome.id
-            ).join(
-                GroupNome, Nome.groupid == GroupNome.id
-            ).filter(
-                Equipment.placesid == place.id,
-                Equipment.active == True,
-                Equipment.os == True,
-                Equipment.ip != '',
-                Equipment.ip.isnot(None),
-                GroupNome.is_network_device == True
-            ).all()
-        else:
-            equipment_list = db.session.query(Equipment).join(
-                Nome, Equipment.nomeid == Nome.id
-            ).join(
-                GroupNome, Nome.groupid == GroupNome.id
-            ).filter(
-                Equipment.placesid == place.id,
-                Equipment.usersid == current_user.id,
-                Equipment.active == True,
-                Equipment.os == True,
-                Equipment.ip != '',
-                Equipment.ip.isnot(None),
-                GroupNome.is_network_device == True
-            ).all()
+        # Получаем все устройства с IP адресами в помещении (для всех пользователей)
+        equipment_list = db.session.query(Equipment).join(
+            Nome, Equipment.nomeid == Nome.id
+        ).join(
+            GroupNome, Nome.groupid == GroupNome.id
+        ).filter(
+            Equipment.placesid == place.id,
+            Equipment.active == True,
+            Equipment.os == True,
+            Equipment.ip != '',
+            Equipment.ip.isnot(None),
+            GroupNome.is_network_device == True
+        ).all()
         
         devices = []
         for eq in equipment_list:
@@ -5511,7 +5580,7 @@ def my_monitoring():
 @app.route('/monitoring_place_devices/<int:place_id>')
 @login_required
 def monitoring_place_devices(place_id):
-    """Отображение устройств конкретного помещения в табличном виде."""
+    """Отображение устройств конкретного помещения в табличном виде. Доступно всем пользователям."""
     import subprocess
     import socket
     import platform
@@ -5522,55 +5591,19 @@ def monitoring_place_devices(place_id):
     # Получаем помещение
     place = Places.query.get_or_404(place_id)
     
-    # Проверка доступа
-    if not is_admin:
-        # Для МОЛ проверяем, есть ли у него устройства в этом помещении
-        user_equipment = Equipment.query.join(
-            Nome, Equipment.nomeid == Nome.id
-        ).join(
-            GroupNome, Nome.groupid == GroupNome.id
-        ).filter(
-            Equipment.placesid == place_id,
-            Equipment.usersid == current_user.id,
-            Equipment.active == True,
-            Equipment.os == True,
-            Equipment.ip != '',
-            Equipment.ip.isnot(None),
-            GroupNome.is_network_device == True
-        ).first()
-        
-        if not user_equipment:
-            flash('Доступ запрещён', 'danger')
-            return redirect(url_for('my_monitoring'))
-    
-    # Получаем список устройств с IP адресами
-    if is_admin:
-        equipment_list = db.session.query(Equipment).join(
-            Nome, Equipment.nomeid == Nome.id
-        ).join(
-            GroupNome, Nome.groupid == GroupNome.id
-        ).filter(
-            Equipment.placesid == place_id,
-            Equipment.active == True,
-            Equipment.os == True,
-            Equipment.ip != '',
-            Equipment.ip.isnot(None),
-            GroupNome.is_network_device == True
-        ).order_by(Equipment.buhname).all()
-    else:
-        equipment_list = db.session.query(Equipment).join(
-            Nome, Equipment.nomeid == Nome.id
-        ).join(
-            GroupNome, Nome.groupid == GroupNome.id
-        ).filter(
-            Equipment.placesid == place_id,
-            Equipment.usersid == current_user.id,
-            Equipment.active == True,
-            Equipment.os == True,
-            Equipment.ip != '',
-            Equipment.ip.isnot(None),
-            GroupNome.is_network_device == True
-        ).order_by(Equipment.buhname).all()
+    # Получаем все устройства с IP адресами в помещении (для всех пользователей)
+    equipment_list = db.session.query(Equipment).join(
+        Nome, Equipment.nomeid == Nome.id
+    ).join(
+        GroupNome, Nome.groupid == GroupNome.id
+    ).filter(
+        Equipment.placesid == place_id,
+        Equipment.active == True,
+        Equipment.os == True,
+        Equipment.ip != '',
+        Equipment.ip.isnot(None),
+        GroupNome.is_network_device == True
+    ).order_by(Equipment.buhname).all()
     
     # Подготавливаем данные для таблицы
     devices_data = []
@@ -6870,6 +6903,13 @@ def api_hdd_collect_v2():
                             existing_disk.vendor_id = vendor.id
                     
                     # Связываем с машиной
+                    # Для USB дисков (съемных) всегда обновляем привязку к текущей машине,
+                    # так как они могут подключаться к разным машинам
+                    interface = disk_data.get('interface', existing_disk.interface or '').upper()
+                    is_usb = 'USB' in interface
+                    
+                    # Всегда обновляем machine_id для USB дисков (они съемные и могут подключаться к разным машинам)
+                    # Для остальных дисков также обновляем, если они обнаружены на этой машине
                     existing_disk.machine_id = machine.id
                     
                     # Обновляем дату и комментарий

@@ -41,6 +41,29 @@
     </div>
 {% endif %}
 
+{% if machine_stats and machine_stats.total_machines > 0 %}
+<div class="mb-3 p-2 bg-light rounded border">
+    <div class="small">
+        <div class="text-muted mb-2"><i class="bi bi-pc-display me-1"></i>{{ machine_stats.total_machines }} шт.</div>
+        {% if machine_stats.os.name %}
+        <div class="mb-1"><strong>ОС:</strong> {{ machine_stats.os.name }} <span class="text-muted">({{ machine_stats.os.percent }}%)</span></div>
+        {% endif %}
+        {% if machine_stats.motherboard.name %}
+        <div class="mb-1"><strong>МП:</strong> {{ machine_stats.motherboard.name }} <span class="text-muted">({{ machine_stats.motherboard.percent }}%)</span></div>
+        {% endif %}
+        {% if machine_stats.graphics_card.name %}
+        <div class="mb-1"><strong>GPU:</strong> {{ machine_stats.graphics_card.name }} <span class="text-muted">({{ machine_stats.graphics_card.percent }}%)</span></div>
+        {% endif %}
+        {% if machine_stats.hard_drive.name %}
+        <div class="mb-1"><strong>HDD:</strong> {{ machine_stats.hard_drive.name }} <span class="text-muted">({{ machine_stats.hard_drive.percent }}%)</span></div>
+        {% endif %}
+        {% if machine_stats.memory.name %}
+        <div class="mb-1"><strong>ОЗУ:</strong> {{ machine_stats.memory.name }} <span class="text-muted">({{ machine_stats.memory.percent }}%)</span></div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 {% if tmc_list %}
 <div class="card">
     <div class="card-body">

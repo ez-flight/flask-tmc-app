@@ -10,6 +10,11 @@
         <a href="{{ url_for('pc_components') }}" class="btn btn-secondary btn-sm me-2">
             <i class="bi bi-arrow-left me-1"></i>Назад
         </a>
+        {% if is_admin %}
+        <button id="refreshBenchmarkBtn" class="btn btn-info btn-sm me-2" title="Обновить рейтинги производительности процессоров с cpubenchmark.net">
+            <i class="bi bi-arrow-clockwise me-1"></i>Обновить рейтинги
+        </button>
+        {% endif %}
     </div>
 </div>
 
@@ -31,6 +36,15 @@
                         <div>
                             <h6 class="mb-0">
                                 <i class="bi bi-cpu me-2"></i>{{ item.processor }}
+                                {% if item.benchmark_rating %}
+                                    <span class="badge bg-success ms-2" title="Рейтинг производительности с cpubenchmark.net">
+                                        <i class="bi bi-star-fill me-1"></i>{{ "{:,}".format(item.benchmark_rating).replace(",", " ") }}
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-secondary ms-2" title="Рейтинг не найден">
+                                        <i class="bi bi-question-circle me-1"></i>Нет рейтинга
+                                    </span>
+                                {% endif %}
                             </h6>
                         </div>
                         <div>
@@ -106,5 +120,56 @@
         {% endif %}
     </div>
 </div>
+
+{% if is_admin %}
+<script>
+document.getElementById('refreshBenchmarkBtn').addEventListener('click', function() {
+    const btn = this;
+    const originalText = btn.innerHTML;
+    
+    if (confirm('Вы уверены, что хотите обновить рейтинги производительности процессоров с cpubenchmark.net? Это может занять некоторое время (2 секунды на каждый процессор).')) {
+        // Блокируем кнопку и показываем индикатор загрузки
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Обновление...';
+        
+        fetch('{{ url_for("update_cpus_benchmark_ratings") }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+            
+            if (data.success) {
+                let message = 'Обновление завершено: ' + data.message;
+                if (data.errors && data.errors.length > 0) {
+                    message += '\n\nОшибки:\n' + data.errors.slice(0, 5).join('\n');
+                    if (data.errors.length > 5) {
+                        message += '\n... и ещё ' + (data.errors.length - 5) + ' ошибок';
+                    }
+                }
+                alert(message);
+                // Перезагружаем страницу для отображения обновленных данных
+                window.location.reload();
+            } else {
+                let errorMessage = 'Ошибка при обновлении: ' + (data.error || 'Неизвестная ошибка');
+                if (data.errors && data.errors.length > 0) {
+                    errorMessage += '\n\nОшибки:\n' + data.errors.slice(0, 5).join('\n');
+                }
+                alert(errorMessage);
+            }
+        })
+        .catch(error => {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+            alert('Произошла ошибка сети или сервера: ' + error);
+        });
+    }
+});
+</script>
+{% endif %}
 {% endblock %}
 

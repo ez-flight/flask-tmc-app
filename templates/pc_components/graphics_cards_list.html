@@ -10,6 +10,9 @@
         <a href="{{ url_for('pc_components') }}" class="btn btn-secondary btn-sm me-2">
             <i class="bi bi-arrow-left me-1"></i>Назад
         </a>
+        <button id="updateFromApiBtn" class="btn btn-info btn-sm me-2" onclick="updateGraphicsCardsFromApi()">
+            <i class="bi bi-arrow-clockwise me-1"></i>Обновить данные из API
+        </button>
         <a href="{{ url_for('add_graphics_card') }}" class="btn btn-success btn-sm">
             <i class="bi bi-plus-circle me-1"></i>Добавить видеокарту
         </a>
@@ -41,7 +44,13 @@
                         {% for card in graphics_cards %}
                         <tr>
                             <td><strong>{{ card.vendor.name if card.vendor else 'Unknown' }}</strong></td>
-                            <td>{{ card.model }}</td>
+                            <td>
+                                <a href="{{ url_for('graphics_card_detail', card_id=card.id) }}" 
+                                   class="text-decoration-none"
+                                   title="Подробнее о видеокарте">
+                                    {{ card.model }}
+                                </a>
+                            </td>
                             <td>
                                 {% if card.memory_size %}
                                     {{ card.memory_size }} МБ
@@ -82,14 +91,21 @@
                             </td>
                             <td>
                                 <div class="btn-group btn-group-sm" role="group">
+                                    <a href="{{ url_for('graphics_card_detail', card_id=card.id) }}" 
+                                       class="btn btn-outline-info"
+                                       title="Подробнее">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
                                     <a href="{{ url_for('edit_graphics_card', card_id=card.id) }}" 
-                                       class="btn btn-outline-primary">
+                                       class="btn btn-outline-primary"
+                                       title="Редактировать">
                                         <i class="bi bi-pencil"></i>
                                     </a>
                                     <form method="POST" action="{{ url_for('delete_graphics_card', card_id=card.id) }}" 
                                           style="display: inline;" 
                                           onsubmit="return confirm('Вы уверены, что хотите удалить эту видеокарту?');">
-                                        <button type="submit" class="btn btn-outline-danger">
+                                        <button type="submit" class="btn btn-outline-danger"
+                                                title="Удалить">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </form>
@@ -109,5 +125,49 @@
         </div>
     </div>
 </div>
+
+<script>
+function updateGraphicsCardsFromApi() {
+    const btn = document.getElementById('updateFromApiBtn');
+    const originalText = btn.innerHTML;
+    
+    // Блокируем кнопку и показываем индикатор загрузки
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Обновление...';
+    
+    fetch('{{ url_for("update_graphics_cards_from_api") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        
+        if (data.success) {
+            let message = `Обновлено: ${data.updated} видеокарт`;
+            if (data.not_found > 0) {
+                message += `, не найдено в API: ${data.not_found}`;
+            }
+            if (data.errors && data.errors.length > 0) {
+                message += `, ошибок: ${data.errors.length}`;
+            }
+            
+            alert(message);
+            // Перезагружаем страницу для отображения обновленных данных
+            location.reload();
+        } else {
+            alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+        }
+    })
+    .catch(error => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        alert('Ошибка при обновлении данных: ' + error.message);
+    });
+}
+</script>
 {% endblock %}
 

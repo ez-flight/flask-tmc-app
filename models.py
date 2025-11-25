@@ -390,6 +390,19 @@ class PCGraphicsCard(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     machine_id = db.Column(db.Integer, db.ForeignKey('machines.id'), nullable=True)  # Связь с машиной
     
+    # Дополнительные поля из GPU API
+    launch_date = db.Column(db.Date, nullable=True)  # Дата выпуска видеокарты
+    code_name = db.Column(db.String(100), nullable=True)  # Кодовое имя (например, NV1, NV3)
+    core_clock_mhz = db.Column(db.Integer, nullable=True)  # Частота ядра в МГц
+    memory_clock_mhz = db.Column(db.Integer, nullable=True)  # Частота памяти в МГц
+    memory_bandwidth_gbps = db.Column(db.Float, nullable=True)  # Пропускная способность памяти в ГБ/с
+    memory_bus_width_bits = db.Column(db.Integer, nullable=True)  # Ширина шины памяти в битах
+    tdp_watts = db.Column(db.Integer, nullable=True)  # Энергопотребление (TDP) в ваттах
+    bus_interface = db.Column(db.String(50), nullable=True)  # Интерфейс шины (PCI, PCIe, AGP и т.д.)
+    direct3d_version = db.Column(db.String(20), nullable=True)  # Поддержка Direct3D
+    opengl_version = db.Column(db.String(20), nullable=True)  # Поддержка OpenGL
+    api_data_updated_at = db.Column(db.DateTime, nullable=True)  # Дата последнего обновления данных из API
+    
     # Связи
     vendor = db.relationship('Vendor', backref='graphics_cards')
     machine = db.relationship('Machine', backref='graphics_cards')
@@ -398,6 +411,62 @@ class PCGraphicsCard(db.Model):
     def __repr__(self):
         vendor_name = self.vendor.name if self.vendor else 'Unknown'
         return f'<PCGraphicsCard {self.id}: {vendor_name} {self.model}>'
+
+class PCCPU(db.Model):
+    """
+    Процессоры - комплектующие ПК (аппаратное обеспечение).
+    Не являются ТМЦ, отдельная таблица для учета.
+    """
+    __tablename__ = 'pc_cpus'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.id'), nullable=False)  # Производитель из справочника
+    model = db.Column(db.String(200), nullable=False)  # Модель процессора
+    serial_number = db.Column(db.String(100), nullable=True)  # Серийный номер
+    purchase_date = db.Column(db.Date, nullable=True)  # Дата приобретения
+    purchase_cost = db.Column(db.DECIMAL(precision=12, scale=2), nullable=True)  # Стоимость приобретения
+    comment = db.Column(db.Text, nullable=True)  # Комментарий
+    active = db.Column(db.Boolean, nullable=False, default=True)  # Активен ли процессор
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    machine_id = db.Column(db.Integer, db.ForeignKey('machines.id'), nullable=True)  # Связь с машиной
+    
+    # Дополнительные поля из CPU API
+    launch_date = db.Column(db.Date, nullable=True)  # Дата выпуска процессора
+    code_name = db.Column(db.String(100), nullable=True)  # Кодовое имя
+    cores = db.Column(db.Integer, nullable=True)  # Количество ядер
+    threads = db.Column(db.Integer, nullable=True)  # Количество потоков
+    base_clock_mhz = db.Column(db.Integer, nullable=True)  # Базовая частота в МГц
+    boost_clock_mhz = db.Column(db.Integer, nullable=True)  # Максимальная частота в МГц
+    tdp_watts = db.Column(db.Integer, nullable=True)  # Энергопотребление (TDP) в ваттах
+    lithography_nm = db.Column(db.Integer, nullable=True)  # Техпроцесс в нм
+    socket = db.Column(db.String(50), nullable=True)  # Сокет
+    memory_support = db.Column(db.String(100), nullable=True)  # Поддержка памяти (DDR4, DDR5 и т.д.)
+    max_memory_gb = db.Column(db.Integer, nullable=True)  # Максимальный объем памяти в ГБ
+    memory_channels = db.Column(db.Integer, nullable=True)  # Количество каналов памяти
+    memory_frequency_mhz = db.Column(db.String(50), nullable=True)  # Частота памяти (например, "1333/1600")
+    benchmark_rating = db.Column(db.Integer, nullable=True)  # Рейтинг производительности с cpubenchmark.net
+    # Кэш
+    cache_l1_kb = db.Column(db.Integer, nullable=True)  # Объем кэша L1 в КБ
+    cache_l2_kb = db.Column(db.Integer, nullable=True)  # Объем кэша L2 в КБ
+    cache_l3_kb = db.Column(db.Integer, nullable=True)  # Объем кэша L3 в КБ
+    # Графика
+    integrated_graphics = db.Column(db.Boolean, nullable=True)  # Есть ли интегрированная графика
+    graphics_name = db.Column(db.String(100), nullable=True)  # Название графического ядра
+    graphics_frequency_mhz = db.Column(db.Integer, nullable=True)  # Максимальная частота графического ядра в МГц
+    # PCI Express
+    pcie_version = db.Column(db.String(20), nullable=True)  # Версия PCI Express (например, "3.0")
+    pcie_lanes = db.Column(db.Integer, nullable=True)  # Количество каналов PCI Express
+    # Дополнительно
+    unlocked_multiplier = db.Column(db.Boolean, nullable=True)  # Разблокированный множитель
+    ecc_support = db.Column(db.Boolean, nullable=True)  # Поддержка ECC памяти
+    api_data_updated_at = db.Column(db.DateTime, nullable=True)  # Дата последнего обновления данных из API
+    
+    # Связи
+    vendor = db.relationship('Vendor', backref='cpus')
+    machine = db.relationship('Machine', backref='cpus')
+    
+    def __repr__(self):
+        vendor_name = self.vendor.name if self.vendor else 'Unknown'
+        return f'<PCCPU {self.id}: {vendor_name} {self.model}>'
 
 class PCHardDrive(db.Model):
     """
@@ -436,20 +505,40 @@ class PCHardDrive(db.Model):
 
 class PCHardDriveHistory(db.Model):
     """
-    История состояний жестких дисков - учет изменений состояния во времени.
+    История состояний жестких дисков - полная информация о диске на момент проверки.
+    Сохраняет все характеристики диска для отслеживания изменений во времени.
     """
     __tablename__ = 'pc_hard_drive_history'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     hard_drive_id = db.Column(db.Integer, db.ForeignKey('pc_hard_drives.id'), nullable=False)  # Ссылка на диск
     check_date = db.Column(db.Date, nullable=False)  # Дата проверки
+    
+    # Основные характеристики диска (на момент проверки)
+    drive_type = db.Column(db.String(50), nullable=True)  # Тип (HDD, SSD, NVMe)
+    vendor_id = db.Column(db.Integer, db.ForeignKey('vendor.id'), nullable=True)  # Марка (производитель)
+    model = db.Column(db.String(200), nullable=True)  # Модель
+    capacity_gb = db.Column(db.Integer, nullable=True)  # Объем в ГБ
+    serial_number = db.Column(db.String(100), nullable=True)  # Серийный номер
+    interface = db.Column(db.String(50), nullable=True)  # Интерфейс (SATA, NVMe, etc.)
+    
+    # Состояние диска (на момент проверки)
     power_on_hours = db.Column(db.Integer, nullable=True)  # Наработка (часы работы) на момент проверки
     power_on_count = db.Column(db.Integer, nullable=True)  # Количество включений на момент проверки
     health_status = db.Column(db.String(50), nullable=True)  # Здоровье (Здоров, Тревога, Неработает)
+    
+    # Дополнительная информация
+    purchase_date = db.Column(db.Date, nullable=True)  # Дата приобретения
+    purchase_cost = db.Column(db.DECIMAL(precision=12, scale=2), nullable=True)  # Стоимость приобретения
+    machine_id = db.Column(db.Integer, db.ForeignKey('machines.id'), nullable=True)  # Связь с машиной
+    active = db.Column(db.Boolean, nullable=True)  # Активен ли диск
     comment = db.Column(db.Text, nullable=True)  # Комментарий к записи
+    
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)  # Дата создания записи
     
     # Связи
     hard_drive = db.relationship('PCHardDrive', backref='history_records')
+    vendor = db.relationship('Vendor', backref='hard_drive_history')
+    machine = db.relationship('Machine', backref='hard_drive_history')
     
     def __repr__(self):
         return f'<PCHardDriveHistory {self.id}: Drive {self.hard_drive_id} at {self.check_date}>'

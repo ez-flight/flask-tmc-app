@@ -1,14 +1,18 @@
 {% extends "base.html" %}
-{% block title %}История состояний жесткого диска{% endblock %}
+{% block title %}История изменений жесткого диска{% endblock %}
 {% block content %}
 <div class="page-header">
     <div>
-        <h1>История состояний жесткого диска</h1>
+        <h1>История изменений жесткого диска</h1>
         <p class="text-muted mb-0">
-            {{ hard_drive.vendor.name if hard_drive.vendor else 'Unknown' }} {{ hard_drive.model }}
-            {% if hard_drive.serial_number %}
-                <code class="ms-2">{{ hard_drive.serial_number }}</code>
-            {% endif %}
+            Полная информация о диске и его изменениях во времени
+            <br>
+            <small>
+                {{ hard_drive.vendor.name if hard_drive.vendor else 'Unknown' }} {{ hard_drive.model }}
+                {% if hard_drive.serial_number %}
+                    <code class="ms-2">{{ hard_drive.serial_number }}</code>
+                {% endif %}
+            </small>
         </p>
     </div>
     <div class="user-info">
@@ -63,11 +67,11 @@
     </div>
 </div>
 
-<!-- История состояний -->
+<!-- История изменений -->
 <div class="card">
     <div class="card-header">
         <h5 class="mb-0">
-            <i class="bi bi-clock-history me-2"></i>История изменений
+            <i class="bi bi-clock-history me-2"></i>История изменений диска
             {% if history %}
                 <span class="badge bg-secondary ms-2">{{ history|length }}</span>
             {% endif %}
@@ -80,9 +84,9 @@
                     <thead class="table-light">
                         <tr>
                             <th scope="col">Дата проверки</th>
-                            <th scope="col">Наработка (часы)</th>
-                            <th scope="col">Количество включений</th>
-                            <th scope="col">Здоровье</th>
+                            <th scope="col">Характеристики диска</th>
+                            <th scope="col">Состояние</th>
+                            <th scope="col">Дополнительно</th>
                             <th scope="col">Комментарий</th>
                             <th scope="col">Дата записи</th>
                         </tr>
@@ -94,34 +98,76 @@
                                 <strong>{{ record.check_date.strftime('%d.%m.%Y') }}</strong>
                             </td>
                             <td>
-                                {% if record.power_on_hours %}
-                                    {{ record.power_on_hours }}
-                                {% else %}
-                                    <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if record.power_on_count %}
-                                    {{ record.power_on_count }}
-                                {% else %}
-                                    <span class="text-muted">—</span>
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if record.health_status %}
-                                    {% set status_ru = convert_health_status(record.health_status) %}
-                                    {% if status_ru == 'Здоров' %}
-                                        <span class="badge bg-success">{{ status_ru }}</span>
-                                    {% elif status_ru == 'Тревога' %}
-                                        <span class="badge bg-warning text-dark">{{ status_ru }}</span>
-                                    {% elif status_ru == 'Неработает' %}
-                                        <span class="badge bg-danger">{{ status_ru }}</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary">{{ status_ru }}</span>
+                                <div class="small">
+                                    {% if record.drive_type %}
+                                        <span class="badge bg-primary me-1">{{ record.drive_type }}</span>
                                     {% endif %}
-                                {% else %}
-                                    <span class="text-muted">—</span>
-                                {% endif %}
+                                    {% if record.interface %}
+                                        <span class="badge bg-info me-1">{{ record.interface }}</span>
+                                    {% endif %}
+                                    <br>
+                                    {% if record.vendor %}
+                                        <strong>{{ record.vendor.name }}</strong>
+                                    {% elif record.vendor_id %}
+                                        <span class="text-muted">Vendor ID: {{ record.vendor_id }}</span>
+                                    {% endif %}
+                                    {% if record.model %}
+                                        {{ record.model }}
+                                    {% endif %}
+                                    <br>
+                                    {% if record.capacity_gb %}
+                                        <span class="text-muted">{{ record.capacity_gb }} ГБ</span>
+                                    {% endif %}
+                                    {% if record.serial_number %}
+                                        <code class="ms-2">{{ record.serial_number }}</code>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="small">
+                                    {% if record.power_on_hours is not none %}
+                                        <div><strong>Наработка:</strong> {{ record.power_on_hours }} ч</div>
+                                    {% endif %}
+                                    {% if record.power_on_count is not none %}
+                                        <div><strong>Включений:</strong> {{ record.power_on_count }}</div>
+                                    {% endif %}
+                                    {% if record.health_status %}
+                                        <div class="mt-1">
+                                            {% set status_ru = convert_health_status(record.health_status) %}
+                                            {% if status_ru == 'Здоров' %}
+                                                <span class="badge bg-success">{{ status_ru }}</span>
+                                            {% elif status_ru == 'Тревога' %}
+                                                <span class="badge bg-warning text-dark">{{ status_ru }}</span>
+                                            {% elif status_ru == 'Неработает' %}
+                                                <span class="badge bg-danger">{{ status_ru }}</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">{{ status_ru }}</span>
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="small">
+                                    {% if record.purchase_date %}
+                                        <div><strong>Покупка:</strong> {{ record.purchase_date.strftime('%d.%m.%Y') }}</div>
+                                    {% endif %}
+                                    {% if record.purchase_cost %}
+                                        <div><strong>Стоимость:</strong> {{ "%.2f"|format(record.purchase_cost) }} ₽</div>
+                                    {% endif %}
+                                    {% if record.machine_id %}
+                                        <div><strong>Машина ID:</strong> {{ record.machine_id }}</div>
+                                    {% endif %}
+                                    {% if record.active is not none %}
+                                        <div>
+                                            {% if record.active %}
+                                                <span class="badge bg-success">Активен</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">Неактивен</span>
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+                                </div>
                             </td>
                             <td>
                                 {% if record.comment %}
@@ -142,9 +188,9 @@
             </div>
         {% else %}
             <div class="text-center py-4 text-muted">
-                <i class="bi bi-info-circle me-1"></i>История состояний пуста
+                <i class="bi bi-info-circle me-1"></i>История изменений пуста
                 <br>
-                <small>История будет создаваться автоматически при обновлении состояния диска</small>
+                <small>История будет создаваться автоматически при обновлении информации о диске</small>
             </div>
         {% endif %}
     </div>

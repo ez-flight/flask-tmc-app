@@ -5,7 +5,7 @@
 системой хеширования паролей: SHA1(salt + password)., пока что работает только наоборот
 """
 from dateutil.relativedelta import relativedelta
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 import os
 import hashlib
 from sqlalchemy import func, case, and_, or_
@@ -3391,7 +3391,7 @@ def processors_list():
                              total_processors=0,
                              is_admin=is_admin)
     
-    from models import Machine
+    from models import Machine, PCCPU
     from sqlalchemy import func
     
     # Группируем машины по процессору
@@ -3406,7 +3406,7 @@ def processors_list():
         Machine.processor.asc()
     ).all()
     
-    # Получаем список машин для каждого процессора
+    # Получаем список машин для каждого процессора и рейтинг процессора
     processors_with_machines = []
     for processor, count in processors_data:
         machines = Machine.query.filter(
@@ -3415,10 +3415,35 @@ def processors_list():
             Machine.processor != ''
         ).order_by(Machine.hostname.asc()).all()
         
+        # Пытаемся найти рейтинг процессора в базе данных
+        # Ищем по точному совпадению модели или по частичному совпадению
+        benchmark_rating = None
+        
+        # Сначала пробуем точное совпадение
+        cpu_record = PCCPU.query.filter(
+            PCCPU.model == processor
+        ).first()
+        
+        if not cpu_record:
+            # Пробуем найти по частичному совпадению
+            # Например, если processor = "Intel Core i5-3450", а в базе model = "i5-3450"
+            # Ищем процессоры, где модель содержится в названии процессора или наоборот
+            all_cpus = PCCPU.query.filter(PCCPU.active == True).all()
+            for cpu in all_cpus:
+                # Проверяем, содержится ли модель процессора в названии или наоборот
+                if cpu.model and processor:
+                    if cpu.model.lower() in processor.lower() or processor.lower() in cpu.model.lower():
+                        cpu_record = cpu
+                        break
+        
+        if cpu_record:
+            benchmark_rating = cpu_record.benchmark_rating
+        
         processors_with_machines.append({
             'processor': processor,
             'machines_count': count,
-            'machines': machines
+            'machines': machines,
+            'benchmark_rating': benchmark_rating
         })
     
     total_processors = len(processors_with_machines)
@@ -3871,9 +3896,22 @@ def edit_hard_drive(drive_id):
             history_record = PCHardDriveHistory(
                 hard_drive_id=drive_id,
                 check_date=health_check_date,
+                # Основные характеристики диска
+                drive_type=hard_drive.drive_type,
+                vendor_id=hard_drive.vendor_id,
+                model=hard_drive.model,
+                capacity_gb=hard_drive.capacity_gb,
+                serial_number=hard_drive.serial_number,
+                interface=hard_drive.interface,
+                # Состояние диска
                 power_on_hours=power_on_hours,
                 power_on_count=power_on_count,
                 health_status=health_status,
+                # Дополнительная информация
+                purchase_date=hard_drive.purchase_date,
+                purchase_cost=hard_drive.purchase_cost,
+                machine_id=hard_drive.machine_id,
+                active=hard_drive.active,
                 comment=f'Обновление состояния. {comment}' if comment else 'Обновление состояния'
             )
             db.session.add(history_record)
@@ -4283,7 +4321,7 @@ def auto_link_machine_equipment(machine_id):
 @app.route('/pc_components/hard_drive/<int:drive_id>/history')
 @login_required
 def hard_drive_history(drive_id):
-    """История состояний жесткого диска."""
+    """История изменений жесткого диска - полная информация о диске во времени."""
     is_admin = current_user.mode == 1
     
     if not is_admin:
@@ -6461,9 +6499,22 @@ def api_hdd_collect():
                 history_record = PCHardDriveHistory(
                     hard_drive_id=existing_disk.id,
                     check_date=current_date,
+                    # Основные характеристики диска
+                    drive_type=existing_disk.drive_type,
+                    vendor_id=existing_disk.vendor_id,
+                    model=existing_disk.model,
+                    capacity_gb=existing_disk.capacity_gb,
+                    serial_number=existing_disk.serial_number,
+                    interface=existing_disk.interface,
+                    # Состояние диска
                     power_on_hours=new_power_on_hours,
                     power_on_count=new_power_on_count,
                     health_status=new_health_status,
+                    # Дополнительная информация
+                    purchase_date=existing_disk.purchase_date,
+                    purchase_cost=existing_disk.purchase_cost,
+                    machine_id=existing_disk.machine_id,
+                    active=existing_disk.active,
                     comment=history_comment
                 )
                 db.session.add(history_record)
@@ -7005,9 +7056,22 @@ def api_hdd_collect_v2():
                     history_record = PCHardDriveHistory(
                         hard_drive_id=existing_disk.id,
                         check_date=current_date,
+                        # Основные характеристики диска
+                        drive_type=existing_disk.drive_type,
+                        vendor_id=existing_disk.vendor_id,
+                        model=existing_disk.model,
+                        capacity_gb=existing_disk.capacity_gb,
+                        serial_number=existing_disk.serial_number,
+                        interface=existing_disk.interface,
+                        # Состояние диска
                         power_on_hours=existing_disk.power_on_hours,
                         power_on_count=existing_disk.power_on_count,
                         health_status=existing_disk.health_status,
+                        # Дополнительная информация
+                        purchase_date=existing_disk.purchase_date,
+                        purchase_cost=existing_disk.purchase_cost,
+                        machine_id=existing_disk.machine_id,
+                        active=existing_disk.active,
                         comment=None  # Комментарий не добавляем при автоматических обновлениях через API
                     )
                     db.session.add(history_record)
@@ -7363,6 +7427,662 @@ def api_hdd_collect_v2():
             'error': f'Invalid request: {str(e)}',
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }), 400
+
+def get_cpu_data_from_cpubenchmark(cpu_name):
+    """
+    Получает полную информацию о процессоре с сайта cpubenchmark.net.
+    
+    Args:
+        cpu_name: Название процессора (например, "Intel Core i5-3450" или "Intel Core i5-3450 @ 3.10GHz")
+    
+    Returns:
+        dict: Словарь с данными о процессоре или None в случае ошибки
+        Содержит: benchmark_rating, socket, cores, threads, base_clock_mhz, boost_clock_mhz,
+                  tdp_watts, cache_l1_kb, cache_l2_kb, cache_l3_kb, memory_support, max_memory_gb,
+                  memory_channels, memory_frequency_mhz, integrated_graphics, graphics_name,
+                  graphics_frequency_mhz, pcie_version, pcie_lanes, unlocked_multiplier, ecc_support
+    """
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        import re
+        from urllib.parse import quote_plus
+        
+        # Очищаем название процессора от лишних символов и нормализуем
+        # Убираем "@" и частоту, если они есть (например, "Intel Core i5-3450 @ 3.10GHz" -> "Intel Core i5-3450")
+        cpu_clean = re.sub(r'\s*@\s*\d+\.?\d*\s*[GM]?Hz', '', cpu_name, flags=re.IGNORECASE)
+        cpu_clean = cpu_clean.strip()
+        
+        # Формируем URL для поиска процессора
+        # Используем quote_plus для правильного кодирования URL
+        cpu_encoded = quote_plus(cpu_clean)
+        url = f"https://www.cpubenchmark.net/cpu.php?cpu={cpu_encoded}"
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9"
+        }
+        
+        response = requests.get(url, headers=headers, timeout=15)
+        
+        cpu_data = {}
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Получаем весь текст страницы для парсинга
+            page_text = soup.get_text()
+            
+            # 1. Рейтинг (CPU Mark)
+            score_tag = soup.select_one('span[itemprop="ratingValue"]')
+            if score_tag:
+                rating_text = score_tag.text.replace(',', '').strip()
+                try:
+                    cpu_data['benchmark_rating'] = int(rating_text)
+                except ValueError:
+                    pass
+            
+            # Альтернативный поиск рейтинга
+            if 'benchmark_rating' not in cpu_data:
+                cpu_mark_match = re.search(r'CPU\s*Mark[:\s]+(\d{1,3}(?:,\d{3})+)', page_text, re.IGNORECASE)
+                if cpu_mark_match:
+                    try:
+                        cpu_data['benchmark_rating'] = int(cpu_mark_match.group(1).replace(',', ''))
+                    except ValueError:
+                        pass
+            
+            # 2. Сокет - ищем в тексте "Socket: LGA1155"
+            socket_match = re.search(r'Socket[:\s]+([A-Z0-9-]+)', page_text, re.IGNORECASE)
+            if socket_match:
+                cpu_data['socket'] = socket_match.group(1).strip()
+            
+            # 3. Количество ядер - ищем "Cores: 4" или "Cores: 4 шт."
+            cores_match = re.search(r'Cores[:\s]+(\d+)', page_text, re.IGNORECASE)
+            if cores_match:
+                try:
+                    cpu_data['cores'] = int(cores_match.group(1))
+                except ValueError:
+                    pass
+            
+            # 4. Количество потоков - ищем "Threads: 4" или "Threads: 4 шт."
+            threads_match = re.search(r'Threads[:\s]+(\d+)', page_text, re.IGNORECASE)
+            if threads_match:
+                try:
+                    cpu_data['threads'] = int(threads_match.group(1))
+                except ValueError:
+                    pass
+            
+            # 5. Базовая частота - ищем "Clockspeed: 3.1 GHz" или "Частота процессора: 3100 МГц"
+            clockspeed_match = re.search(r'Clockspeed[:\s]+([\d.]+)\s*GHz', page_text, re.IGNORECASE)
+            if clockspeed_match:
+                try:
+                    freq_ghz = float(clockspeed_match.group(1))
+                    cpu_data['base_clock_mhz'] = int(freq_ghz * 1000)
+                except ValueError:
+                    pass
+            else:
+                # Альтернативный формат: "Частота процессора: 3100 МГц"
+                freq_match = re.search(r'Частота\s+процессора[:\s]+(\d+)\s*МГц', page_text, re.IGNORECASE)
+                if freq_match:
+                    try:
+                        cpu_data['base_clock_mhz'] = int(freq_match.group(1))
+                    except ValueError:
+                        pass
+            
+            # 6. Turbo частота - ищем "Turbo Speed: 3.5 GHz" или "Максимальная частота с Turbo Boost: 3500 МГц"
+            turbo_match = re.search(r'Turbo\s*Speed[:\s]+([\d.]+)\s*GHz', page_text, re.IGNORECASE)
+            if turbo_match:
+                try:
+                    freq_ghz = float(turbo_match.group(1))
+                    cpu_data['boost_clock_mhz'] = int(freq_ghz * 1000)
+                except ValueError:
+                    pass
+            else:
+                # Альтернативный формат
+                turbo_match2 = re.search(r'Максимальная\s+частота[:\s]+(\d+)\s*МГц', page_text, re.IGNORECASE)
+                if turbo_match2:
+                    try:
+                        cpu_data['boost_clock_mhz'] = int(turbo_match2.group(1))
+                    except ValueError:
+                        pass
+            
+            # 7. TDP - ищем "Typical TDP: 77 W" или "Тепловыделение: 77 Вт"
+            tdp_match = re.search(r'Typical\s*TDP[:\s]+(\d+)\s*W', page_text, re.IGNORECASE)
+            if tdp_match:
+                try:
+                    cpu_data['tdp_watts'] = int(tdp_match.group(1))
+                except ValueError:
+                    pass
+            else:
+                # Альтернативный формат
+                tdp_match2 = re.search(r'Тепловыделение[:\s]+(\d+)\s*Вт', page_text, re.IGNORECASE)
+                if tdp_match2:
+                    try:
+                        cpu_data['tdp_watts'] = int(tdp_match2.group(1))
+                    except ValueError:
+                        pass
+            
+            # 8. Кэш L1, L2, L3
+            # L1 Cache
+            l1_match = re.search(r'L1\s*(?:Instruction|Data)?\s*Cache[:\s]+(?:\d+\s*x\s*)?([\d.]+)\s*KB', page_text, re.IGNORECASE)
+            if l1_match:
+                try:
+                    l1_value = float(l1_match.group(1))
+                    # Если указано "4 x 32 KB", берем общее значение
+                    l1_total_match = re.search(r'L1\s*(?:Instruction|Data)?\s*Cache[:\s]+(\d+)\s*x\s*([\d.]+)\s*KB', page_text, re.IGNORECASE)
+                    if l1_total_match:
+                        count = int(l1_total_match.group(1))
+                        size = float(l1_total_match.group(2))
+                        cpu_data['cache_l1_kb'] = int(count * size)
+                    else:
+                        cpu_data['cache_l1_kb'] = int(l1_value)
+                except (ValueError, IndexError):
+                    pass
+            
+            # L2 Cache
+            l2_match = re.search(r'L2\s*Cache[:\s]+(?:\d+\s*x\s*)?([\d.]+)\s*(KB|MB)', page_text, re.IGNORECASE)
+            if l2_match:
+                try:
+                    l2_value = float(l2_match.group(1))
+                    unit = l2_match.group(2).upper()
+                    l2_total_match = re.search(r'L2\s*Cache[:\s]+(\d+)\s*x\s*([\d.]+)\s*(KB|MB)', page_text, re.IGNORECASE)
+                    if l2_total_match:
+                        count = int(l2_total_match.group(1))
+                        size = float(l2_total_match.group(2))
+                        unit = l2_total_match.group(3).upper()
+                        if unit == 'MB':
+                            cpu_data['cache_l2_kb'] = int(count * size * 1024)
+                        else:
+                            cpu_data['cache_l2_kb'] = int(count * size)
+                    else:
+                        if unit == 'MB':
+                            cpu_data['cache_l2_kb'] = int(l2_value * 1024)
+                        else:
+                            cpu_data['cache_l2_kb'] = int(l2_value)
+                except (ValueError, IndexError):
+                    pass
+            
+            # L3 Cache
+            l3_match = re.search(r'L3\s*Cache[:\s]+([\d.]+)\s*(KB|MB)', page_text, re.IGNORECASE)
+            if l3_match:
+                try:
+                    l3_value = float(l3_match.group(1))
+                    unit = l3_match.group(2).upper()
+                    if unit == 'MB':
+                        cpu_data['cache_l3_kb'] = int(l3_value * 1024)
+                    else:
+                        cpu_data['cache_l3_kb'] = int(l3_value)
+                except (ValueError, IndexError):
+                    pass
+            
+            # 9. Тип памяти - ищем "Type memory: DDR3" или "Тип памяти: DDR3"
+            memory_type_match = re.search(r'(?:Type\s+memory|Тип\s+памяти)[:\s]+(DDR\d+)', page_text, re.IGNORECASE)
+            if memory_type_match:
+                cpu_data['memory_support'] = memory_type_match.group(1)
+            
+            # 10. Частота памяти - ищем "Memory frequency: 1333/1600" или "Частота памяти: 1333/1600"
+            memory_freq_match = re.search(r'(?:Memory\s+frequency|Частота\s+памяти)[:\s]+([\d/]+)', page_text, re.IGNORECASE)
+            if memory_freq_match:
+                cpu_data['memory_frequency_mhz'] = memory_freq_match.group(1).strip()
+            
+            # 11. Максимальный объем памяти - ищем "Max memory: 32 GB" или "Максимальный объем памяти: 32"
+            max_memory_match = re.search(r'(?:Max\s+memory|Максимальный\s+объем\s+памяти)[:\s]+(\d+)\s*(GB|MB|ГБ|МБ)?', page_text, re.IGNORECASE)
+            if max_memory_match:
+                try:
+                    max_mem_value = int(max_memory_match.group(1))
+                    unit = max_memory_match.group(2) if max_memory_match.lastindex >= 2 else 'GB'
+                    if unit and unit.upper() in ['GB', 'ГБ']:
+                        cpu_data['max_memory_gb'] = max_mem_value
+                    elif unit and unit.upper() in ['MB', 'МБ']:
+                        cpu_data['max_memory_gb'] = max_mem_value // 1024
+                    else:
+                        # По умолчанию считаем ГБ
+                        cpu_data['max_memory_gb'] = max_mem_value
+                except (ValueError, IndexError):
+                    pass
+            
+            # 12. Количество каналов памяти - ищем "Memory channels: 2" или "Максимальное количество каналов памяти: 2 шт."
+            memory_channels_match = re.search(r'(?:Memory\s+channels|каналов\s+памяти)[:\s]+(\d+)', page_text, re.IGNORECASE)
+            if memory_channels_match:
+                try:
+                    cpu_data['memory_channels'] = int(memory_channels_match.group(1))
+                except ValueError:
+                    pass
+            
+            # 13. Интегрированная графика - ищем "Integrated graphics: Yes" или "Интегрированное графическое ядро: Да"
+            integrated_graphics_match = re.search(r'(?:Integrated\s+graphics|Интегрированное\s+графическое\s+ядро)[:\s]+(Yes|Да|No|Нет)', page_text, re.IGNORECASE)
+            if integrated_graphics_match:
+                graphics_text = integrated_graphics_match.group(1).lower()
+                cpu_data['integrated_graphics'] = graphics_text in ['yes', 'да']
+            
+            # 14. Название графического ядра - ищем "Graphics name: HD Graphics 2500" или "Название графического ядра: HD Graphics 2500"
+            graphics_name_match = re.search(r'(?:Graphics\s+name|Название\s+графического\s+ядра)[:\s]+([A-Za-z0-9\s\-]+)', page_text, re.IGNORECASE)
+            if graphics_name_match:
+                cpu_data['graphics_name'] = graphics_name_match.group(1).strip()[:100]
+            
+            # 15. Частота графического ядра - ищем "Graphics frequency: 1100" или "Максимальная частота графического ядра: 1100"
+            graphics_freq_match = re.search(r'(?:Graphics\s+frequency|Максимальная\s+частота\s+графического\s+ядра)[:\s]+(\d+)\s*(MHz|МГц)?', page_text, re.IGNORECASE)
+            if graphics_freq_match:
+                try:
+                    cpu_data['graphics_frequency_mhz'] = int(graphics_freq_match.group(1))
+                except ValueError:
+                    pass
+            
+            # 16. Версия PCI Express - ищем "PCI-Express: 3.0" или "Версия PCI-Express: 3.0"
+            pcie_version_match = re.search(r'(?:PCI[-\s]?Express|Версия\s+PCI[-\s]?Express)[:\s]+([\d.]+)', page_text, re.IGNORECASE)
+            if pcie_version_match:
+                cpu_data['pcie_version'] = pcie_version_match.group(1).strip()
+            
+            # 17. Количество каналов PCI Express - ищем "PCI Express lanes: 16" или "Макс. кол-во каналов PCI Express: 16 шт."
+            pcie_lanes_match = re.search(r'(?:PCI[-\s]?Express\s+lanes|каналов\s+PCI\s+Express)[:\s]+(\d+)', page_text, re.IGNORECASE)
+            if pcie_lanes_match:
+                try:
+                    cpu_data['pcie_lanes'] = int(pcie_lanes_match.group(1))
+                except ValueError:
+                    pass
+            
+            # 18. Разблокированный множитель - ищем "Unlocked multiplier: No" или "Разблокированный множитель: Нет"
+            unlocked_match = re.search(r'(?:Unlocked\s+multiplier|Разблокированный\s+множитель)[:\s]+(Yes|Да|No|Нет)', page_text, re.IGNORECASE)
+            if unlocked_match:
+                unlocked_text = unlocked_match.group(1).lower()
+                cpu_data['unlocked_multiplier'] = unlocked_text in ['yes', 'да']
+            
+            # 19. Поддержка ECC - ищем "ECC support: No" или "Поддержка ECC: Нет"
+            ecc_match = re.search(r'(?:ECC\s+support|Поддержка\s+ECC)[:\s]+(Yes|Да|No|Нет)', page_text, re.IGNORECASE)
+            if ecc_match:
+                ecc_text = ecc_match.group(1).lower()
+                cpu_data['ecc_support'] = ecc_text in ['yes', 'да']
+            
+            # Также парсим данные из секции Description (если есть)
+            # Ищем блок с описанием процессора
+            desc_sections = soup.find_all(['div', 'section'], class_=lambda x: x and ('description' in str(x).lower() or 'spec' in str(x).lower()))
+            for desc_section in desc_sections:
+                desc_text = desc_section.get_text()
+                # Дополнительный парсинг из описания
+                # Можно добавить специфичные для описания паттерны
+            
+            # Парсим данные из таблиц характеристик
+            tables = soup.find_all('table')
+            for table in tables:
+                rows = table.find_all('tr')
+                for row in rows:
+                    cells = row.find_all(['td', 'th'])
+                    if len(cells) >= 2:
+                        label = cells[0].get_text().strip()
+                        value = cells[1].get_text().strip()
+                        label_lower = label.lower()
+                        
+                        # Socket
+                        if 'socket' in label_lower and not cpu_data.get('socket'):
+                            cpu_data['socket'] = value[:50]
+                        
+                        # Cores
+                        if 'cores' in label_lower and not cpu_data.get('cores'):
+                            cores_num = re.search(r'(\d+)', value)
+                            if cores_num:
+                                try:
+                                    cpu_data['cores'] = int(cores_num.group(1))
+                                except ValueError:
+                                    pass
+                        
+                        # Threads
+                        if 'threads' in label_lower and not cpu_data.get('threads'):
+                            threads_num = re.search(r'(\d+)', value)
+                            if threads_num:
+                                try:
+                                    cpu_data['threads'] = int(threads_num.group(1))
+                                except ValueError:
+                                    pass
+                        
+                        # TDP
+                        if ('tdp' in label_lower or 'thermal' in label_lower) and not cpu_data.get('tdp_watts'):
+                            tdp_num = re.search(r'(\d+)\s*W', value, re.IGNORECASE)
+                            if tdp_num:
+                                try:
+                                    cpu_data['tdp_watts'] = int(tdp_num.group(1))
+                                except ValueError:
+                                    pass
+            
+            return cpu_data if cpu_data else None
+        
+    except Exception as e:
+        print(f"Ошибка при получении данных CPU для {cpu_name}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def get_cpu_rating(cpu_name):
+    """
+    Получает только рейтинг производительности процессора с сайта cpubenchmark.net.
+    Удобная обертка для обратной совместимости.
+    
+    Args:
+        cpu_name: Название процессора
+    
+    Returns:
+        int: Рейтинг процессора или None в случае ошибки
+    """
+    cpu_data = get_cpu_data_from_cpubenchmark(cpu_name)
+    if cpu_data and 'benchmark_rating' in cpu_data:
+        return cpu_data['benchmark_rating']
+    return None
+
+def get_hdd_data_from_external_sources(model_name, vendor_name='', capacity_gb=None):
+    """
+    Получает дополнительные данные о жестком диске из внешних источников.
+    
+    К сожалению, прямых opensource API для спецификаций HDD не существует.
+    Эта функция использует эвристические методы для определения характеристик:
+    1. Определение интерфейса по модели и объему
+    2. Определение типа диска (HDD/SSD/NVMe) по модели
+    3. В будущем можно добавить веб-скрапинг с сайтов производителей
+    
+    Args:
+        model_name: Название модели диска
+        vendor_name: Название производителя
+        capacity_gb: Объем диска в ГБ (опционально)
+    
+    Returns:
+        dict: Словарь с дополнительными данными о диске или None
+    """
+    try:
+        import re
+        
+        hdd_data = {}
+        
+        # Нормализуем название производителя и модели
+        vendor_normalized = vendor_name.upper().strip()
+        model_normalized = model_name.upper().strip()
+        
+        # Определяем интерфейс по модели (если не указан)
+        if any(keyword in model_normalized for keyword in ['NVME', 'NVMe', 'M.2', 'M2']):
+            hdd_data['interface'] = 'NVMe'
+        elif any(keyword in model_normalized for keyword in ['SAS']):
+            hdd_data['interface'] = 'SAS'
+        elif any(keyword in model_normalized for keyword in ['SATA', 'SAT']):
+            hdd_data['interface'] = 'SATA'
+        elif any(keyword in model_normalized for keyword in ['IDE', 'PATA', 'ATA']):
+            hdd_data['interface'] = 'IDE'
+        elif any(keyword in model_normalized for keyword in ['USB', 'EXTERNAL']):
+            hdd_data['interface'] = 'USB'
+        elif any(keyword in model_normalized for keyword in ['SSD']):
+            # Для SSD без явного указания интерфейса
+            if capacity_gb and capacity_gb < 500:
+                hdd_data['interface'] = 'SATA'  # Малые SSD обычно SATA
+            else:
+                hdd_data['interface'] = 'SATA'
+        else:
+            # По умолчанию для HDD - SATA
+            hdd_data['interface'] = 'SATA'
+        
+        # Определяем тип диска по модели
+        if any(keyword in model_normalized for keyword in ['SSD', 'SOLID', 'STATE']):
+            hdd_data['drive_type'] = 'SSD'
+        elif any(keyword in model_normalized for keyword in ['NVME', 'NVMe', 'M.2', 'M2']):
+            hdd_data['drive_type'] = 'NVMe'
+        elif any(keyword in model_normalized for keyword in ['HDD', 'HARD', 'DISK']):
+            hdd_data['drive_type'] = 'HDD'
+        
+        # Попытка определить форм-фактор по модели
+        if any(keyword in model_normalized for keyword in ['2.5', '2.5"', '2.5INCH']):
+            hdd_data['form_factor'] = '2.5"'
+        elif any(keyword in model_normalized for keyword in ['3.5', '3.5"', '3.5INCH']):
+            hdd_data['form_factor'] = '3.5"'
+        elif any(keyword in model_normalized for keyword in ['M.2', 'M2', '2280', '2242']):
+            hdd_data['form_factor'] = 'M.2'
+        
+        # Попытка определить скорость вращения для HDD (по модели)
+        if hdd_data.get('drive_type') == 'HDD' or 'HDD' in model_normalized:
+            if any(keyword in model_normalized for keyword in ['7200', '7.2K']):
+                hdd_data['rpm'] = 7200
+            elif any(keyword in model_normalized for keyword in ['5400', '5.4K']):
+                hdd_data['rpm'] = 5400
+            elif any(keyword in model_normalized for keyword in ['10000', '10K', '10.000']):
+                hdd_data['rpm'] = 10000
+            elif any(keyword in model_normalized for keyword in ['15000', '15K', '15.000']):
+                hdd_data['rpm'] = 15000
+        
+        return hdd_data if hdd_data else None
+        
+    except Exception as e:
+        print(f"Ошибка при получении данных о HDD: {e}")
+        return None
+
+@app.route('/api/hard_drives/update_from_external', methods=['POST'])
+@login_required
+def update_hard_drives_from_external():
+    """
+    Обновление данных жестких дисков из внешних источников.
+    Использует эвристические методы для определения характеристик.
+    """
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        return jsonify({
+            'success': False,
+            'error': 'Доступ запрещён. Только администратор может обновлять данные.'
+        }), 403
+    
+    try:
+        from models import PCHardDrive
+        
+        # Получаем все жесткие диски без интерфейса
+        hard_drives = PCHardDrive.query.filter(
+            PCHardDrive.active == True,
+            (PCHardDrive.interface == None) | (PCHardDrive.interface == '')
+        ).all()
+        
+        updated_count = 0
+        errors = []
+        
+        for drive in hard_drives:
+            try:
+                vendor_name = drive.vendor.name if drive.vendor else ''
+                model_name = drive.model.strip()
+                
+                if not model_name:
+                    continue
+                
+                # Получаем данные из внешних источников
+                external_data = get_hdd_data_from_external_sources(
+                    model_name, 
+                    vendor_name, 
+                    drive.capacity_gb
+                )
+                
+                if external_data:
+                    # Обновляем интерфейс, если он был определен
+                    if 'interface' in external_data and not drive.interface:
+                        drive.interface = external_data['interface']
+                    
+                    # Обновляем тип диска, если он был определен и отличается
+                    if 'drive_type' in external_data:
+                        # Проверяем, что определенный тип соответствует текущему
+                        if drive.drive_type and drive.drive_type.upper() != external_data['drive_type'].upper():
+                            # Не перезаписываем, если уже указан тип
+                            pass
+                    
+                    updated_count += 1
+                    
+            except Exception as e:
+                errors.append(f"Ошибка при обработке диска {drive.vendor.name if drive.vendor else 'Unknown'} {drive.model}: {str(e)}")
+                db.session.rollback()
+                continue
+        
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': f'Обновлено {updated_count} жестких дисков.',
+            'updated_count': updated_count,
+            'errors': errors[:10]
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': f'Произошла ошибка: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        }), 500
+
+@app.route('/api/cpus/update_benchmark_ratings', methods=['POST'])
+@login_required
+def update_cpus_benchmark_ratings():
+    """
+    Обновление рейтингов производительности процессоров с cpubenchmark.net.
+    """
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        return jsonify({
+            'success': False,
+            'error': 'Доступ запрещён. Только администратор может обновлять данные.'
+        }), 403
+    
+    try:
+        from models import PCCPU
+        import time
+        from datetime import datetime, timezone
+        import traceback
+        
+        # Импортируем функцию get_cpu_data_from_cpubenchmark из текущего модуля
+        import sys
+        current_module = sys.modules[__name__]
+        get_cpu_rating_func = getattr(current_module, 'get_cpu_data_from_cpubenchmark', None)
+        if not get_cpu_rating_func:
+            return jsonify({
+                'success': False,
+                'error': 'Функция get_cpu_data_from_cpubenchmark не найдена в модуле'
+            }), 500
+        
+        # Получаем все процессоры из базы
+        cpus = PCCPU.query.filter_by(active=True).all()
+        
+        updated_count = 0
+        not_found_count = 0
+        errors = []
+        
+        for cpu in cpus:
+            try:
+                vendor_name = cpu.vendor.name if cpu.vendor else ''
+                model_name = cpu.model.strip()
+                
+                if not model_name:
+                    not_found_count += 1
+                    continue
+                
+                # Формируем полное название процессора для поиска
+                full_cpu_name = f"{vendor_name} {model_name}".strip()
+                
+                # Получаем полные данные с cpubenchmark.net
+                cpu_data = get_cpu_rating_func(full_cpu_name)
+                
+                if not cpu_data:
+                    # Пробуем поиск только по модели
+                    cpu_data = get_cpu_rating_func(model_name)
+                
+                if cpu_data and isinstance(cpu_data, dict):
+                    # Обновляем все доступные поля
+                    if 'benchmark_rating' in cpu_data and cpu_data['benchmark_rating']:
+                        cpu.benchmark_rating = cpu_data['benchmark_rating']
+                    
+                    if 'socket' in cpu_data and cpu_data['socket']:
+                        cpu.socket = cpu_data['socket'][:50]
+                    
+                    if 'cores' in cpu_data and cpu_data['cores']:
+                        cpu.cores = cpu_data['cores']
+                    
+                    if 'threads' in cpu_data and cpu_data['threads']:
+                        cpu.threads = cpu_data['threads']
+                    
+                    if 'base_clock_mhz' in cpu_data and cpu_data['base_clock_mhz']:
+                        cpu.base_clock_mhz = cpu_data['base_clock_mhz']
+                    
+                    if 'boost_clock_mhz' in cpu_data and cpu_data['boost_clock_mhz']:
+                        cpu.boost_clock_mhz = cpu_data['boost_clock_mhz']
+                    
+                    if 'tdp_watts' in cpu_data and cpu_data['tdp_watts']:
+                        cpu.tdp_watts = cpu_data['tdp_watts']
+                    
+                    if 'cache_l1_kb' in cpu_data and cpu_data['cache_l1_kb']:
+                        cpu.cache_l1_kb = cpu_data['cache_l1_kb']
+                    
+                    if 'cache_l2_kb' in cpu_data and cpu_data['cache_l2_kb']:
+                        cpu.cache_l2_kb = cpu_data['cache_l2_kb']
+                    
+                    if 'cache_l3_kb' in cpu_data and cpu_data['cache_l3_kb']:
+                        cpu.cache_l3_kb = cpu_data['cache_l3_kb']
+                    
+                    if 'memory_support' in cpu_data and cpu_data['memory_support']:
+                        cpu.memory_support = cpu_data['memory_support'][:100]
+                    
+                    if 'max_memory_gb' in cpu_data and cpu_data['max_memory_gb']:
+                        cpu.max_memory_gb = cpu_data['max_memory_gb']
+                    
+                    if 'memory_channels' in cpu_data and cpu_data['memory_channels']:
+                        cpu.memory_channels = cpu_data['memory_channels']
+                    
+                    if 'memory_frequency_mhz' in cpu_data and cpu_data['memory_frequency_mhz']:
+                        cpu.memory_frequency_mhz = cpu_data['memory_frequency_mhz'][:50]
+                    
+                    if 'integrated_graphics' in cpu_data and cpu_data['integrated_graphics'] is not None:
+                        cpu.integrated_graphics = cpu_data['integrated_graphics']
+                    
+                    if 'graphics_name' in cpu_data and cpu_data['graphics_name']:
+                        cpu.graphics_name = cpu_data['graphics_name'][:100]
+                    
+                    if 'graphics_frequency_mhz' in cpu_data and cpu_data['graphics_frequency_mhz']:
+                        cpu.graphics_frequency_mhz = cpu_data['graphics_frequency_mhz']
+                    
+                    if 'pcie_version' in cpu_data and cpu_data['pcie_version']:
+                        cpu.pcie_version = cpu_data['pcie_version'][:20]
+                    
+                    if 'pcie_lanes' in cpu_data and cpu_data['pcie_lanes']:
+                        cpu.pcie_lanes = cpu_data['pcie_lanes']
+                    
+                    if 'unlocked_multiplier' in cpu_data and cpu_data['unlocked_multiplier'] is not None:
+                        cpu.unlocked_multiplier = cpu_data['unlocked_multiplier']
+                    
+                    if 'ecc_support' in cpu_data and cpu_data['ecc_support'] is not None:
+                        cpu.ecc_support = cpu_data['ecc_support']
+                    
+                    cpu.api_data_updated_at = datetime.now(timezone.utc)
+                    updated_count += 1
+                else:
+                    not_found_count += 1
+                    errors.append(f"Данные не найдены для {vendor_name} {model_name}")
+                
+                # Уважаем сервер - делаем паузу между запросами
+                time.sleep(2)
+                    
+            except Exception as e:
+                errors.append(f"Ошибка при обработке процессора {cpu.vendor.name if cpu.vendor else 'Unknown'} {cpu.model}: {str(e)}")
+                db.session.rollback()
+                continue
+        
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': f'Обновлено {updated_count} процессоров с данными из cpubenchmark.net, не найдено {not_found_count}.',
+            'updated_count': updated_count,
+            'not_found_count': not_found_count,
+            'errors': errors[:10]  # Ограничиваем количество ошибок в ответе
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        from datetime import timezone
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"ERROR in update_cpus_benchmark_ratings: {str(e)}")
+        print(error_trace)
+        return jsonify({
+            'success': False,
+            'error': f'Произошла ошибка: {str(e)}',
+            'traceback': error_trace if app.debug else None,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 500
 
 # === ЗАПУСК ПРИЛОЖЕНИЯ ===
 

@@ -4141,39 +4141,24 @@ def link_machine_equipment(machine_id):
         
         machine.equipment_id = equipment_id
         
-        # Проверяем конфликт IP-адресов и обновляем IP в ТМЦ приоритетом из API v2
-        ip_updated = False
-        if machine.ip_address:
-            old_ip = equipment.ip or ''
-            new_ip = machine.ip_address.strip()
-            
-            # Если IP-адреса различаются, обновляем IP в ТМЦ на IP из API v2
-            if old_ip != new_ip:
-                equipment.ip = new_ip
-                ip_updated = True
-                
-                # Записываем обновление IP в историю машины
-                ip_history_record = MachineHistory(
-                    machine_id=machine.id,
-                    changed_field='equipment_ip',
-                    old_value=old_ip if old_ip else None,
-                    new_value=new_ip,
-                    comment=f'IP-адрес ТМЦ обновлен из API v2 (было: {old_ip if old_ip else "не указано"})'
-                )
-                db.session.add(ip_history_record)
+        # Синхронизируем данные Machine -> Equipment (избавляемся от дублирования)
+        # Приоритет данных: Machine -> Equipment (данные из Machine перезаписывают Equipment)
+        sync_result = sync_machine_to_equipment(machine)
+        synced_fields = sync_result.get('fields', [])
         
         # Записываем привязку в историю
+        sync_info = f" (синхронизированы поля: {', '.join(synced_fields)})" if synced_fields else ''
         history_record = MachineHistory(
             machine_id=machine.id,
             changed_field='equipment_id',
             old_value=str(old_equipment_id) if old_equipment_id else None,
             new_value=str(equipment_id),
-            comment=f'Привязано к ТМЦ: {equipment.buhname}' + (f' (IP обновлен: {machine.ip_address})' if ip_updated else '')
+            comment=f'Привязано к ТМЦ: {equipment.buhname}' + sync_info
         )
         db.session.add(history_record)
         
-        if ip_updated:
-            flash(f'Машина привязана к ТМЦ: {equipment.buhname}. IP-адрес ТМЦ обновлен на {machine.ip_address} (приоритет API v2)', 'success')
+        if synced_fields:
+            flash(f'Машина привязана к ТМЦ: {equipment.buhname}. Синхронизированы поля: {", ".join(synced_fields)}', 'success')
         else:
             flash(f'Машина привязана к ТМЦ: {equipment.buhname}', 'success')
     else:
@@ -4269,40 +4254,25 @@ def auto_link_machine_equipment(machine_id):
         old_equipment_id = machine.equipment_id
         machine.equipment_id = equipment.id
         
-        # Проверяем конфликт IP-адресов и обновляем IP в ТМЦ приоритетом из API v2
-        ip_updated = False
-        if machine.ip_address:
-            old_ip = equipment.ip or ''
-            new_ip = machine.ip_address.strip()
-            
-            # Если IP-адреса различаются, обновляем IP в ТМЦ на IP из API v2
-            if old_ip != new_ip:
-                equipment.ip = new_ip
-                ip_updated = True
-                
-                # Записываем обновление IP в историю машины
-                ip_history_record = MachineHistory(
-                    machine_id=machine.id,
-                    changed_field='equipment_ip',
-                    old_value=old_ip if old_ip else None,
-                    new_value=new_ip,
-                    comment=f'IP-адрес ТМЦ обновлен из API v2 (было: {old_ip if old_ip else "не указано"})'
-                )
-                db.session.add(ip_history_record)
+        # Синхронизируем данные Machine -> Equipment (избавляемся от дублирования)
+        # Приоритет данных: Machine -> Equipment (данные из Machine перезаписывают Equipment)
+        sync_result = sync_machine_to_equipment(machine)
+        synced_fields = sync_result.get('fields', [])
         
         # Записываем привязку в историю
+        sync_info = f" (синхронизированы поля: {', '.join(synced_fields)})" if synced_fields else ''
         history_record = MachineHistory(
             machine_id=machine.id,
             changed_field='equipment_id',
             old_value=str(old_equipment_id) if old_equipment_id else None,
             new_value=str(equipment.id),
-            comment=f'Автоматически привязано к ТМЦ: {equipment.buhname}' + (f' (IP обновлен: {machine.ip_address})' if ip_updated else '')
+            comment=f'Автоматически привязано к ТМЦ: {equipment.buhname}' + sync_info
         )
         db.session.add(history_record)
         db.session.commit()
         
-        if ip_updated:
-            flash(f'Машина автоматически привязана к ТМЦ: {equipment.buhname}. IP-адрес ТМЦ обновлен на {machine.ip_address} (приоритет API v2)', 'success')
+        if synced_fields:
+            flash(f'Машина автоматически привязана к ТМЦ: {equipment.buhname}. Синхронизированы поля: {", ".join(synced_fields)}', 'success')
         else:
             flash(f'Машина автоматически привязана к ТМЦ: {equipment.buhname}', 'success')
     else:
@@ -5629,6 +5599,7 @@ def monitoring_place_devices(place_id):
     place = Places.query.get_or_404(place_id)
     
     # Получаем все устройства с IP адресами в помещении (для всех пользователей)
+    from models import Machine
     equipment_list = db.session.query(Equipment).join(
         Nome, Equipment.nomeid == Nome.id
     ).join(
@@ -5649,9 +5620,15 @@ def monitoring_place_devices(place_id):
     for eq in equipment_list:
         ip = eq.ip.strip()
         if ip:
+            # Получаем hostname связанной машины, если она есть
+            # Используем relationship через backref 'machine' из модели Equipment
+            machine = eq.machine
+            display_name = machine.hostname if machine and machine.hostname else eq.buhname
+            
             devices_data.append({
                 'id': eq.id,
-                'name': eq.buhname,
+                'name': display_name,
+                'original_name': eq.buhname,  # Оставляем оригинальное имя для справки
                 'ip': ip,
                 'nome': eq.nome.name if eq.nome else 'Неизвестно',
                 'sernum': eq.sernum or '—',
@@ -6586,6 +6563,82 @@ def api_hdd_collect():
     
     return jsonify(response), 200
 
+def fix_windows_version(version):
+    """
+    Исправляет 'Windows 6' на 'Windows 7' только для этого случая.
+    """
+    if version and str(version).strip() == '6':
+        return '7'
+    return version
+
+def sync_machine_to_equipment(machine, changed_fields=None):
+    """
+    Синхронизирует данные из Machine в связанный Equipment (ТМЦ).
+    Приоритет данных: Machine -> Equipment (данные из Machine перезаписывают Equipment).
+    Это избавляет от дублирования данных и обеспечивает единый источник истины.
+    
+    Args:
+        machine: Объект Machine
+        changed_fields: Список измененных полей (для логирования)
+    
+    Returns:
+        dict: Информация об обновленных полях Equipment
+    """
+    if not machine.equipment_id:
+        return {'updated': False, 'fields': []}
+    
+    from models import Equipment, MachineHistory
+    
+    equipment = Equipment.query.get(machine.equipment_id)
+    if not equipment:
+        return {'updated': False, 'fields': []}
+    
+    updated_fields = []
+    sync_mapping = {
+        'ip_address': ('ip', str),  # Machine.ip_address -> Equipment.ip
+        # Можно добавить другие поля для синхронизации в будущем
+        # 'hostname': ('buhname', str),  # Например, если нужно синхронизировать имя
+    }
+    
+    for machine_field, (equipment_field, converter) in sync_mapping.items():
+        machine_value = getattr(machine, machine_field, None)
+        equipment_value = getattr(equipment, equipment_field, None)
+        
+        # Преобразуем значение если нужно
+        if machine_value is not None:
+            if converter == str:
+                machine_value = str(machine_value).strip() if machine_value else ''
+            else:
+                machine_value = converter(machine_value)
+        
+        # Обновляем только если значения различаются
+        if machine_value != equipment_value:
+            old_value = equipment_value
+            setattr(equipment, equipment_field, machine_value)
+            updated_fields.append({
+                'field': equipment_field,
+                'old_value': old_value,
+                'new_value': machine_value
+            })
+            
+            # Записываем в историю машины
+            history_record = MachineHistory(
+                machine_id=machine.id,
+                changed_field=f'equipment_{equipment_field}',
+                old_value=str(old_value) if old_value else None,
+                new_value=str(machine_value) if machine_value else None,
+                comment=f'Поле ТМЦ "{equipment_field}" синхронизировано из Machine.{machine_field}'
+            )
+            db.session.add(history_record)
+    
+    if updated_fields:
+        db.session.flush()  # Сохраняем изменения Equipment
+    
+    return {
+        'updated': len(updated_fields) > 0,
+        'fields': [f['field'] for f in updated_fields]
+    }
+
 @app.route('/api/hdd_collect/v2', methods=['POST'])
 def api_hdd_collect_v2():
     """
@@ -6693,6 +6746,9 @@ def api_hdd_collect_v2():
                     if os_field in os_data:
                         old_val = getattr(machine, field, None)
                         new_val = os_data[os_field]
+                        # Исправляем 'Windows 6' на 'Windows 7' только для os_version
+                        if field == 'os_version':
+                            new_val = fix_windows_version(new_val)
                         if old_val != new_val:
                             old_values[field] = old_val
                             setattr(machine, field, new_val)
@@ -6728,27 +6784,11 @@ def api_hdd_collect_v2():
             machine.last_seen = datetime.utcnow()
             machine.updated_at = datetime.utcnow()
             
-            # Если машина привязана к ТМЦ и изменился IP-адрес, обновляем IP в ТМЦ (приоритет API v2)
-            if machine.equipment_id and 'ip_address' in machine_changes:
-                from models import Equipment
-                equipment = Equipment.query.get(machine.equipment_id)
-                if equipment and machine.ip_address:
-                    old_ip = equipment.ip or ''
-                    new_ip = machine.ip_address.strip()
-                    
-                    # Если IP-адреса различаются, обновляем IP в ТМЦ на IP из API v2
-                    if old_ip != new_ip:
-                        equipment.ip = new_ip
-                        
-                        # Записываем обновление IP в историю машины
-                        ip_history_record = MachineHistory(
-                            machine_id=machine.id,
-                            changed_field='equipment_ip',
-                            old_value=old_ip if old_ip else None,
-                            new_value=new_ip,
-                            comment=f'IP-адрес ТМЦ обновлен из API v2 (было: {old_ip if old_ip else "не указано"})'
-                        )
-                        db.session.add(ip_history_record)
+            # Синхронизируем данные Machine -> Equipment при каждом обновлении
+            # Это избавляет от дублирования данных и обеспечивает единый источник истины
+            # Приоритет данных: Machine -> Equipment (данные из Machine перезаписывают Equipment)
+            # Функция обновит только те поля Equipment, которые отличаются от Machine
+            sync_result = sync_machine_to_equipment(machine, changed_fields=machine_changes)
             
             # Записываем изменения в историю
             if machine_changes:
@@ -6783,7 +6823,7 @@ def api_hdd_collect_v2():
                 ip_address=machine_data.get('ip_address'),
                 mac_address=mac_address,  # Уже нормализован выше
                 os_name=os_data.get('name') if os_data else None,
-                os_version=os_data.get('version') if os_data else None,
+                os_version=fix_windows_version(os_data.get('version')) if os_data else None,
                 os_build=os_data.get('build') if os_data else None,
                 os_edition=os_data.get('edition') if os_data else None,
                 os_architecture=os_data.get('architecture') if os_data else None,

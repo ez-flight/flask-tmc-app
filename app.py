@@ -3745,6 +3745,19 @@ def add_hard_drive():
                          vendors=vendors,
                          is_admin=is_admin)
 
+@app.route('/pc_components/graphics_card/<int:card_id>')
+@login_required
+def graphics_card_detail(card_id):
+    """Детальная информация о видеокарте."""
+    from models import PCGraphicsCard
+    
+    graphics_card = PCGraphicsCard.query.get_or_404(card_id)
+    is_admin = current_user.mode == 1
+    
+    return render_template('pc_components/graphics_card_detail.html',
+                         graphics_card=graphics_card,
+                         is_admin=is_admin)
+
 @app.route('/pc_components/edit_graphics_card/<int:card_id>', methods=['GET', 'POST'])
 @login_required
 def edit_graphics_card(card_id):
@@ -7916,6 +7929,42 @@ def update_hard_drives_from_external():
             'message': f'Обновлено {updated_count} жестких дисков.',
             'updated_count': updated_count,
             'errors': errors[:10]
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': f'Произошла ошибка: {str(e)}',
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        }), 500
+
+@app.route('/api/graphics_cards/update_from_api', methods=['POST'])
+@login_required
+def update_graphics_cards_from_api():
+    """
+    Обновление данных видеокарт из внешних источников.
+    В настоящее время функционал находится в разработке.
+    """
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        return jsonify({
+            'success': False,
+            'error': 'Доступ запрещён. Только администратор может обновлять данные.'
+        }), 403
+    
+    try:
+        from models import PCGraphicsCard
+        
+        # В настоящее время функционал обновления видеокарт из API не реализован
+        # Возвращаем сообщение о том, что функционал в разработке
+        return jsonify({
+            'success': False,
+            'error': 'Функционал обновления видеокарт из внешних источников находится в разработке.',
+            'updated': 0,
+            'not_found': 0,
+            'errors': []
         }), 200
         
     except Exception as e:

@@ -1,345 +1,273 @@
 {% extends "base.html" %}
-{% block title %}Видеокарта: {{ card.vendor.name if card.vendor else 'Unknown' }} {{ card.model }}{% endblock %}
+{% block title %}Видеокарта: {{ graphics_card.vendor.name if graphics_card.vendor else 'Unknown' }} {{ graphics_card.model }}{% endblock %}
 {% block content %}
 <div class="page-header">
     <div>
-        <h1>{{ card.vendor.name if card.vendor else 'Unknown' }} {{ card.model }}</h1>
+        <h1>
+            <i class="bi bi-gpu-card me-2"></i>
+            {{ graphics_card.vendor.name if graphics_card.vendor else 'Unknown' }} {{ graphics_card.model }}
+        </h1>
         <p class="text-muted mb-0">Детальная информация о видеокарте</p>
     </div>
     <div class="user-info">
         <a href="{{ url_for('graphics_cards_list') }}" class="btn btn-secondary btn-sm me-2">
             <i class="bi bi-arrow-left me-1"></i>Назад к списку
         </a>
-        <a href="{{ url_for('edit_graphics_card', card_id=card.id) }}" class="btn btn-primary btn-sm me-2">
+        {% if is_admin %}
+        <a href="{{ url_for('edit_graphics_card', card_id=graphics_card.id) }}" class="btn btn-primary btn-sm me-2">
             <i class="bi bi-pencil me-1"></i>Редактировать
         </a>
-        <a href="{{ url_for('pc_components') }}" class="btn btn-outline-secondary btn-sm">
-            <i class="bi bi-house me-1"></i>Главная
-        </a>
-    </div>
-</div>
-
-<!-- Основная информация -->
-<div class="card mb-4">
-    <div class="card-header">
-        <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Основная информация</h5>
-    </div>
-    <div class="card-body">
-        <div class="row g-3">
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-building text-primary me-2 mt-1"></i>
-                    <div>
-                        <strong>Производитель:</strong><br>
-                        {{ card.vendor.name if card.vendor else 'Не указан' }}
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-cpu text-info me-2 mt-1"></i>
-                    <div>
-                        <strong>Модель:</strong><br>
-                        {{ card.model }}
-                    </div>
-                </div>
-            </div>
-            {% if card.serial_number %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-upc-scan text-secondary me-2 mt-1"></i>
-                    <div>
-                        <strong>Серийный номер:</strong><br>
-                        <code>{{ card.serial_number }}</code>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {% if card.machine %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-pc-display text-success me-2 mt-1"></i>
-                    <div>
-                        <strong>Установлена в:</strong><br>
-                        <a href="{{ url_for('machine_detail', machine_id=card.machine.id) }}" 
-                           class="text-decoration-none">
-                            {{ card.machine.hostname }}
-                        </a>
-                        {% if card.machine.ip_address %}
-                            <br><small class="text-muted">{{ card.machine.ip_address }}</small>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-</div>
-
-<!-- Характеристики памяти -->
-<div class="card mb-4">
-    <div class="card-header">
-        <h5 class="mb-0"><i class="bi bi-memory me-2"></i>Характеристики памяти</h5>
-    </div>
-    <div class="card-body">
-        <div class="row g-3">
-            {% if card.memory_size %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-hdd-stack text-primary me-2 mt-1"></i>
-                    <div>
-                        <strong>Объем памяти:</strong><br>
-                        {{ card.memory_size }} МБ
-                        {% if card.memory_size >= 1024 %}
-                            ({{ "%.2f"|format(card.memory_size / 1024) }} ГБ)
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {% if card.memory_type %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-diagram-3 text-info me-2 mt-1"></i>
-                    <div>
-                        <strong>Тип памяти:</strong><br>
-                        {{ card.memory_type }}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {% if card.memory_clock_mhz %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-speedometer text-warning me-2 mt-1"></i>
-                    <div>
-                        <strong>Частота памяти:</strong><br>
-                        {{ card.memory_clock_mhz }} МГц
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {% if card.memory_bandwidth_gbps %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-arrow-left-right text-success me-2 mt-1"></i>
-                    <div>
-                        <strong>Пропускная способность:</strong><br>
-                        {{ "%.2f"|format(card.memory_bandwidth_gbps) }} ГБ/с
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {% if card.memory_bus_width_bits %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-diagram-2 text-danger me-2 mt-1"></i>
-                    <div>
-                        <strong>Ширина шины памяти:</strong><br>
-                        {{ card.memory_bus_width_bits }} бит
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-</div>
-
-<!-- Технические характеристики -->
-<div class="card mb-4">
-    <div class="card-header">
-        <h5 class="mb-0"><i class="bi bi-gear me-2"></i>Технические характеристики</h5>
-    </div>
-    <div class="card-body">
-        <div class="row g-3">
-            {% if card.core_clock_mhz %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-cpu-fill text-primary me-2 mt-1"></i>
-                    <div>
-                        <strong>Частота ядра:</strong><br>
-                        {{ card.core_clock_mhz }} МГц
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {% if card.bus_interface %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-plug text-info me-2 mt-1"></i>
-                    <div>
-                        <strong>Интерфейс шины:</strong><br>
-                        {{ card.bus_interface }}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {% if card.tdp_watts %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-lightning-charge text-warning me-2 mt-1"></i>
-                    <div>
-                        <strong>Энергопотребление (TDP):</strong><br>
-                        {{ card.tdp_watts }} Вт
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {% if card.code_name %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-code-square text-secondary me-2 mt-1"></i>
-                    <div>
-                        <strong>Кодовое имя:</strong><br>
-                        {{ card.code_name }}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {% if card.launch_date %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-calendar-event text-success me-2 mt-1"></i>
-                    <div>
-                        <strong>Дата выпуска:</strong><br>
-                        {{ card.launch_date.strftime('%d.%m.%Y') if card.launch_date else '—' }}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-</div>
-
-<!-- Поддержка API -->
-{% if card.direct3d_version or card.opengl_version %}
-<div class="card mb-4">
-    <div class="card-header">
-        <h5 class="mb-0"><i class="bi bi-code-slash me-2"></i>Поддержка API</h5>
-    </div>
-    <div class="card-body">
-        <div class="row g-3">
-            {% if card.direct3d_version %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-windows text-primary me-2 mt-1"></i>
-                    <div>
-                        <strong>Direct3D:</strong><br>
-                        Версия {{ card.direct3d_version }}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {% if card.opengl_version %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-box text-info me-2 mt-1"></i>
-                    <div>
-                        <strong>OpenGL:</strong><br>
-                        Версия {{ card.opengl_version }}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<!-- Финансовая информация -->
-{% if card.purchase_date or card.purchase_cost %}
-<div class="card mb-4">
-    <div class="card-header">
-        <h5 class="mb-0"><i class="bi bi-cash-coin me-2"></i>Финансовая информация</h5>
-    </div>
-    <div class="card-body">
-        <div class="row g-3">
-            {% if card.purchase_date %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-calendar-check text-success me-2 mt-1"></i>
-                    <div>
-                        <strong>Дата приобретения:</strong><br>
-                        {{ card.purchase_date.strftime('%d.%m.%Y') if card.purchase_date else '—' }}
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-            {% if card.purchase_cost %}
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-currency-exchange text-warning me-2 mt-1"></i>
-                    <div>
-                        <strong>Стоимость приобретения:</strong><br>
-                        {{ "{:,.2f}".format(card.purchase_cost).replace(',', ' ') }} ₽
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-</div>
-{% endif %}
-
-<!-- Дополнительная информация -->
-{% if card.comment or card.api_data_updated_at %}
-<div class="card mb-4">
-    <div class="card-header">
-        <h5 class="mb-0"><i class="bi bi-chat-left-text me-2"></i>Дополнительная информация</h5>
-    </div>
-    <div class="card-body">
-        {% if card.comment %}
-        <div class="mb-3">
-            <strong>Комментарий:</strong><br>
-            <p class="mb-0">{{ card.comment|nl2br }}</p>
-        </div>
-        {% endif %}
-        {% if card.api_data_updated_at %}
-        <div>
-            <strong>Данные из API обновлены:</strong><br>
-            <small class="text-muted">
-                {{ card.api_data_updated_at.strftime('%d.%m.%Y %H:%M:%S') if card.api_data_updated_at else '—' }}
-            </small>
-        </div>
         {% endif %}
     </div>
 </div>
-{% endif %}
 
-<!-- Метаданные -->
-<div class="card mb-4">
-    <div class="card-header">
-        <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Метаданные</h5>
+<div class="row">
+    <!-- Основная информация -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-info-circle me-2"></i>Основная информация
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <td style="width: 40%;"><strong>Производитель:</strong></td>
+                        <td>{{ graphics_card.vendor.name if graphics_card.vendor else 'Не указано' }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Модель:</strong></td>
+                        <td><strong>{{ graphics_card.model }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Серийный номер:</strong></td>
+                        <td>
+                            {% if graphics_card.serial_number %}
+                                <code>{{ graphics_card.serial_number }}</code>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Объем памяти:</strong></td>
+                        <td>
+                            {% if graphics_card.memory_size %}
+                                {{ graphics_card.memory_size }} МБ
+                                {% if graphics_card.memory_type %}
+                                    <span class="text-muted">({{ graphics_card.memory_type }})</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>Тип памяти:</strong></td>
+                        <td>{{ graphics_card.memory_type or '<span class="text-muted">—</span>'|safe }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Статус:</strong></td>
+                        <td>
+                            {% if graphics_card.active %}
+                                <span class="badge bg-success">Активна</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Неактивна</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
     </div>
-    <div class="card-body">
-        <div class="row g-3">
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-calendar-plus text-secondary me-2 mt-1"></i>
-                    <div>
-                        <strong>Дата создания записи:</strong><br>
+
+    <!-- Технические характеристики -->
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-cpu me-2"></i>Технические характеристики
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    {% if graphics_card.core_clock_mhz %}
+                    <tr>
+                        <td style="width: 50%;"><strong>Частота ядра:</strong></td>
+                        <td>{{ graphics_card.core_clock_mhz }} МГц</td>
+                    </tr>
+                    {% endif %}
+                    {% if graphics_card.memory_clock_mhz %}
+                    <tr>
+                        <td><strong>Частота памяти:</strong></td>
+                        <td>{{ graphics_card.memory_clock_mhz }} МГц</td>
+                    </tr>
+                    {% endif %}
+                    {% if graphics_card.memory_bandwidth_gbps %}
+                    <tr>
+                        <td><strong>Пропускная способность памяти:</strong></td>
+                        <td>{{ graphics_card.memory_bandwidth_gbps }} ГБ/с</td>
+                    </tr>
+                    {% endif %}
+                    {% if graphics_card.memory_bus_width_bits %}
+                    <tr>
+                        <td><strong>Ширина шины памяти:</strong></td>
+                        <td>{{ graphics_card.memory_bus_width_bits }} бит</td>
+                    </tr>
+                    {% endif %}
+                    {% if graphics_card.tdp_watts %}
+                    <tr>
+                        <td><strong>Энергопотребление (TDP):</strong></td>
+                        <td>{{ graphics_card.tdp_watts }} Вт</td>
+                    </tr>
+                    {% endif %}
+                    {% if graphics_card.bus_interface %}
+                    <tr>
+                        <td><strong>Интерфейс шины:</strong></td>
+                        <td>{{ graphics_card.bus_interface }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if graphics_card.direct3d_version %}
+                    <tr>
+                        <td><strong>Direct3D:</strong></td>
+                        <td>{{ graphics_card.direct3d_version }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if graphics_card.opengl_version %}
+                    <tr>
+                        <td><strong>OpenGL:</strong></td>
+                        <td>{{ graphics_card.opengl_version }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if graphics_card.code_name %}
+                    <tr>
+                        <td><strong>Кодовое имя:</strong></td>
+                        <td><code>{{ graphics_card.code_name }}</code></td>
+                    </tr>
+                    {% endif %}
+                    {% if graphics_card.launch_date %}
+                    <tr>
+                        <td><strong>Дата выпуска:</strong></td>
+                        <td>{{ graphics_card.launch_date.strftime('%d.%m.%Y') }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if not graphics_card.core_clock_mhz and not graphics_card.memory_clock_mhz and not graphics_card.memory_bandwidth_gbps %}
+                    <tr>
+                        <td colspan="2" class="text-center text-muted py-3">
+                            <i class="bi bi-info-circle me-1"></i>Технические характеристики не указаны
+                        </td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Связанная машина -->
+{% if graphics_card.machine %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-pc-display me-2"></i>Установлена на компьютере
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">
+                            <a href="{{ url_for('machine_detail', machine_id=graphics_card.machine.id) }}" 
+                               class="text-decoration-none">
+                                <i class="bi bi-pc-display me-1"></i>{{ graphics_card.machine.hostname }}
+                            </a>
+                        </h6>
+                        {% if graphics_card.machine.ip_address %}
                         <small class="text-muted">
-                            {{ card.created_at.strftime('%d.%m.%Y %H:%M:%S') if card.created_at else '—' }}
+                            <i class="bi bi-router me-1"></i>IP: {{ graphics_card.machine.ip_address }}
                         </small>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <a href="{{ url_for('machine_detail', machine_id=graphics_card.machine.id) }}" 
+                           class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-arrow-right me-1"></i>Подробнее о компьютере
+                        </a>
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="d-flex align-items-start">
-                    <i class="bi bi-toggle-on text-success me-2 mt-1"></i>
-                    <div>
-                        <strong>Статус:</strong><br>
-                        {% if card.active %}
-                            <span class="badge bg-success">Активна</span>
-                        {% else %}
-                            <span class="badge bg-secondary">Неактивна</span>
-                        {% endif %}
-                    </div>
-                </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Финансы и даты -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-cash-coin me-2"></i>Финансы и даты
+                </h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    {% if graphics_card.purchase_date %}
+                    <tr>
+                        <td style="width: 50%;"><strong>Дата приобретения:</strong></td>
+                        <td>{{ graphics_card.purchase_date.strftime('%d.%m.%Y') }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if graphics_card.purchase_cost %}
+                    <tr>
+                        <td><strong>Стоимость приобретения:</strong></td>
+                        <td>
+                            <strong class="text-success">
+                                {{ "{:,.2f}".format(graphics_card.purchase_cost).replace(',', ' ').replace('.', ',') }} ₽
+                            </strong>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if not graphics_card.purchase_date and not graphics_card.purchase_cost %}
+                    <tr>
+                        <td colspan="2" class="text-center text-muted py-3">
+                            <i class="bi bi-info-circle me-1"></i>Финансовая информация не указана
+                        </td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Дополнительная информация -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-chat-text me-2"></i>Дополнительная информация
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if graphics_card.comment %}
+                <p class="mb-0">{{ graphics_card.comment }}</p>
+                {% else %}
+                <p class="text-muted mb-0">
+                    <i class="bi bi-info-circle me-1"></i>Комментарий не указан
+                </p>
+                {% endif %}
+                {% if graphics_card.api_data_updated_at %}
+                <hr>
+                <small class="text-muted">
+                    <i class="bi bi-clock-history me-1"></i>
+                    Данные из API обновлены: {{ graphics_card.api_data_updated_at.strftime('%d.%m.%Y %H:%M') }}
+                </small>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
 
 {% endblock %}
-

@@ -3238,11 +3238,41 @@ def graphics_cards_list():
     
     from models import PCGraphicsCard, Machine
     from sqlalchemy.orm import joinedload
+    from sqlalchemy import or_
     
     # Получаем видеокарты с загрузкой связанных машин
+    # Исключаем встроенные видеокарты (Integrated Graphics)
     graphics_cards = PCGraphicsCard.query.filter_by(active=True).options(
         joinedload(PCGraphicsCard.machine)
-    ).order_by(PCGraphicsCard.created_at.desc()).all()
+    ).filter(
+        # Исключаем встроенные видеокарты по названию модели
+        ~func.upper(PCGraphicsCard.model).like('%HD GRAPHICS%'),
+        ~func.upper(PCGraphicsCard.model).like('%UHD GRAPHICS%'),
+        ~func.upper(PCGraphicsCard.model).like('%IRIS%'),
+        ~func.upper(PCGraphicsCard.model).like('%INTEGRATED%'),
+        ~func.upper(PCGraphicsCard.model).like('%VEGA%'),
+        ~func.upper(PCGraphicsCard.model).like('%RADEON GRAPHICS%'),
+        # Исключаем стандартные VGA адаптеры
+        ~func.upper(PCGraphicsCard.model).like('%VGA%'),
+        ~func.upper(PCGraphicsCard.model).like('%STANDARD%'),
+        ~func.upper(PCGraphicsCard.model).like('%ГРАФИЧЕСКИЙ АДАПТЕР%'),
+        # Исключаем базовые видеоадаптеры Microsoft
+        ~func.upper(PCGraphicsCard.model).like('%БАЗОВЫЙ%'),
+        ~func.upper(PCGraphicsCard.model).like('%ВИДЕОАДАПТЕР%'),
+        ~func.upper(PCGraphicsCard.model).like('%МАЙКРОСОФТ%'),
+        ~func.upper(PCGraphicsCard.model).like('%MICROSOFT%'),
+        ~func.upper(PCGraphicsCard.model).like('%BASIC%'),
+        # Также исключаем по типу GPU, если указан
+        or_(PCGraphicsCard.gpu_type.is_(None), PCGraphicsCard.gpu_type != 'Integrated')
+    ).order_by(
+        # Сначала по дате выпуска (новые сначала), NULL в конце
+        # В MySQL при DESC NULL автоматически идут в конец
+        case((PCGraphicsCard.launch_date.is_(None), 1), else_=0),
+        PCGraphicsCard.launch_date.desc(),
+        # Потом по объему памяти (больше сначала), NULL в конце
+        case((PCGraphicsCard.memory_size.is_(None), 1), else_=0),
+        PCGraphicsCard.memory_size.desc()
+    ).all()
     
     return render_template('pc_components/graphics_cards_list.html',
                          graphics_cards=graphics_cards,
@@ -3787,6 +3817,40 @@ def edit_graphics_card(card_id):
         comment = request.form.get('comment', '').strip()
         active = request.form.get('active') == 'on'
         
+        # Технические характеристики
+        launch_date_str = request.form.get('launch_date', '')
+        code_name = request.form.get('code_name', '').strip()
+        core_clock_mhz = request.form.get('core_clock_mhz', type=int)
+        boost_clock_mhz = request.form.get('boost_clock_mhz', type=int)
+        memory_clock_mhz = request.form.get('memory_clock_mhz', type=int)
+        memory_bandwidth_gbps = request.form.get('memory_bandwidth_gbps', type=float)
+        memory_bus_width_bits = request.form.get('memory_bus_width_bits', type=int)
+        tdp_watts = request.form.get('tdp_watts', type=int)
+        bus_interface = request.form.get('bus_interface', '').strip()
+        gpu_type = request.form.get('gpu_type', '').strip()
+        
+        # Производительность и архитектура
+        core_config = request.form.get('core_config', '').strip()
+        sm_count = request.form.get('sm_count', '').strip()
+        fillrate_pixel_gps = request.form.get('fillrate_pixel_gps', type=float)
+        fillrate_texture_gts = request.form.get('fillrate_texture_gts', type=float)
+        pixel_shader_count = request.form.get('pixel_shader_count', type=float)
+        single_precision_tflops = request.form.get('single_precision_tflops', '').strip()
+        double_precision_tflops = request.form.get('double_precision_tflops', '').strip()
+        half_precision_tflops = request.form.get('half_precision_tflops', '').strip()
+        
+        # Технологии и процесс
+        fab_nm = request.form.get('fab_nm', type=float)
+        process = request.form.get('process', '').strip()
+        die_size_mm2 = request.form.get('die_size_mm2', type=float)
+        transistors_billion = request.form.get('transistors_billion', type=float)
+        l_cache_mb = request.form.get('l_cache_mb', type=float)
+        release_price_usd = request.form.get('release_price_usd', type=float)
+        
+        # API поддержка
+        direct3d_version = request.form.get('direct3d_version', '').strip()
+        opengl_version = request.form.get('opengl_version', '').strip()
+        
         if not vendor_id or not model:
             flash('Производитель и модель обязательны для заполнения', 'danger')
             return redirect(url_for('edit_graphics_card', card_id=card_id))
@@ -3794,10 +3858,12 @@ def edit_graphics_card(card_id):
         try:
             purchase_date = datetime.strptime(purchase_date_str, '%Y-%m-%d').date() if purchase_date_str else None
             purchase_cost = Decimal(purchase_cost_str) if purchase_cost_str else None
-        except (ValueError, InvalidOperation):
-            flash('Неверный формат даты или стоимости', 'danger')
+            launch_date = datetime.strptime(launch_date_str, '%Y-%m-%d').date() if launch_date_str else None
+        except (ValueError, InvalidOperation) as e:
+            flash(f'Неверный формат даты или стоимости: {str(e)}', 'danger')
             return redirect(url_for('edit_graphics_card', card_id=card_id))
         
+        # Основная информация
         graphics_card.vendor_id = vendor_id
         graphics_card.model = model
         graphics_card.memory_size = memory_size
@@ -3807,6 +3873,40 @@ def edit_graphics_card(card_id):
         graphics_card.purchase_cost = purchase_cost
         graphics_card.comment = comment
         graphics_card.active = active
+        
+        # Технические характеристики
+        graphics_card.launch_date = launch_date
+        graphics_card.code_name = code_name if code_name else None
+        graphics_card.core_clock_mhz = core_clock_mhz
+        graphics_card.boost_clock_mhz = boost_clock_mhz
+        graphics_card.memory_clock_mhz = memory_clock_mhz
+        graphics_card.memory_bandwidth_gbps = memory_bandwidth_gbps
+        graphics_card.memory_bus_width_bits = memory_bus_width_bits
+        graphics_card.tdp_watts = tdp_watts
+        graphics_card.bus_interface = bus_interface if bus_interface else None
+        graphics_card.gpu_type = gpu_type if gpu_type else None
+        
+        # Производительность и архитектура
+        graphics_card.core_config = core_config if core_config else None
+        graphics_card.sm_count = sm_count if sm_count else None
+        graphics_card.fillrate_pixel_gps = fillrate_pixel_gps
+        graphics_card.fillrate_texture_gts = fillrate_texture_gts
+        graphics_card.pixel_shader_count = pixel_shader_count
+        graphics_card.single_precision_tflops = single_precision_tflops if single_precision_tflops else None
+        graphics_card.double_precision_tflops = double_precision_tflops if double_precision_tflops else None
+        graphics_card.half_precision_tflops = half_precision_tflops if half_precision_tflops else None
+        
+        # Технологии и процесс
+        graphics_card.fab_nm = fab_nm
+        graphics_card.process = process if process else None
+        graphics_card.die_size_mm2 = die_size_mm2
+        graphics_card.transistors_billion = transistors_billion
+        graphics_card.l_cache_mb = l_cache_mb
+        graphics_card.release_price_usd = release_price_usd
+        
+        # API поддержка
+        graphics_card.direct3d_version = direct3d_version if direct3d_version else None
+        graphics_card.opengl_version = opengl_version if opengl_version else None
         
         db.session.commit()
         
@@ -3819,6 +3919,29 @@ def edit_graphics_card(card_id):
     return render_template('pc_components/edit_graphics_card.html',
                          graphics_card=graphics_card,
                          vendors=vendors,
+                         is_admin=is_admin)
+
+@app.route('/pc_components/graphics_card/<int:card_id>')
+@login_required
+def graphics_card_detail(card_id):
+    """Детальная страница видеокарты."""
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        flash('Доступ запрещён', 'danger')
+        return redirect(url_for('index'))
+    
+    from models import PCGraphicsCard
+    from sqlalchemy.orm import joinedload
+    
+    # Получаем видеокарту с загрузкой связанных данных
+    graphics_card = PCGraphicsCard.query.options(
+        joinedload(PCGraphicsCard.vendor),
+        joinedload(PCGraphicsCard.machine)
+    ).get_or_404(card_id)
+    
+    return render_template('pc_components/graphics_card_detail.html',
+                         card=graphics_card,
                          is_admin=is_admin)
 
 @app.route('/pc_components/edit_hard_drive/<int:drive_id>', methods=['GET', 'POST'])
@@ -7939,12 +8062,586 @@ def update_hard_drives_from_external():
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }), 500
 
+def load_gpu_api_data(force_refresh=False):
+    """
+    Загружает данные API gpu-info-api из локального файла или из интернета.
+    
+    Args:
+        force_refresh: Если True, принудительно обновляет данные из API
+    
+    Returns:
+        dict: Словарь со всеми данными о видеокартах из API или None в случае ошибки
+    """
+    import requests
+    import json
+    from datetime import datetime, timedelta
+    
+    # Путь к локальному файлу
+    local_file_path = os.path.join('data', 'gpu_api_data.json')
+    metadata_file_path = os.path.join('data', 'gpu_api_metadata.json')
+    
+    # Проверяем, нужно ли обновлять данные
+    should_refresh = force_refresh
+    
+    if not should_refresh and os.path.exists(local_file_path):
+        # Проверяем метаданные о последнем обновлении
+        if os.path.exists(metadata_file_path):
+            try:
+                with open(metadata_file_path, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+                    last_update = datetime.fromisoformat(metadata.get('last_update', '2000-01-01'))
+                    # Обновляем раз в день
+                    if datetime.now() - last_update < timedelta(days=1):
+                        should_refresh = False
+                    else:
+                        should_refresh = True
+            except Exception:
+                should_refresh = True
+        else:
+            should_refresh = True
+    
+    # Загружаем данные из локального файла, если он существует и не нужно обновлять
+    if not should_refresh and os.path.exists(local_file_path):
+        try:
+            with open(local_file_path, 'r', encoding='utf-8') as f:
+                gpu_data_all = json.load(f)
+                print(f"✅ Данные загружены из локального файла: {len(gpu_data_all)} видеокарт")
+                return gpu_data_all
+        except Exception as e:
+            print(f"⚠️  Ошибка при чтении локального файла: {e}, загружаем из API")
+            should_refresh = True
+    
+    # Загружаем данные из API
+    api_url = "https://raw.githubusercontent.com/voidful/gpu-info-api/gpu-data/gpu.json"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json"
+    }
+    
+    try:
+        response = requests.get(api_url, headers=headers, timeout=30)
+        
+        if response.status_code != 200:
+            print(f"Ошибка при получении данных из API: статус {response.status_code}")
+            # Пробуем загрузить из локального файла как резервный вариант
+            if os.path.exists(local_file_path):
+                with open(local_file_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            return None
+        
+        gpu_data_all = response.json()
+        
+        # Сохраняем данные в локальный файл
+        os.makedirs('data', exist_ok=True)
+        with open(local_file_path, 'w', encoding='utf-8') as f:
+            json.dump(gpu_data_all, f, ensure_ascii=False, indent=2)
+        
+        # Сохраняем метаданные
+        metadata = {
+            'last_update': datetime.now().isoformat(),
+            'total_gpus': len(gpu_data_all)
+        }
+        with open(metadata_file_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+        
+        print(f"✅ Данные загружены из API и сохранены локально: {len(gpu_data_all)} видеокарт")
+        return gpu_data_all
+        
+    except Exception as e:
+        print(f"❌ Ошибка при загрузке данных из API: {e}")
+        # Пробуем загрузить из локального файла как резервный вариант
+        if os.path.exists(local_file_path):
+            try:
+                with open(local_file_path, 'r', encoding='utf-8') as f:
+                    print(f"⚠️  Используем локальный файл как резервный вариант")
+                    return json.load(f)
+            except Exception:
+                pass
+        return None
+
+def update_local_gpu_api_data(gpu_key, gpu_data):
+    """
+    Обновляет данные конкретной видеокарты в локальном файле API.
+    
+    Args:
+        gpu_key: Ключ видеокарты в API (например, "NVIDIA_GP107-300-A1")
+        gpu_data: Словарь с обновленными данными видеокарты
+    """
+    import json
+    
+    local_file_path = os.path.join('data', 'gpu_api_data.json')
+    
+    if not os.path.exists(local_file_path):
+        return
+    
+    try:
+        # Загружаем текущие данные
+        with open(local_file_path, 'r', encoding='utf-8') as f:
+            gpu_data_all = json.load(f)
+        
+        # Обновляем данные видеокарты
+        if gpu_key in gpu_data_all:
+            gpu_data_all[gpu_key].update(gpu_data)
+        else:
+            gpu_data_all[gpu_key] = gpu_data
+        
+        # Сохраняем обновленные данные
+        with open(local_file_path, 'w', encoding='utf-8') as f:
+            json.dump(gpu_data_all, f, ensure_ascii=False, indent=2)
+        
+        print(f"✅ Локальный файл API обновлен для видеокарты: {gpu_key}")
+        
+    except Exception as e:
+        print(f"⚠️  Ошибка при обновлении локального файла API: {e}")
+
+def get_gpu_data_from_api(gpu_model, vendor_name=''):
+    """
+    Получает данные о видеокарте из локального файла или API gpu-info-api (https://github.com/voidful/gpu-info-api).
+    
+    Args:
+        gpu_model: Название модели видеокарты (например, "GeForce RTX 4070")
+        vendor_name: Название производителя (например, "NVIDIA", "AMD", "Intel")
+    
+    Returns:
+        dict: Словарь с данными о видеокарте или None в случае ошибки
+        Содержит все доступные поля из API:
+        - launch_date: Дата выпуска
+        - code_name: Кодовое имя
+        - core_clock_mhz: Частота ядра в МГц
+        - boost_clock_mhz: Частота ядра с Boost в МГц
+        - memory_clock_mhz: Частота памяти в МГц
+        - memory_bandwidth_gbps: Пропускная способность памяти в ГБ/с
+        - memory_bus_width_bits: Ширина шины памяти в битах
+        - memory_size: Объем памяти в МБ
+        - memory_type: Тип памяти
+        - tdp_watts: Энергопотребление (TDP) в ваттах
+        - bus_interface: Интерфейс шины
+        - fab_nm: Техпроцесс в нм
+        - die_size_mm2: Размер кристалла в мм²
+        - core_config: Конфигурация ядер
+        - fillrate_pixel_gps: Пиксельная производительность в GP/s
+        - fillrate_texture_gts: Текстурная производительность в GT/s
+        - release_price_usd: Цена выпуска в USD
+        - sm_count: Количество SM (Streaming Multiprocessors)
+        - process: Техпроцесс (например, "TSMC N4")
+        - transistors_billion: Количество транзисторов в миллиардах
+        - l_cache_mb: Кэш L в МБ
+        - single_precision_tflops: Single-precision TFLOPS
+        - double_precision_tflops: Double-precision TFLOPS
+        - half_precision_tflops: Half-precision TFLOPS
+        - pixel_shader_count: Количество пиксельных шейдеров
+        - gpu_type: Тип GPU (Desktop, Mobile, etc.)
+    """
+    try:
+        from datetime import datetime
+        import re
+        
+        # Загружаем данные из локального файла или API
+        gpu_data_all = load_gpu_api_data()
+        
+        if not gpu_data_all or not isinstance(gpu_data_all, dict):
+            return None
+        
+        # Нормализуем название модели и производителя для поиска
+        model_normalized = gpu_model.strip().upper()
+        vendor_normalized = vendor_name.strip().upper() if vendor_name else ''
+        
+        # Извлекаем ключевые слова из модели для поиска
+        # Например, "GeForce GTX 1050 Ti" -> ["GEFORCE", "GTX", "1050", "TI"]
+        model_words = [word for word in model_normalized.split() if len(word) > 1]
+        # Извлекаем числа из модели (например, "1050" из "GTX 1050 Ti")
+        model_numbers = [word for word in model_words if word.isdigit()]
+        
+        # Ищем совпадение по модели в данных API
+        matched_gpu = None
+        matched_key = None
+        best_match_score = 0
+        
+        # Сначала пытаемся найти точное совпадение по полю "Model"
+        for key, gpu_info in gpu_data_all.items():
+            if not isinstance(gpu_info, dict):
+                continue
+            
+            api_model = gpu_info.get('Model', '').strip().upper()
+            api_vendor = gpu_info.get('Vendor', '').strip().upper()
+            api_code_name = gpu_info.get('Code name', '').strip().upper()
+            key_upper = key.upper()
+            
+            # Пропускаем записи с "nan" в модели
+            model_is_nan = api_model == 'NAN' or api_model == ''
+            
+            match_score = 0
+            matched = False
+            
+            # Проверяем совпадение по модели (если модель не "nan")
+            if not model_is_nan and api_model:
+                # Точное совпадение или одно содержит другое
+                if model_normalized == api_model:
+                    match_score += 20  # Максимальный балл за точное совпадение
+                    matched = True
+                elif model_normalized in api_model or api_model in model_normalized:
+                    match_score += 10
+                    matched = True
+                # Проверяем совпадение по ключевым словам (нужно минимум 3 совпадения для надежности)
+                elif model_words and len(model_words) >= 2:
+                    matching_words = sum(1 for word in model_words if word in api_model)
+                    # Для моделей с числами требуем совпадение числа
+                    if model_numbers:
+                        number_match = any(num in api_model for num in model_numbers)
+                        if number_match and matching_words >= 2:
+                            match_score += matching_words * 2
+                            matched = True
+                    elif matching_words >= 3:
+                        match_score += matching_words
+                        matched = True
+            
+            # Если модель "nan", ищем по кодовому имени и ключу
+            if model_is_nan:
+                # Ищем совпадения в кодовом имени (например, GP107 для GTX 1050)
+                if api_code_name and model_numbers:
+                    if any(num in api_code_name for num in model_numbers):
+                        # Проверяем, что это правильный производитель
+                        if not vendor_normalized or vendor_normalized in key_upper or 'NVIDIA' in key_upper:
+                            match_score += 5
+                            matched = True
+                
+                # Также проверяем ключ (например, GP107-300-A1 для GTX 1050 Ti)
+                if key_upper and model_numbers:
+                    if any(num in key_upper for num in model_numbers):
+                        # Проверяем, что это правильный производитель
+                        if not vendor_normalized or vendor_normalized in key_upper:
+                            match_score += 3
+                            matched = True
+            
+            if matched:
+                # Проверяем производителя, если указан
+                vendor_match = True
+                if vendor_normalized:
+                    vendor_match = (vendor_normalized in api_vendor or api_vendor in vendor_normalized or 
+                                  vendor_normalized in key_upper or 
+                                  ('NVIDIA' in api_vendor and 'NVIDIA' in vendor_normalized))
+                
+                if vendor_match and match_score > best_match_score:
+                    matched_gpu = gpu_info
+                    matched_key = key
+                    best_match_score = match_score
+        
+        if not matched_gpu:
+            print(f"⚠️  Видеокарта не найдена в API: {vendor_name} {gpu_model}")
+            return None
+        
+        # Формируем результат
+        result = {}
+        
+        # Дата выпуска
+        launch_str = matched_gpu.get('Launch', '')
+        if launch_str:
+            try:
+                # Парсим дату в формате "2023-04-13 00:00:00"
+                launch_date = datetime.strptime(launch_str.split()[0], '%Y-%m-%d').date()
+                result['launch_date'] = launch_date
+            except (ValueError, AttributeError):
+                pass
+        
+        # Кодовое имя
+        code_name = matched_gpu.get('Code name', '')
+        if code_name:
+            result['code_name'] = code_name[:100]
+        
+        # Частота ядра (Core clock)
+        core_clock = matched_gpu.get('Core clock (MHz)', '')
+        if core_clock:
+            try:
+                # Может быть строкой или числом
+                if isinstance(core_clock, str):
+                    core_clock = core_clock.replace(',', '').strip()
+                    result['core_clock_mhz'] = int(float(core_clock))
+                else:
+                    result['core_clock_mhz'] = int(core_clock)
+            except (ValueError, TypeError):
+                pass
+        
+        # Частота памяти (Memory clock)
+        memory_clock = matched_gpu.get('Clock speeds Memory (MT/s)', '')
+        # Если не найдено, пробуем поле "Memory Clock (MHz)"
+        if not memory_clock:
+            memory_clock = matched_gpu.get('Memory Clock (MHz)', '')
+            if memory_clock:
+                try:
+                    if isinstance(memory_clock, (int, float)):
+                        result['memory_clock_mhz'] = int(memory_clock)
+                    elif isinstance(memory_clock, str):
+                        # Может быть несколько значений через пробел (например, "800 800")
+                        memory_clock = memory_clock.split()[0].replace(',', '').strip()
+                        result['memory_clock_mhz'] = int(float(memory_clock))
+                except (ValueError, TypeError):
+                    pass
+        else:
+            # Обрабатываем MT/s (конвертируем в МГц)
+            try:
+                if isinstance(memory_clock, (int, float)):
+                    # MT/s в МГц: делим на 2 (DDR память)
+                    result['memory_clock_mhz'] = int(memory_clock / 2)
+                elif isinstance(memory_clock, str):
+                    # Может быть несколько значений через пробел
+                    memory_clock = memory_clock.split()[0].replace(',', '').strip()
+                    result['memory_clock_mhz'] = int(float(memory_clock) / 2)
+            except (ValueError, TypeError):
+                pass
+        
+        # Пропускная способность памяти
+        memory_bandwidth = matched_gpu.get('Memory Bandwidth (GB/s)', '')
+        if memory_bandwidth:
+            try:
+                if isinstance(memory_bandwidth, (int, float)):
+                    result['memory_bandwidth_gbps'] = float(memory_bandwidth)
+                elif isinstance(memory_bandwidth, str):
+                    result['memory_bandwidth_gbps'] = float(memory_bandwidth.replace(',', ''))
+            except (ValueError, TypeError):
+                pass
+        
+        # Ширина шины памяти
+        memory_bus_width = matched_gpu.get('Memory Bus width (bit)', '')
+        # Если не найдено, пробуем извлечь из поля "Memory Bus type & width" (например, "DDR3 64-bit")
+        if not memory_bus_width:
+            memory_bus_type_width = matched_gpu.get('Memory Bus type & width', '')
+            if memory_bus_type_width:
+                # Извлекаем ширину шины (после пробела, до "-bit")
+                # Например, "DDR3 64-bit" -> "64"
+                import re
+                width_match = re.search(r'(\d+)\s*-?\s*bit', memory_bus_type_width, re.IGNORECASE)
+                if width_match:
+                    memory_bus_width = width_match.group(1)
+        if memory_bus_width:
+            try:
+                if isinstance(memory_bus_width, (int, float)):
+                    result['memory_bus_width_bits'] = int(memory_bus_width)
+                elif isinstance(memory_bus_width, str):
+                    result['memory_bus_width_bits'] = int(memory_bus_width.replace(',', '').strip())
+            except (ValueError, TypeError):
+                pass
+        
+        # TDP
+        tdp = matched_gpu.get('TDP (Watts)', '')
+        if tdp:
+            try:
+                if isinstance(tdp, (int, float)):
+                    result['tdp_watts'] = int(tdp)
+                elif isinstance(tdp, str):
+                    result['tdp_watts'] = int(float(tdp.replace(',', '')))
+            except (ValueError, TypeError):
+                pass
+        
+        # Интерфейс шины
+        bus_interface = matched_gpu.get('Bus interface', '')
+        if bus_interface:
+            result['bus_interface'] = bus_interface[:50]
+        
+        # Объем памяти
+        memory_size = matched_gpu.get('Memory Size (GB)', '')
+        # Если не найдено, пробуем поле "Memory Size (MiB)"
+        if not memory_size:
+            memory_size_mib = matched_gpu.get('Memory Size (MiB)', '')
+            if memory_size_mib:
+                try:
+                    if isinstance(memory_size_mib, (int, float)):
+                        result['memory_size'] = int(memory_size_mib)
+                    elif isinstance(memory_size_mib, str):
+                        # Может быть несколько значений через пробел (например, "256 512")
+                        memory_size_mib = memory_size_mib.split()[0].replace(',', '').strip()
+                        result['memory_size'] = int(float(memory_size_mib))
+                except (ValueError, TypeError):
+                    pass
+        else:
+            try:
+                if isinstance(memory_size, (int, float)):
+                    # Конвертируем ГБ в МБ
+                    result['memory_size'] = int(memory_size * 1024)
+                elif isinstance(memory_size, str):
+                    result['memory_size'] = int(float(memory_size.replace(',', '')) * 1024)
+            except (ValueError, TypeError):
+                pass
+        
+        # Тип памяти
+        memory_type = matched_gpu.get('Memory Bus type', '')
+        # Если не найдено, пробуем поле "Memory Bus type & width" (например, "DDR3 64-bit")
+        if not memory_type:
+            memory_bus_type_width = matched_gpu.get('Memory Bus type & width', '')
+            if memory_bus_type_width:
+                # Извлекаем только тип памяти (до пробела или дефиса)
+                # Например, "DDR3 64-bit" -> "DDR3"
+                memory_type = memory_bus_type_width.split()[0] if memory_bus_type_width.split() else memory_bus_type_width
+        if memory_type:
+            result['memory_type'] = memory_type[:50]
+        
+        # Boost clock (если есть)
+        boost_clock = matched_gpu.get('Clock speeds Boost core clock (MHz)', '')
+        if boost_clock:
+            try:
+                if isinstance(boost_clock, (int, float)):
+                    result['boost_clock_mhz'] = int(boost_clock)
+                elif isinstance(boost_clock, str):
+                    result['boost_clock_mhz'] = int(float(boost_clock.replace(',', '')))
+            except (ValueError, TypeError):
+                pass
+        
+        # Техпроцесс (Fab)
+        fab_nm = matched_gpu.get('Fab (nm)', '')
+        if fab_nm:
+            try:
+                if isinstance(fab_nm, (int, float)):
+                    result['fab_nm'] = float(fab_nm)
+                elif isinstance(fab_nm, str):
+                    result['fab_nm'] = float(fab_nm.replace(',', '').strip())
+            except (ValueError, TypeError):
+                pass
+        
+        # Размер кристалла
+        die_size = matched_gpu.get('Die size (mm2)', '')
+        if die_size:
+            try:
+                if isinstance(die_size, (int, float)):
+                    result['die_size_mm2'] = float(die_size)
+                elif isinstance(die_size, str):
+                    result['die_size_mm2'] = float(die_size.replace(',', '').strip())
+            except (ValueError, TypeError):
+                pass
+        
+        # Конфигурация ядер
+        core_config = matched_gpu.get('Core config', '')
+        if core_config:
+            result['core_config'] = str(core_config)[:200]
+        
+        # Пиксельная производительность
+        fillrate_pixel = matched_gpu.get('Fillrate Pixel (GP/s)', '')
+        if fillrate_pixel:
+            try:
+                if isinstance(fillrate_pixel, (int, float)):
+                    result['fillrate_pixel_gps'] = float(fillrate_pixel)
+                elif isinstance(fillrate_pixel, str):
+                    result['fillrate_pixel_gps'] = float(fillrate_pixel.replace(',', '').strip())
+            except (ValueError, TypeError):
+                pass
+        
+        # Текстурная производительность
+        fillrate_texture = matched_gpu.get('Fillrate Texture (GT/s)', '')
+        if fillrate_texture:
+            try:
+                if isinstance(fillrate_texture, (int, float)):
+                    result['fillrate_texture_gts'] = float(fillrate_texture)
+                elif isinstance(fillrate_texture, str):
+                    result['fillrate_texture_gts'] = float(fillrate_texture.replace(',', '').strip())
+            except (ValueError, TypeError):
+                pass
+        
+        # Цена выпуска
+        release_price = matched_gpu.get('Release Price (USD)', '')
+        if not release_price:
+            release_price = matched_gpu.get('Release price (USD) Founders Edition', '')
+        if release_price:
+            try:
+                if isinstance(release_price, (int, float)):
+                    result['release_price_usd'] = float(release_price)
+                elif isinstance(release_price, str):
+                    # Убираем символ доллара и запятые
+                    price_str = release_price.replace('$', '').replace(',', '').strip()
+                    if price_str:
+                        result['release_price_usd'] = float(price_str)
+            except (ValueError, TypeError):
+                pass
+        
+        # Количество SM
+        sm_count = matched_gpu.get('SM count', '')
+        if sm_count:
+            result['sm_count'] = str(sm_count)[:50]
+        
+        # Техпроцесс (Process)
+        process = matched_gpu.get('Process', '')
+        if process:
+            result['process'] = str(process)[:100]
+        
+        # Количество транзисторов
+        transistors = matched_gpu.get('Transistors (billion)', '')
+        if transistors:
+            try:
+                if isinstance(transistors, (int, float)):
+                    result['transistors_billion'] = float(transistors)
+                elif isinstance(transistors, str):
+                    result['transistors_billion'] = float(transistors.replace(',', '').strip())
+            except (ValueError, TypeError):
+                pass
+        
+        # Кэш L
+        l_cache = matched_gpu.get('L Cache (MB)', '')
+        if l_cache:
+            try:
+                if isinstance(l_cache, (int, float)):
+                    result['l_cache_mb'] = float(l_cache)
+                elif isinstance(l_cache, str):
+                    result['l_cache_mb'] = float(l_cache.replace(',', '').strip())
+            except (ValueError, TypeError):
+                pass
+        
+        # Single-precision TFLOPS
+        single_tflops = matched_gpu.get('Single-precision TFLOPS', '')
+        if single_tflops:
+            result['single_precision_tflops'] = str(single_tflops)[:50]
+        
+        # Double-precision TFLOPS
+        double_tflops = matched_gpu.get('Double-precision TFLOPS', '')
+        if double_tflops:
+            result['double_precision_tflops'] = str(double_tflops)[:50]
+        
+        # Half-precision TFLOPS
+        half_tflops = matched_gpu.get('Half-precision TFLOPS', '')
+        if half_tflops:
+            result['half_precision_tflops'] = str(half_tflops)[:50]
+        
+        # Количество пиксельных шейдеров
+        pixel_shader_count = matched_gpu.get('Pixel/unified shader count', '')
+        if pixel_shader_count:
+            try:
+                if isinstance(pixel_shader_count, (int, float)):
+                    result['pixel_shader_count'] = float(pixel_shader_count)
+                elif isinstance(pixel_shader_count, str):
+                    result['pixel_shader_count'] = float(pixel_shader_count.replace(',', '').strip())
+            except (ValueError, TypeError):
+                pass
+        
+        # Тип GPU
+        gpu_type = matched_gpu.get('GPU Type', '')
+        if gpu_type:
+            result['gpu_type'] = str(gpu_type)[:50]
+        
+        # Сохраняем метаинформацию о совпадении
+        match_info = {
+            'score': best_match_score,
+            'matched_key': matched_key,
+            'matched_model': matched_gpu.get('Model', ''),
+            'weak_match': best_match_score < 5
+        }
+        
+        if best_match_score < 5:
+            print(f"⚠️  Слабое совпадение для {vendor_name} {gpu_model} (score: {best_match_score}), требуется подтверждение")
+        
+        # Возвращаем данные и метаинформацию
+        return {
+            'data': result,
+            'match_info': match_info
+        } if result else None
+        
+    except Exception as e:
+        print(f"Ошибка при получении данных о видеокарте из API: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
 @app.route('/api/graphics_cards/update_from_api', methods=['POST'])
 @login_required
 def update_graphics_cards_from_api():
     """
-    Обновление данных видеокарт из внешних источников.
-    В настоящее время функционал находится в разработке.
+    Обновление данных о видеокартах из API gpu-info-api.
     """
     is_admin = current_user.mode == 1
     
@@ -7956,23 +8653,398 @@ def update_graphics_cards_from_api():
     
     try:
         from models import PCGraphicsCard
+        from datetime import datetime, timezone
+        import traceback
         
-        # В настоящее время функционал обновления видеокарт из API не реализован
-        # Возвращаем сообщение о том, что функционал в разработке
-        return jsonify({
-            'success': False,
-            'error': 'Функционал обновления видеокарт из внешних источников находится в разработке.',
-            'updated': 0,
-            'not_found': 0,
-            'errors': []
-        }), 200
+        # Получаем параметр allow_weak_matches из запроса
+        allow_weak_matches = False
+        weak_match_card_ids = []
+        
+        if request.is_json:
+            try:
+                json_data = request.get_json(silent=True) or {}
+                allow_weak_matches = json_data.get('allow_weak_matches', False)
+                weak_match_card_ids = json_data.get('weak_match_card_ids', [])
+            except Exception:
+                # Если не удалось распарсить JSON, используем значения по умолчанию
+                pass
+        
+        # Применяем те же фильтры, что и на странице graphics_cards (исключаем встроенные видеокарты)
+        graphics_cards_query = PCGraphicsCard.query.filter_by(active=True).filter(
+            # Исключаем встроенные видеокарты по названию модели
+            ~func.upper(PCGraphicsCard.model).like('%HD GRAPHICS%'),
+            ~func.upper(PCGraphicsCard.model).like('%UHD GRAPHICS%'),
+            ~func.upper(PCGraphicsCard.model).like('%IRIS%'),
+            ~func.upper(PCGraphicsCard.model).like('%INTEGRATED%'),
+            ~func.upper(PCGraphicsCard.model).like('%VEGA%'),
+            ~func.upper(PCGraphicsCard.model).like('%RADEON GRAPHICS%'),
+            # Исключаем стандартные VGA адаптеры
+            ~func.upper(PCGraphicsCard.model).like('%VGA%'),
+            ~func.upper(PCGraphicsCard.model).like('%STANDARD%'),
+            ~func.upper(PCGraphicsCard.model).like('%ГРАФИЧЕСКИЙ АДАПТЕР%'),
+            # Исключаем базовые видеоадаптеры Microsoft
+            ~func.upper(PCGraphicsCard.model).like('%БАЗОВЫЙ%'),
+            ~func.upper(PCGraphicsCard.model).like('%ВИДЕОАДАПТЕР%'),
+            ~func.upper(PCGraphicsCard.model).like('%МАЙКРОСОФТ%'),
+            ~func.upper(PCGraphicsCard.model).like('%MICROSOFT%'),
+            ~func.upper(PCGraphicsCard.model).like('%BASIC%'),
+            # Также исключаем по типу GPU, если указан
+            or_(PCGraphicsCard.gpu_type.is_(None), PCGraphicsCard.gpu_type != 'Integrated')
+        )
+        
+        # Если указаны конкретные ID для обновления слабых совпадений
+        if weak_match_card_ids:
+            graphics_cards_query = graphics_cards_query.filter(PCGraphicsCard.id.in_(weak_match_card_ids))
+        
+        graphics_cards = graphics_cards_query.all()
+        
+        updated_count = 0
+        not_found_count = 0
+        weak_matches = []  # Список видеокарт со слабыми совпадениями
+        errors = []
+        
+        for card in graphics_cards:
+            try:
+                vendor_name = card.vendor.name if card.vendor else ''
+                model_name = card.model.strip()
+                
+                if not model_name:
+                    not_found_count += 1
+                    continue
+                
+                # Очищаем модель от производителя, если он есть в начале модели
+                # Например, "AMD Radeon HD 6470M" -> "Radeon HD 6470M"
+                model_cleaned = model_name
+                vendor_prefixes = ['NVIDIA', 'AMD', 'INTEL', 'ATI', 'Advanced Micro Devices, Inc.']
+                for prefix in vendor_prefixes:
+                    if model_cleaned.upper().startswith(prefix.upper()):
+                        model_cleaned = model_cleaned[len(prefix):].strip()
+                        break
+                
+                # Получаем данные из API (используем очищенную модель)
+                api_result = get_gpu_data_from_api(model_cleaned, vendor_name)
+                
+                if not api_result:
+                    # Пробуем поиск только по очищенной модели
+                    api_result = get_gpu_data_from_api(model_cleaned)
+                
+                if not api_result:
+                    not_found_count += 1
+                    continue
+                
+                # Обрабатываем новый формат ответа (словарь с 'data' и 'match_info')
+                matched_key = None
+                api_vendor_name = None
+                if isinstance(api_result, dict) and 'data' in api_result:
+                    gpu_data = api_result['data']
+                    match_info = api_result.get('match_info', {})
+                    is_weak_match = match_info.get('weak_match', False)
+                    matched_key = match_info.get('matched_key')
+                    
+                    # Получаем производителя из API данных, если доступен
+                    if matched_key:
+                        gpu_data_all = load_gpu_api_data()
+                        if gpu_data_all and matched_key in gpu_data_all:
+                            api_vendor_name = gpu_data_all[matched_key].get('Vendor', '').strip()
+                    
+                    # Если слабое совпадение и не разрешено обновление
+                    if is_weak_match and not allow_weak_matches and card.id not in weak_match_card_ids:
+                        weak_matches.append({
+                            'id': card.id,
+                            'vendor': vendor_name,
+                            'model': model_name,
+                            'score': match_info.get('score', 0),
+                            'matched_model': match_info.get('matched_model', ''),
+                            'matched_key': match_info.get('matched_key', '')
+                        })
+                        continue
+                else:
+                    # Старый формат (для обратной совместимости)
+                    gpu_data = api_result
+                    is_weak_match = False
+                
+                if gpu_data and isinstance(gpu_data, dict):
+                    # Обновляем производителя из API, если он указан и отличается
+                    if api_vendor_name:
+                        # Нормализуем названия производителей для сопоставления
+                        api_vendor_normalized = api_vendor_name.upper()
+                        current_vendor_normalized = vendor_name.upper() if vendor_name else ''
+                        
+                        # Маппинг названий производителей
+                        vendor_mapping = {
+                            'AMD': ['AMD', 'ADVANCED MICRO DEVICES', 'ADVANCED MICRO DEVICES, INC.', 'ATI'],
+                            'NVIDIA': ['NVIDIA'],
+                            'Intel': ['INTEL', 'INTEL CORPORATION']
+                        }
+                        
+                        # Определяем правильное название производителя из маппинга
+                        target_vendor_name = None
+                        for standard_name, variants in vendor_mapping.items():
+                            if any(variant in api_vendor_normalized for variant in variants):
+                                target_vendor_name = standard_name
+                                break
+                        
+                        # Если производитель из API отличается от текущего, обновляем
+                        if target_vendor_name and target_vendor_name.upper() not in current_vendor_normalized:
+                            # Ищем производителя в базе данных
+                            from models import Vendor
+                            vendor = Vendor.query.filter(
+                                func.upper(Vendor.name).like(f'%{target_vendor_name.upper()}%')
+                            ).first()
+                            
+                            if vendor:
+                                card.vendor_id = vendor.id
+                                print(f"✅ Обновлен производитель для {model_name}: {vendor_name} -> {vendor.name}")
+                            else:
+                                # Если не нашли точного совпадения, пробуем найти по полному названию из API
+                                vendor = Vendor.query.filter(
+                                    func.upper(Vendor.name).like(f'%{api_vendor_normalized}%')
+                                ).first()
+                                if vendor:
+                                    card.vendor_id = vendor.id
+                                    print(f"✅ Обновлен производитель для {model_name}: {vendor_name} -> {vendor.name}")
+                    
+                    # Обновляем все доступные поля
+                    # Обновляем все доступные поля
+                    if 'launch_date' in gpu_data and gpu_data['launch_date']:
+                        card.launch_date = gpu_data['launch_date']
+                    
+                    if 'code_name' in gpu_data and gpu_data['code_name']:
+                        card.code_name = gpu_data['code_name']
+                    
+                    if 'core_clock_mhz' in gpu_data and gpu_data['core_clock_mhz']:
+                        card.core_clock_mhz = gpu_data['core_clock_mhz']
+                    
+                    if 'memory_clock_mhz' in gpu_data and gpu_data['memory_clock_mhz']:
+                        card.memory_clock_mhz = gpu_data['memory_clock_mhz']
+                    
+                    if 'memory_bandwidth_gbps' in gpu_data and gpu_data['memory_bandwidth_gbps']:
+                        card.memory_bandwidth_gbps = gpu_data['memory_bandwidth_gbps']
+                    
+                    if 'memory_bus_width_bits' in gpu_data and gpu_data['memory_bus_width_bits']:
+                        card.memory_bus_width_bits = gpu_data['memory_bus_width_bits']
+                    
+                    if 'tdp_watts' in gpu_data and gpu_data['tdp_watts']:
+                        card.tdp_watts = gpu_data['tdp_watts']
+                    
+                    if 'bus_interface' in gpu_data and gpu_data['bus_interface']:
+                        card.bus_interface = gpu_data['bus_interface']
+                    
+                    if 'memory_size' in gpu_data and gpu_data['memory_size']:
+                        # Обновляем только если в базе нет значения
+                        if not card.memory_size:
+                            card.memory_size = gpu_data['memory_size']
+                    
+                    if 'memory_type' in gpu_data and gpu_data['memory_type']:
+                        # Обновляем только если в базе нет значения
+                        if not card.memory_type:
+                            card.memory_type = gpu_data['memory_type']
+                    
+                    # Обновляем все дополнительные поля из API
+                    if 'boost_clock_mhz' in gpu_data and gpu_data['boost_clock_mhz']:
+                        card.boost_clock_mhz = gpu_data['boost_clock_mhz']
+                    
+                    if 'fab_nm' in gpu_data and gpu_data['fab_nm']:
+                        card.fab_nm = gpu_data['fab_nm']
+                    
+                    if 'die_size_mm2' in gpu_data and gpu_data['die_size_mm2']:
+                        card.die_size_mm2 = gpu_data['die_size_mm2']
+                    
+                    if 'core_config' in gpu_data and gpu_data['core_config']:
+                        card.core_config = gpu_data['core_config']
+                    
+                    if 'fillrate_pixel_gps' in gpu_data and gpu_data['fillrate_pixel_gps']:
+                        card.fillrate_pixel_gps = gpu_data['fillrate_pixel_gps']
+                    
+                    if 'fillrate_texture_gts' in gpu_data and gpu_data['fillrate_texture_gts']:
+                        card.fillrate_texture_gts = gpu_data['fillrate_texture_gts']
+                    
+                    if 'release_price_usd' in gpu_data and gpu_data['release_price_usd']:
+                        card.release_price_usd = gpu_data['release_price_usd']
+                    
+                    if 'sm_count' in gpu_data and gpu_data['sm_count']:
+                        card.sm_count = gpu_data['sm_count']
+                    
+                    if 'process' in gpu_data and gpu_data['process']:
+                        card.process = gpu_data['process']
+                    
+                    if 'transistors_billion' in gpu_data and gpu_data['transistors_billion']:
+                        card.transistors_billion = gpu_data['transistors_billion']
+                    
+                    if 'l_cache_mb' in gpu_data and gpu_data['l_cache_mb']:
+                        card.l_cache_mb = gpu_data['l_cache_mb']
+                    
+                    if 'single_precision_tflops' in gpu_data and gpu_data['single_precision_tflops']:
+                        card.single_precision_tflops = gpu_data['single_precision_tflops']
+                    
+                    if 'double_precision_tflops' in gpu_data and gpu_data['double_precision_tflops']:
+                        card.double_precision_tflops = gpu_data['double_precision_tflops']
+                    
+                    if 'half_precision_tflops' in gpu_data and gpu_data['half_precision_tflops']:
+                        card.half_precision_tflops = gpu_data['half_precision_tflops']
+                    
+                    if 'pixel_shader_count' in gpu_data and gpu_data['pixel_shader_count']:
+                        card.pixel_shader_count = gpu_data['pixel_shader_count']
+                    
+                    if 'gpu_type' in gpu_data and gpu_data['gpu_type']:
+                        card.gpu_type = gpu_data['gpu_type']
+                    
+                    card.api_data_updated_at = datetime.now(timezone.utc)
+                    
+                    # Обновляем локальный файл API с данными из базы
+                    if matched_key:
+                        # Загружаем данные из локального файла
+                        local_file_path = os.path.join('data', 'gpu_api_data.json')
+                        if os.path.exists(local_file_path):
+                            try:
+                                import json
+                                with open(local_file_path, 'r', encoding='utf-8') as f:
+                                    gpu_data_all = json.load(f)
+                                
+                                # Обновляем данные видеокарты в локальном файле данными из базы
+                                if matched_key in gpu_data_all:
+                                    # Обновляем все поля, которые были обновлены в базе
+                                    if card.launch_date:
+                                        gpu_data_all[matched_key]['Launch'] = card.launch_date.strftime('%Y-%m-%d %H:%M:%S') if isinstance(card.launch_date, date) else str(card.launch_date)
+                                    if card.code_name:
+                                        gpu_data_all[matched_key]['Code name'] = card.code_name
+                                    if card.core_clock_mhz:
+                                        gpu_data_all[matched_key]['Core clock (MHz)'] = card.core_clock_mhz
+                                    if card.boost_clock_mhz:
+                                        gpu_data_all[matched_key]['Boost clock (MHz)'] = card.boost_clock_mhz
+                                    if card.memory_clock_mhz:
+                                        gpu_data_all[matched_key]['Memory clock (MHz)'] = card.memory_clock_mhz
+                                    if card.memory_bandwidth_gbps:
+                                        gpu_data_all[matched_key]['Memory Bandwidth (GB/s)'] = card.memory_bandwidth_gbps
+                                    if card.memory_bus_width_bits:
+                                        gpu_data_all[matched_key]['Memory Bus width (bit)'] = card.memory_bus_width_bits
+                                    if card.memory_size:
+                                        gpu_data_all[matched_key]['Memory Size (MiB)'] = str(card.memory_size)
+                                    if card.memory_type:
+                                        gpu_data_all[matched_key]['Memory Type'] = card.memory_type
+                                    if card.tdp_watts:
+                                        gpu_data_all[matched_key]['TDP (Watts)'] = str(card.tdp_watts)
+                                    if card.bus_interface:
+                                        gpu_data_all[matched_key]['Bus interface'] = card.bus_interface
+                                    if card.fab_nm:
+                                        gpu_data_all[matched_key]['Fab (nm)'] = str(card.fab_nm)
+                                    if card.die_size_mm2:
+                                        gpu_data_all[matched_key]['Die size (mm)'] = card.die_size_mm2
+                                    if card.core_config:
+                                        gpu_data_all[matched_key]['Core config'] = card.core_config
+                                    if card.fillrate_pixel_gps:
+                                        gpu_data_all[matched_key]['Fillrate Pixel (GP/s)'] = card.fillrate_pixel_gps
+                                    if card.fillrate_texture_gts:
+                                        gpu_data_all[matched_key]['Fillrate Texture (GT/s)'] = card.fillrate_texture_gts
+                                    if card.release_price_usd:
+                                        gpu_data_all[matched_key]['Release Price (USD)'] = card.release_price_usd
+                                    if card.sm_count:
+                                        gpu_data_all[matched_key]['SM Count'] = card.sm_count
+                                    if card.process:
+                                        gpu_data_all[matched_key]['Process'] = card.process
+                                    if card.transistors_billion:
+                                        gpu_data_all[matched_key]['Transistors (billion)'] = card.transistors_billion
+                                    if card.l_cache_mb:
+                                        gpu_data_all[matched_key]['L2 cache'] = f"{card.l_cache_mb} MB"
+                                    if card.single_precision_tflops:
+                                        gpu_data_all[matched_key]['Processing power (TFLOPS) Single precision'] = card.single_precision_tflops
+                                    if card.double_precision_tflops:
+                                        gpu_data_all[matched_key]['Processing power (TFLOPS) Double precision'] = card.double_precision_tflops
+                                    if card.half_precision_tflops:
+                                        gpu_data_all[matched_key]['Processing power (TFLOPS) Half precision'] = card.half_precision_tflops
+                                    if card.pixel_shader_count:
+                                        gpu_data_all[matched_key]['Pixel Shader Count'] = card.pixel_shader_count
+                                    if card.gpu_type:
+                                        gpu_data_all[matched_key]['GPU Type'] = card.gpu_type
+                                    
+                                    # Сохраняем обновленные данные
+                                    with open(local_file_path, 'w', encoding='utf-8') as f:
+                                        json.dump(gpu_data_all, f, ensure_ascii=False, indent=2)
+                                    
+                                    print(f"✅ Локальный файл API обновлен для видеокарты: {matched_key}")
+                            except Exception as e:
+                                print(f"⚠️  Ошибка при обновлении локального файла API: {e}")
+                    
+                    updated_count += 1
+                else:
+                    not_found_count += 1
+                    errors.append(f"Данные не найдены для {vendor_name} {model_name}")
+                    
+            except Exception as e:
+                errors.append(f"Ошибка при обработке видеокарты {card.vendor.name if card.vendor else 'Unknown'} {card.model}: {str(e)}")
+                db.session.rollback()
+                continue
+        
+        db.session.commit()
+        
+        response_data = {
+            'success': True,
+            'message': f'Обновлено {updated_count} видеокарт с данными из gpu-info-api, не найдено {not_found_count}.',
+            'updated': updated_count,
+            'not_found': not_found_count,
+            'errors': errors[:10]  # Ограничиваем количество ошибок в ответе
+        }
+        
+        # Если есть слабые совпадения, добавляем их в ответ
+        if weak_matches:
+            response_data['weak_matches'] = weak_matches
+            response_data['weak_matches_count'] = len(weak_matches)
+            response_data['message'] += f' Найдено {len(weak_matches)} видеокарт со слабыми совпадениями, требуется подтверждение.'
+        
+        return jsonify(response_data), 200
         
     except Exception as e:
         db.session.rollback()
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"ERROR in update_graphics_cards_from_api: {str(e)}")
+        print(error_trace)
         return jsonify({
             'success': False,
             'error': f'Произошла ошибка: {str(e)}',
-            'timestamp': datetime.utcnow().isoformat() + 'Z'
+            'traceback': error_trace if app.debug else None,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 500
+
+@app.route('/api/graphics_cards/refresh_local_cache', methods=['POST'])
+@login_required
+def refresh_gpu_api_local_cache():
+    """
+    Принудительно обновляет локальный файл с данными API из интернета.
+    """
+    is_admin = current_user.mode == 1
+    
+    if not is_admin:
+        return jsonify({
+            'success': False,
+            'error': 'Доступ запрещён. Только администратор может обновлять кэш.'
+        }), 403
+    
+    try:
+        # Принудительно обновляем данные из API
+        gpu_data_all = load_gpu_api_data(force_refresh=True)
+        
+        if gpu_data_all:
+            return jsonify({
+                'success': True,
+                'message': f'Локальный файл API обновлен. Загружено {len(gpu_data_all)} видеокарт.',
+                'total_gpus': len(gpu_data_all)
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Не удалось загрузить данные из API.'
+            }), 500
+            
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"ERROR in refresh_gpu_api_local_cache: {str(e)}")
+        print(error_trace)
+        return jsonify({
+            'success': False,
+            'error': f'Произошла ошибка: {str(e)}',
+            'traceback': error_trace if app.debug else None
         }), 500
 
 @app.route('/api/cpus/update_benchmark_ratings', methods=['POST'])

@@ -69,11 +69,37 @@
                     </label>
                     <select class="form-select" id="memory_type" name="memory_type">
                         <option value="">Не указано</option>
+                        <!-- GDDR серия -->
+                        <option value="GDDR3" {% if graphics_card.memory_type == 'GDDR3' %}selected{% endif %}>GDDR3</option>
+                        <option value="GDDR4" {% if graphics_card.memory_type == 'GDDR4' %}selected{% endif %}>GDDR4</option>
                         <option value="GDDR5" {% if graphics_card.memory_type == 'GDDR5' %}selected{% endif %}>GDDR5</option>
+                        <option value="GDDR5X" {% if graphics_card.memory_type == 'GDDR5X' %}selected{% endif %}>GDDR5X</option>
                         <option value="GDDR6" {% if graphics_card.memory_type == 'GDDR6' %}selected{% endif %}>GDDR6</option>
                         <option value="GDDR6X" {% if graphics_card.memory_type == 'GDDR6X' %}selected{% endif %}>GDDR6X</option>
+                        <option value="GDDR6W" {% if graphics_card.memory_type == 'GDDR6W' %}selected{% endif %}>GDDR6W</option>
+                        <!-- HBM серия -->
+                        <option value="HBM" {% if graphics_card.memory_type == 'HBM' %}selected{% endif %}>HBM</option>
                         <option value="HBM2" {% if graphics_card.memory_type == 'HBM2' %}selected{% endif %}>HBM2</option>
+                        <option value="HBM2E" {% if graphics_card.memory_type == 'HBM2E' %}selected{% endif %}>HBM2E</option>
                         <option value="HBM3" {% if graphics_card.memory_type == 'HBM3' %}selected{% endif %}>HBM3</option>
+                        <option value="HBM3E" {% if graphics_card.memory_type == 'HBM3E' %}selected{% endif %}>HBM3E</option>
+                        <!-- DDR серия -->
+                        <option value="DDR" {% if graphics_card.memory_type == 'DDR' %}selected{% endif %}>DDR</option>
+                        <option value="DDR2" {% if graphics_card.memory_type == 'DDR2' %}selected{% endif %}>DDR2</option>
+                        <option value="DDR3" {% if graphics_card.memory_type == 'DDR3' %}selected{% endif %}>DDR3</option>
+                        <option value="DDR4" {% if graphics_card.memory_type == 'DDR4' %}selected{% endif %}>DDR4</option>
+                        <option value="DDR5" {% if graphics_card.memory_type == 'DDR5' %}selected{% endif %}>DDR5</option>
+                        <!-- Старые типы памяти -->
+                        <option value="SDR" {% if graphics_card.memory_type == 'SDR' %}selected{% endif %}>SDR</option>
+                        <option value="SDRAM" {% if graphics_card.memory_type == 'SDRAM' %}selected{% endif %}>SDRAM</option>
+                        <option value="VRAM" {% if graphics_card.memory_type == 'VRAM' %}selected{% endif %}>VRAM</option>
+                        <option value="EDO VRAM" {% if graphics_card.memory_type == 'EDO VRAM' %}selected{% endif %}>EDO VRAM</option>
+                        <option value="FPM EDO VRAM" {% if graphics_card.memory_type == 'FPM EDO VRAM' %}selected{% endif %}>FPM EDO VRAM</option>
+                        <option value="WRAM" {% if graphics_card.memory_type == 'WRAM' %}selected{% endif %}>WRAM</option>
+                        <option value="MDRAM" {% if graphics_card.memory_type == 'MDRAM' %}selected{% endif %}>MDRAM</option>
+                        <!-- Другие типы -->
+                        <option value="Shared" {% if graphics_card.memory_type == 'Shared' %}selected{% endif %}>Shared (Shared Memory)</option>
+                        <option value="Unified" {% if graphics_card.memory_type == 'Unified' %}selected{% endif %}>Unified</option>
                     </select>
                 </div>
                 
@@ -87,6 +113,356 @@
                            name="serial_number"
                            value="{{ graphics_card.serial_number if graphics_card.serial_number else '' }}"
                            placeholder="Серийный номер">
+                </div>
+                
+                <!-- Технические характеристики -->
+                <div class="col-12 mt-4">
+                    <h5 class="mb-3">
+                        <i class="bi bi-gear me-2"></i>Технические характеристики
+                    </h5>
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="launch_date" class="form-label">
+                        <i class="bi bi-calendar-event me-1"></i>Дата выпуска
+                    </label>
+                    <input type="date" 
+                           class="form-control" 
+                           id="launch_date" 
+                           name="launch_date"
+                           value="{{ graphics_card.launch_date.strftime('%Y-%m-%d') if graphics_card.launch_date else '' }}">
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="code_name" class="form-label">
+                        <i class="bi bi-code-square me-1"></i>Кодовое имя
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="code_name" 
+                           name="code_name"
+                           value="{{ graphics_card.code_name if graphics_card.code_name else '' }}"
+                           placeholder="Например: NV1, NV3, GP107">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="core_clock_mhz" class="form-label">
+                        <i class="bi bi-speedometer me-1"></i>Частота ядра (МГц)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="core_clock_mhz" 
+                           name="core_clock_mhz"
+                           value="{{ graphics_card.core_clock_mhz if graphics_card.core_clock_mhz else '' }}"
+                           placeholder="Например: 1500">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="boost_clock_mhz" class="form-label">
+                        <i class="bi bi-speedometer2 me-1"></i>Boost частота (МГц)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="boost_clock_mhz" 
+                           name="boost_clock_mhz"
+                           value="{{ graphics_card.boost_clock_mhz if graphics_card.boost_clock_mhz else '' }}"
+                           placeholder="Например: 1800">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="memory_clock_mhz" class="form-label">
+                        <i class="bi bi-clock me-1"></i>Частота памяти (МГц)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="memory_clock_mhz" 
+                           name="memory_clock_mhz"
+                           value="{{ graphics_card.memory_clock_mhz if graphics_card.memory_clock_mhz else '' }}"
+                           placeholder="Например: 7000">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="memory_bandwidth_gbps" class="form-label">
+                        <i class="bi bi-arrow-left-right me-1"></i>Пропускная способность памяти (ГБ/с)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="memory_bandwidth_gbps" 
+                           name="memory_bandwidth_gbps"
+                           step="0.01"
+                           value="{{ graphics_card.memory_bandwidth_gbps if graphics_card.memory_bandwidth_gbps else '' }}"
+                           placeholder="Например: 192.0">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="memory_bus_width_bits" class="form-label">
+                        <i class="bi bi-diagram-3 me-1"></i>Ширина шины памяти (бит)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="memory_bus_width_bits" 
+                           name="memory_bus_width_bits"
+                           value="{{ graphics_card.memory_bus_width_bits if graphics_card.memory_bus_width_bits else '' }}"
+                           placeholder="Например: 192">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="tdp_watts" class="form-label">
+                        <i class="bi bi-lightning-charge me-1"></i>TDP (Вт)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="tdp_watts" 
+                           name="tdp_watts"
+                           value="{{ graphics_card.tdp_watts if graphics_card.tdp_watts else '' }}"
+                           placeholder="Например: 150">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="bus_interface" class="form-label">
+                        <i class="bi bi-usb-plug me-1"></i>Интерфейс шины
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="bus_interface" 
+                           name="bus_interface"
+                           value="{{ graphics_card.bus_interface if graphics_card.bus_interface else '' }}"
+                           placeholder="Например: PCIe 4.0 x16">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="gpu_type" class="form-label">
+                        <i class="bi bi-gpu-card me-1"></i>Тип GPU
+                    </label>
+                    <select class="form-select" id="gpu_type" name="gpu_type">
+                        <option value="">Не указано</option>
+                        <option value="Desktop" {% if graphics_card.gpu_type == 'Desktop' %}selected{% endif %}>Desktop</option>
+                        <option value="Mobile" {% if graphics_card.gpu_type == 'Mobile' %}selected{% endif %}>Mobile</option>
+                        <option value="Workstation" {% if graphics_card.gpu_type == 'Workstation' %}selected{% endif %}>Workstation</option>
+                        <option value="Server" {% if graphics_card.gpu_type == 'Server' %}selected{% endif %}>Server</option>
+                        <option value="Integrated" {% if graphics_card.gpu_type == 'Integrated' %}selected{% endif %}>Integrated</option>
+                    </select>
+                </div>
+                
+                <!-- Производительность и архитектура -->
+                <div class="col-12 mt-4">
+                    <h5 class="mb-3">
+                        <i class="bi bi-graph-up me-2"></i>Производительность и архитектура
+                    </h5>
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="core_config" class="form-label">
+                        <i class="bi bi-cpu me-1"></i>Конфигурация ядер
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="core_config" 
+                           name="core_config"
+                           value="{{ graphics_card.core_config if graphics_card.core_config else '' }}"
+                           placeholder="Например: 2560:160:64:40">
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="sm_count" class="form-label">
+                        <i class="bi bi-collection me-1"></i>Количество SM
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="sm_count" 
+                           name="sm_count"
+                           value="{{ graphics_card.sm_count if graphics_card.sm_count else '' }}"
+                           placeholder="Например: 20">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="fillrate_pixel_gps" class="form-label">
+                        <i class="bi bi-image me-1"></i>Пиксельная производительность (GP/s)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="fillrate_pixel_gps" 
+                           name="fillrate_pixel_gps"
+                           step="0.01"
+                           value="{{ graphics_card.fillrate_pixel_gps if graphics_card.fillrate_pixel_gps else '' }}"
+                           placeholder="Например: 120.0">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="fillrate_texture_gts" class="form-label">
+                        <i class="bi bi-textarea-resize me-1"></i>Текстурная производительность (GT/s)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="fillrate_texture_gts" 
+                           name="fillrate_texture_gts"
+                           step="0.01"
+                           value="{{ graphics_card.fillrate_texture_gts if graphics_card.fillrate_texture_gts else '' }}"
+                           placeholder="Например: 300.0">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="pixel_shader_count" class="form-label">
+                        <i class="bi bi-shader me-1"></i>Количество пиксельных шейдеров
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="pixel_shader_count" 
+                           name="pixel_shader_count"
+                           step="0.01"
+                           value="{{ graphics_card.pixel_shader_count if graphics_card.pixel_shader_count else '' }}"
+                           placeholder="Например: 2560">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="single_precision_tflops" class="form-label">
+                        <i class="bi bi-calculator me-1"></i>Single-precision TFLOPS
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="single_precision_tflops" 
+                           name="single_precision_tflops"
+                           value="{{ graphics_card.single_precision_tflops if graphics_card.single_precision_tflops else '' }}"
+                           placeholder="Например: 12.0">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="double_precision_tflops" class="form-label">
+                        <i class="bi bi-calculator-fill me-1"></i>Double-precision TFLOPS
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="double_precision_tflops" 
+                           name="double_precision_tflops"
+                           value="{{ graphics_card.double_precision_tflops if graphics_card.double_precision_tflops else '' }}"
+                           placeholder="Например: 0.375">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="half_precision_tflops" class="form-label">
+                        <i class="bi bi-calculator me-1"></i>Half-precision TFLOPS
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="half_precision_tflops" 
+                           name="half_precision_tflops"
+                           value="{{ graphics_card.half_precision_tflops if graphics_card.half_precision_tflops else '' }}"
+                           placeholder="Например: 24.0">
+                </div>
+                
+                <!-- Технологии и процесс -->
+                <div class="col-12 mt-4">
+                    <h5 class="mb-3">
+                        <i class="bi bi-motherboard me-2"></i>Технологии и процесс
+                    </h5>
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="fab_nm" class="form-label">
+                        <i class="bi bi-rulers me-1"></i>Техпроцесс (нм)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="fab_nm" 
+                           name="fab_nm"
+                           step="0.1"
+                           value="{{ graphics_card.fab_nm if graphics_card.fab_nm else '' }}"
+                           placeholder="Например: 7.0">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="process" class="form-label">
+                        <i class="bi bi-gear-wide me-1"></i>Процесс
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="process" 
+                           name="process"
+                           value="{{ graphics_card.process if graphics_card.process else '' }}"
+                           placeholder="Например: TSMC N7">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="die_size_mm2" class="form-label">
+                        <i class="bi bi-square me-1"></i>Размер кристалла (мм²)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="die_size_mm2" 
+                           name="die_size_mm2"
+                           step="0.01"
+                           value="{{ graphics_card.die_size_mm2 if graphics_card.die_size_mm2 else '' }}"
+                           placeholder="Например: 276.0">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="transistors_billion" class="form-label">
+                        <i class="bi bi-diagram-2 me-1"></i>Транзисторы (млрд)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="transistors_billion" 
+                           name="transistors_billion"
+                           step="0.01"
+                           value="{{ graphics_card.transistors_billion if graphics_card.transistors_billion else '' }}"
+                           placeholder="Например: 10.8">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="l_cache_mb" class="form-label">
+                        <i class="bi bi-hdd me-1"></i>Кэш L (МБ)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="l_cache_mb" 
+                           name="l_cache_mb"
+                           step="0.01"
+                           value="{{ graphics_card.l_cache_mb if graphics_card.l_cache_mb else '' }}"
+                           placeholder="Например: 4.0">
+                </div>
+                
+                <div class="col-md-4">
+                    <label for="release_price_usd" class="form-label">
+                        <i class="bi bi-currency-dollar me-1"></i>Цена выпуска (USD)
+                    </label>
+                    <input type="number" 
+                           class="form-control" 
+                           id="release_price_usd" 
+                           name="release_price_usd"
+                           step="0.01"
+                           value="{{ graphics_card.release_price_usd if graphics_card.release_price_usd else '' }}"
+                           placeholder="Например: 329.0">
+                </div>
+                
+                <!-- API поддержка -->
+                <div class="col-12 mt-4">
+                    <h5 class="mb-3">
+                        <i class="bi bi-code-slash me-2"></i>API поддержка
+                    </h5>
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="direct3d_version" class="form-label">
+                        <i class="bi bi-windows me-1"></i>Direct3D версия
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="direct3d_version" 
+                           name="direct3d_version"
+                           value="{{ graphics_card.direct3d_version if graphics_card.direct3d_version else '' }}"
+                           placeholder="Например: 12.0">
+                </div>
+                
+                <div class="col-md-6">
+                    <label for="opengl_version" class="form-label">
+                        <i class="bi bi-code me-1"></i>OpenGL версия
+                    </label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="opengl_version" 
+                           name="opengl_version"
+                           value="{{ graphics_card.opengl_version if graphics_card.opengl_version else '' }}"
+                           placeholder="Например: 4.6">
                 </div>
                 
                 <!-- Финансы и даты -->

@@ -10,9 +10,11 @@
         <a href="{{ url_for('pc_components') }}" class="btn btn-secondary btn-sm me-2">
             <i class="bi bi-arrow-left me-1"></i>Назад
         </a>
+        {% if is_admin %}
         <button id="updateFromApiBtn" class="btn btn-info btn-sm me-2" onclick="updateGraphicsCardsFromApi()">
             <i class="bi bi-arrow-clockwise me-1"></i>Обновить данные из API
         </button>
+        {% endif %}
         <a href="{{ url_for('add_graphics_card') }}" class="btn btn-success btn-sm">
             <i class="bi bi-plus-circle me-1"></i>Добавить видеокарту
         </a>
@@ -30,12 +32,12 @@
             <table class="table table-hover align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th scope="col">Производитель</th>
                         <th scope="col">Модель</th>
                         <th scope="col">Память</th>
                         <th scope="col">Серийный номер</th>
                         <th scope="col">Компьютер</th>
                         <th scope="col">Стоимость</th>
+                        <th scope="col">Комментарий</th>
                         <th scope="col" style="width: 120px;">Действия</th>
                     </tr>
                 </thead>
@@ -43,7 +45,6 @@
                     {% if graphics_cards %}
                         {% for card in graphics_cards %}
                         <tr>
-                            <td><strong>{{ card.vendor.name if card.vendor else 'Unknown' }}</strong></td>
                             <td>
                                 <a href="{{ url_for('graphics_card_detail', card_id=card.id) }}" 
                                    class="text-decoration-none"
@@ -90,6 +91,15 @@
                                 {% endif %}
                             </td>
                             <td>
+                                {% if card.comment %}
+                                    <span class="text-truncate d-inline-block" style="max-width: 200px;" title="{{ card.comment }}">
+                                        {{ card.comment }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
                                 <div class="btn-group btn-group-sm" role="group">
                                     <a href="{{ url_for('graphics_card_detail', card_id=card.id) }}" 
                                        class="btn btn-outline-info"
@@ -115,7 +125,7 @@
                         {% endfor %}
                     {% else %}
                         <tr>
-                            <td colspan="6" class="text-center py-4 text-muted">
+                            <td colspan="7" class="text-center py-4 text-muted">
                                 <i class="bi bi-info-circle me-1"></i>Нет видеокарт
                             </td>
                         </tr>
@@ -139,7 +149,136 @@ function updateGraphicsCardsFromApi() {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({})
+    })
+    .then(response => response.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        
+        if (data.success) {
+            // Если есть слабые совпадения, показываем диалог с запросом разрешения
+            if (data.weak_matches && data.weak_matches.length > 0) {
+                showWeakMatchesDialog(data.weak_matches, data.updated, data.not_found, data.errors);
+            } else {
+                let message = `Обновлено: ${data.updated} видеокарт`;
+                if (data.not_found > 0) {
+                    message += `, не найдено в API: ${data.not_found}`;
+                }
+                if (data.errors && data.errors.length > 0) {
+                    message += `, ошибок: ${data.errors.length}`;
+                }
+                
+                alert(message);
+                // Перезагружаем страницу для отображения обновленных данных
+                location.reload();
+            }
+        } else {
+            alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
         }
+    })
+    .catch(error => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+        alert('Ошибка при обновлении данных: ' + error.message);
+    });
+}
+
+function showWeakMatchesDialog(weakMatches, updatedCount, notFoundCount, errors) {
+    // Создаем HTML для списка видеокарт со слабыми совпадениями
+    let matchesList = '<ul class="list-group mb-3">';
+    weakMatches.forEach(match => {
+        matchesList += `<li class="list-group-item">
+            <strong>${match.vendor} ${match.model}</strong><br>
+            <small class="text-muted">
+                Найдено совпадение: ${match.matched_model || match.matched_key}<br>
+                Оценка совпадения: ${match.score}/20
+            </small>
+        </li>`;
+    });
+    matchesList += '</ul>';
+    
+    // Создаем диалог с запросом разрешения
+    const dialog = document.createElement('div');
+    dialog.className = 'modal fade show';
+    dialog.style.display = 'block';
+    dialog.style.backgroundColor = 'rgba(0,0,0,0.5)';
+    dialog.innerHTML = `
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Требуется подтверждение</h5>
+                    <button type="button" class="btn-close" onclick="closeWeakMatchesDialog()"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Найдено ${weakMatches.length} видеокарт со слабыми совпадениями в API. Обновить данные для этих видеокарт?</p>
+                    ${matchesList}
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Слабое совпадение означает, что найденная видеокарта в API может не соответствовать вашей видеокарте. 
+                        Рекомендуется проверить данные перед обновлением.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeWeakMatchesDialog()">Отмена</button>
+                    <button type="button" class="btn btn-primary" onclick="confirmWeakMatchesUpdate(${JSON.stringify(weakMatches.map(m => m.id))})">
+                        Обновить выбранные видеокарты
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+    
+    // Сохраняем данные для использования после подтверждения
+    window.weakMatchesData = {
+        updatedCount: updatedCount,
+        notFoundCount: notFoundCount,
+        errors: errors
+    };
+}
+
+function closeWeakMatchesDialog() {
+    const dialog = document.querySelector('.modal.fade.show');
+    if (dialog) {
+        dialog.remove();
+    }
+    // Показываем итоговое сообщение
+    if (window.weakMatchesData) {
+        let message = `Обновлено: ${window.weakMatchesData.updatedCount} видеокарт`;
+        if (window.weakMatchesData.notFoundCount > 0) {
+            message += `, не найдено в API: ${window.weakMatchesData.notFoundCount}`;
+        }
+        if (window.weakMatchesData.errors && window.weakMatchesData.errors.length > 0) {
+            message += `, ошибок: ${window.weakMatchesData.errors.length}`;
+        }
+        alert(message);
+        location.reload();
+    }
+}
+
+function confirmWeakMatchesUpdate(cardIds) {
+    const btn = document.getElementById('updateFromApiBtn');
+    const originalText = btn.innerHTML;
+    
+    // Блокируем кнопку и показываем индикатор загрузки
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Обновление...';
+    
+    // Закрываем диалог
+    closeWeakMatchesDialog();
+    
+    // Отправляем запрос на обновление слабых совпадений
+    fetch('{{ url_for("update_graphics_cards_from_api") }}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            allow_weak_matches: true,
+            weak_match_card_ids: cardIds
+        })
     })
     .then(response => response.json())
     .then(data => {

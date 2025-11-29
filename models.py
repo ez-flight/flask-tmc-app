@@ -394,6 +394,7 @@ class PCGraphicsCard(db.Model):
     launch_date = db.Column(db.Date, nullable=True)  # Дата выпуска видеокарты
     code_name = db.Column(db.String(100), nullable=True)  # Кодовое имя (например, NV1, NV3)
     core_clock_mhz = db.Column(db.Integer, nullable=True)  # Частота ядра в МГц
+    boost_clock_mhz = db.Column(db.Integer, nullable=True)  # Частота ядра с Boost в МГц
     memory_clock_mhz = db.Column(db.Integer, nullable=True)  # Частота памяти в МГц
     memory_bandwidth_gbps = db.Column(db.Float, nullable=True)  # Пропускная способность памяти в ГБ/с
     memory_bus_width_bits = db.Column(db.Integer, nullable=True)  # Ширина шины памяти в битах
@@ -401,6 +402,22 @@ class PCGraphicsCard(db.Model):
     bus_interface = db.Column(db.String(50), nullable=True)  # Интерфейс шины (PCI, PCIe, AGP и т.д.)
     direct3d_version = db.Column(db.String(20), nullable=True)  # Поддержка Direct3D
     opengl_version = db.Column(db.String(20), nullable=True)  # Поддержка OpenGL
+    # Дополнительные поля из API
+    fab_nm = db.Column(db.Float, nullable=True)  # Техпроцесс в нм
+    die_size_mm2 = db.Column(db.Float, nullable=True)  # Размер кристалла в мм²
+    core_config = db.Column(db.String(200), nullable=True)  # Конфигурация ядер
+    fillrate_pixel_gps = db.Column(db.Float, nullable=True)  # Пиксельная производительность в GP/s
+    fillrate_texture_gts = db.Column(db.Float, nullable=True)  # Текстурная производительность в GT/s
+    release_price_usd = db.Column(db.Float, nullable=True)  # Цена выпуска в USD
+    sm_count = db.Column(db.String(50), nullable=True)  # Количество SM (Streaming Multiprocessors)
+    process = db.Column(db.String(100), nullable=True)  # Техпроцесс (например, "TSMC N4")
+    transistors_billion = db.Column(db.Float, nullable=True)  # Количество транзисторов в миллиардах
+    l_cache_mb = db.Column(db.Float, nullable=True)  # Кэш L в МБ
+    single_precision_tflops = db.Column(db.String(50), nullable=True)  # Single-precision TFLOPS
+    double_precision_tflops = db.Column(db.String(50), nullable=True)  # Double-precision TFLOPS
+    half_precision_tflops = db.Column(db.String(50), nullable=True)  # Half-precision TFLOPS
+    pixel_shader_count = db.Column(db.Float, nullable=True)  # Количество пиксельных шейдеров
+    gpu_type = db.Column(db.String(50), nullable=True)  # Тип GPU (Desktop, Mobile, etc.)
     api_data_updated_at = db.Column(db.DateTime, nullable=True)  # Дата последнего обновления данных из API
     
     # Связи

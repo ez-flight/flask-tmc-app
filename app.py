@@ -3775,19 +3775,6 @@ def add_hard_drive():
                          vendors=vendors,
                          is_admin=is_admin)
 
-@app.route('/pc_components/graphics_card/<int:card_id>')
-@login_required
-def graphics_card_detail(card_id):
-    """Детальная информация о видеокарте."""
-    from models import PCGraphicsCard
-    
-    graphics_card = PCGraphicsCard.query.get_or_404(card_id)
-    is_admin = current_user.mode == 1
-    
-    return render_template('pc_components/graphics_card_detail.html',
-                         graphics_card=graphics_card,
-                         is_admin=is_admin)
-
 @app.route('/pc_components/edit_graphics_card/<int:card_id>', methods=['GET', 'POST'])
 @login_required
 def edit_graphics_card(card_id):
@@ -3942,6 +3929,7 @@ def graphics_card_detail(card_id):
     
     return render_template('pc_components/graphics_card_detail.html',
                          card=graphics_card,
+                         graphics_card=graphics_card,
                          is_admin=is_admin)
 
 @app.route('/pc_components/edit_hard_drive/<int:drive_id>', methods=['GET', 'POST'])
